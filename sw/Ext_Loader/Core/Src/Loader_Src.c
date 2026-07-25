@@ -77,8 +77,8 @@ int Write(uint32_t Address, uint32_t Size, uint8_t* buffer) {
 
 int SectorErase(uint32_t StartAddress, uint32_t EndAddress) {
 	w25n01gv_status_t status;
-	StartAddress = (StartAddress & (W25N01GV_SIZE-1)) * W25N01GV_PAGES_PER_BLOCK;
-	EndAddress   = (EndAddress   & (W25N01GV_SIZE-1)) * W25N01GV_PAGES_PER_BLOCK;
+	StartAddress = StartAddress & (W25N01GV_SIZE-1);
+	EndAddress   = EndAddress   & (W25N01GV_SIZE-1);
 	//printf("Erasing sector of external flash\n");
 	//printf("Start address: 0x%4lX\n", StartAddress);
 	//printf("End address:   0x%4lX\n", EndAddress);
