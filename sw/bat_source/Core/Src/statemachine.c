@@ -21,6 +21,7 @@
 #include "bq76905.h"
 #include "ctrl_param.h"
 #include "calibration.h"
+#include "protection.h"
 
 statemachine_t statemachine_handle;
 uint16_t ok_button_pressed;
@@ -143,6 +144,7 @@ void statemachine_step(void) {
 	uint8_t temp;
 
 	adc_convert_data();
+	protection_update();
 	ui_ctrl_step();
 
 	// Handle Buttons press
@@ -292,6 +294,46 @@ void statemachine_step(void) {
 
 	default:
 		break;
+	}
+
+	// Generic protection interlock, runs every tick regardless of mode: force
+	// the converter output off the instant an ERROR-level fault (over-temp,
+	// OVP, OCP) is latched, and automatically resume once it clears -- OUT
+	// modes wait for a fresh OUT press (mirrors their normal button-toggle
+	// behaviour), the auto-started modes just resume on their own.
+	static uint8_t protection_forced_output_off = 0;
+	ctrl_mode_t active_ctrl_mode = statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode);
+
+	if (active_ctrl_mode != CTRL_MODE_OFF) {
+		if (protection_get_worst_level() == PROTECTION_LEVEL_ERROR) {
+			if (ctrl_main_handle.mode != CTRL_MODE_OFF) {
+				ctrl_main_stop_control();
+				aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+			}
+			statemachine_handle.output_on = 0;
+			protection_forced_output_off = 1;
+		} else if (protection_forced_output_off) {
+			if (statemachine_handle.current_mode == STATEMACHINE_MODE_60V_OUT ||
+					statemachine_handle.current_mode == STATEMACHINE_MODE_10A_OUT) {
+				if (out_button_pressed) {
+					statemachine_handle.output_on = 1;
+					ctrl_main_start_ctrl(active_ctrl_mode);
+					aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
+				}
+			} else {
+				ctrl_main_start_ctrl(active_ctrl_mode);
+				if (statemachine_handle.current_mode == STATEMACHINE_MODE_CHARGE) {
+					statemachine_handle.output_on = 1;
+				}
+				if (statemachine_handle.current_mode == STATEMACHINE_MODE_RESISTANCE_1A ||
+						statemachine_handle.current_mode == STATEMACHINE_MODE_RESISTANCE_1mA) {
+					aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
+				}
+			}
+			protection_forced_output_off = 0;
+		}
+	} else {
+		protection_forced_output_off = 0;
 	}
 }
 
