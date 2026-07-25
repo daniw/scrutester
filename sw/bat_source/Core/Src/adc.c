@@ -932,7 +932,11 @@ void adc_start(void){
 
 	ADC345_COMMON->CCR |= ADC_CCR_VBATSEL;
 	ADC12_COMMON->CCR |= ADC_CCR_VBATSEL;
-	//HAL_ADCEx_InjectedStart_IT(&hadc1);
+	// The injected group (I_BAT/I_ISO) only exists on hadc5 (see
+	// MX_ADC5_Init()/adc_configure_mode()'s HAL_ADCEx_InjectedConfigChannel()
+	// calls) -- hadc1 has no injected channels configured on it at all, so
+	// starting it there was always dead/wrong. Arm the real injected group.
+	HAL_ADCEx_InjectedStart_IT(&hadc5);
 	HAL_ADC_Start_DMA(&hadc5, (uint32_t*)&adc_data.raw.v_3v3, 12);
 
 }
@@ -1008,6 +1012,15 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		  {
 		    Error_Handler();
 		  }
+		  // HAL_ADC_Stop_DMA(&hadc5) above (top of this function) stops BOTH
+		  // the regular and injected groups on hadc5 and disables the ADC
+		  // (see ADC_ConversionStop(hadc, ADC_REGULAR_INJECTED_GROUP) +
+		  // ADC_Disable() inside HAL_ADC_Stop_DMA()). Reconfiguring the
+		  // injected channel here does NOT resume triggering by itself, so
+		  // the injected group must be re-armed every time we (re-)enter
+		  // ISOMETER mode. JADSTART is guaranteed clear at this point (we
+		  // just stopped it above), so this cannot return HAL_BUSY.
+		  HAL_ADCEx_InjectedStart_IT(&hadc5);
 		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_hv, 1);
 
 		break;
