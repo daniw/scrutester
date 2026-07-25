@@ -55,6 +55,7 @@
 #include "w25n01gv.h"
 #include "icon_store.h"
 #include "ads131m04.h"
+#include "protection.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -219,6 +220,7 @@ int main(void)
 
   LCD_init();
 
+  protection_init();
   ctrl_main_init();
   statemachine_init();
 

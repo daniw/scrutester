@@ -36,6 +36,7 @@
 #include "config_store.h"
 #include "icon_store.h"
 #include "calibration.h"
+#include "protection.h"
 
 #ifdef CLI_ENABLED
 
@@ -113,6 +114,7 @@ void cmd_zeroCal(void);
 void cmd_gainCal(void);
 void cmd_setSerial(void);
 void cmd_flashIcons(void);
+void cmd_printProtection(void);
 
 // List of functions pointers corresponding to each command
 void (*cmd_func[])(void) = {
@@ -146,7 +148,8 @@ void (*cmd_func[])(void) = {
 	cmd_zeroCal,
 	cmd_gainCal,
 	cmd_setSerial,
-	cmd_flashIcons
+	cmd_flashIcons,
+	cmd_printProtection
 };
 
 // List of command names
@@ -181,7 +184,8 @@ const char *cmd_str[] = {
 		"zeroCal",
 		"gainCal",
 		"setSerial",
-		"flashIcons"
+		"flashIcons",
+		"pProt"
 };
 
 // List of command names including arguments
@@ -216,7 +220,8 @@ const char *cmd_arg_str[] = {
 		"zeroCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO]",
 		"gainCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO] [reference value]",
 		"setSerial [serial number]",
-		"flashIcons"
+		"flashIcons",
+		"pProt"
 };
 
 int cmd_index;
@@ -1560,6 +1565,46 @@ void cmd_flashIcons(void) {
 	} else {
 		printf("Icon store flash FAILED.\r\n");
 	}
+}
+
+/**
+ * Debug dump of the protection module's current classification: worst level,
+ * the warning/error source masks decoded by name, and the raw inputs
+ * (4 temps + OVP/OCP pin states) that fed them.
+ */
+void cmd_printProtection(void) {
+	static const protection_source_t all_sources[] = {
+		PROTECTION_SRC_TEMP_SEC, PROTECTION_SRC_TEMP_TRAFO,
+		PROTECTION_SRC_TEMP_CURRENT, PROTECTION_SRC_TEMP_PRIM,
+		PROTECTION_SRC_OVP, PROTECTION_SRC_OCP
+	};
+	uint16_t warning_mask = protection_get_warning_mask();
+	uint16_t error_mask = protection_get_error_mask();
+
+	printf("Worst level:        %d (0=OK, 1=WARNING, 2=ERROR)\r\n", protection_get_worst_level());
+
+	printf("Warnings: ");
+	for (uint8_t i = 0; i < sizeof(all_sources) / sizeof(all_sources[0]); i++) {
+		if (warning_mask & all_sources[i]) {
+			printf("%s ", protection_source_name(all_sources[i]));
+		}
+	}
+	printf("\r\n");
+
+	printf("Errors:   ");
+	for (uint8_t i = 0; i < sizeof(all_sources) / sizeof(all_sources[0]); i++) {
+		if (error_mask & all_sources[i]) {
+			printf("%s ", protection_source_name(all_sources[i]));
+		}
+	}
+	printf("\r\n");
+
+	printf("temp_sec:            %d\r\n", adc_data.converted.temp_sec);
+	printf("temp_trafo:          %d\r\n", adc_data.converted.temp_trafo);
+	printf("temp_current:        %d\r\n", adc_data.converted.temp_current);
+	printf("temp_prim:           %d\r\n", adc_data.converted.temp_prim);
+	printf("OVP Pin Latch:       %d\r\n", HAL_GPIO_ReadPin(OVP_N_GPIO_Port, OVP_N_Pin));
+	printf("OCP Pin Latch:       %d\r\n", HAL_GPIO_ReadPin(OCP_N_GPIO_Port, OCP_N_Pin));
 }
 
 #endif
