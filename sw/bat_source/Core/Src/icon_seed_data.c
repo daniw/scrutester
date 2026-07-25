@@ -3128,8 +3128,8 @@ const icon_seed_t icon_seeds[ICON_STORE_ICON_COUNT] = {
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_isolation_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_voltmeter_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_ampmeter_data },
-	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_charge_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_settings_data },
+	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_charge_data },
 };
 
 #endif
@@ -10083,8 +10083,8 @@ const icon_seed_t icon_seeds[ICON_STORE_ICON_COUNT] = {
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_isolation_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_voltmeter_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_ampmeter_data },
-	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_charge_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_settings_data },
+	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_charge_data },
 };
 
 #endif
