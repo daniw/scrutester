@@ -129,11 +129,25 @@ typedef struct{
 	    uint16_t CHGFetPWM;
 	} SystemCtrl;
 
+	// Mirrors exactly the BQ76905_SUBCOMMAND_PASSQ RAM register (12 bytes,
+	// int64_t + uint32_t) - see the explicit "12" byte count in the reads
+	// in bq76905.c. Do NOT add fields here: struct padding after this
+	// point would silently grow past the 12 real hardware bytes.
 	struct{
 		int64_t accumulatedCharge;
 		uint32_t passedTime;
-		uint8_t charge_percentage;
 	} Accumulator;
+
+	// State-of-charge, computed by firmware from Accumulator.accumulatedCharge
+	// vs. battery_capacity_mAs (see BQ76905_updateChargePercentage()) - not a
+	// raw BQ76905 register, so it does not belong inside Accumulator above.
+	uint8_t charge_percentage;
+
+	// Rated pack capacity in mA-seconds (same unit as accumulatedCharge),
+	// loaded from config_store.calibration.battery_capacity_mAs at startup -
+	// see main.c. Kept adaptable via EEPROM rather than hardcoded so a
+	// different pack size doesn't need a recompile.
+	uint32_t battery_capacity_mAs;
 
 	BQ76905_asyncState asyncState;
 	uint8_t command_tx;

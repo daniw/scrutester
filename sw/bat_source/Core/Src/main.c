@@ -186,6 +186,7 @@ int main(void)
   HAL_Delay(100);
   GPIO_SET_BMS_CTRL_WAKEUP(0);
   BQ76905_init(&bms, BQ76905_I2C_ADDRESS);
+  bms.battery_capacity_mAs = config_store.calibration.battery_capacity_mAs;
 
 
   /*

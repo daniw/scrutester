@@ -83,6 +83,11 @@ typedef struct
 	float current_i;
 	float boost_iout_limit_p;
 	float boost_iout_limit_i;
+	float charge_current_p;
+	float charge_current_i;
+
+	// Rated pack capacity in mA-seconds - see CTRL_PARAM_BATTERY_CAPACITY_mAs.
+	uint32_t battery_capacity_mAs;
 } calibration_t;
 
 typedef struct

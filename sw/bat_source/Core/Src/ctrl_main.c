@@ -19,11 +19,28 @@ PID_controller_t ctrl_pi_voltage_buck;
 PID_controller_t ctrl_pi_voltage_boost;
 PID_controller_t ctrl_pi_current;
 PID_controller_t ctrl_pi_boost_iout_limit;
-
-PID_controller_t ctrl_pi_flyback_voltage;
-PID_controller_t ctrl_pi_flyback_current;
+PID_controller_t ctrl_pi_charge_current;
 
 const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
+
+// CLI setPI IDs are positional: 0=Buck,1=Boost,2=Current,3=BoostIoutLimit,4=ChargeCurrent.
+const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = {
+	{ &ctrl_pi_voltage_buck,     &config_store.calibration.voltage_buck_p,     &config_store.calibration.voltage_buck_i,
+	  CTRL_PARAM_VOLTAGE_BUCK_P,       CTRL_PARAM_VOLTAGE_BUCK_I,
+	  CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH,  CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_LOW,  "Buck" },
+	{ &ctrl_pi_voltage_boost,    &config_store.calibration.voltage_boost_p,    &config_store.calibration.voltage_boost_i,
+	  CTRL_PARAM_VOLTAGE_BOOST_P,      CTRL_PARAM_VOLTAGE_BOOST_I,
+	  CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH, CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, "Boost" },
+	{ &ctrl_pi_current,          &config_store.calibration.current_p,          &config_store.calibration.current_i,
+	  CTRL_PARAM_CURRENT_P,            CTRL_PARAM_CURRENT_I,
+	  CTRL_PARAM_CURRENT_DUTY_SAT_HIGH,       CTRL_PARAM_CURRENT_DUTY_SAT_LOW,       "Current" },
+	{ &ctrl_pi_boost_iout_limit, &config_store.calibration.boost_iout_limit_p, &config_store.calibration.boost_iout_limit_i,
+	  CTRL_PARAM_BOOST_IOUT_LIMIT_P,   CTRL_PARAM_BOOST_IOUT_LIMIT_I,
+	  CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH, CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, "BoostIoutLimit" },
+	{ &ctrl_pi_charge_current,   &config_store.calibration.charge_current_p,   &config_store.calibration.charge_current_i,
+	  CTRL_PARAM_CHARGE_CURRENT_P,     CTRL_PARAM_CHARGE_CURRENT_I,
+	  CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH, CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW, "ChargeCurrent" },
+};
 
 /******************* Function Prototypes **************************/
 void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
@@ -32,41 +49,26 @@ void ctrl_main_ctrl_voltage_boost(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate, int32_t current_meas_ext_mA);
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate);
+void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
+		int16_t current_meas_accurate);
 
 /**
  * Initializes the controllers
  */
 void ctrl_main_init(void) {
 
-
 	// P/I gains come from config_store, which is loaded from EEPROM (or
 	// defaulted to the CTRL_PARAM_* constants) before ctrl_main_init() runs -
 	// see config_store_init() in main(). Duty saturation limits stay as
 	// hardcoded safety limits rather than field-tunable values.
-	ctrl_PID_controller_init(&ctrl_pi_voltage_buck, config_store.calibration.voltage_buck_p,
-	config_store.calibration.voltage_buck_i, 0, CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH,
-	CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_LOW);
+	for (int i = 0; i < CTRL_PID_TABLE_LEN; i++) {
+		const ctrl_pid_entry_t *e = &ctrl_pid_table[i];
+		ctrl_PID_controller_init(e->ctrl, *e->cal_p, *e->cal_i, 0, e->sat_high, e->sat_low);
+	}
 
-
-
-	ctrl_PID_controller_init(&ctrl_pi_voltage_boost, config_store.calibration.voltage_boost_p,
-	config_store.calibration.voltage_boost_i, 0, CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH,
-	CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW);
-
-	ctrl_PID_controller_init(&ctrl_pi_boost_iout_limit, config_store.calibration.boost_iout_limit_p,
-	config_store.calibration.boost_iout_limit_i, 0, CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH,
-	CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW);
+	// Fixed reference for the boost current-limit loop; not part of the
+	// generic per-entry init since it's not a gain/saturation value.
 	ctrl_pi_boost_iout_limit.ref = CTRL_PARAM_BOOST_IOUT_LIMIT_mA / 1000.0F;
-
-
-	ctrl_PID_controller_init(&ctrl_pi_current, config_store.calibration.current_p,
-	config_store.calibration.current_i, 0, CTRL_PARAM_CURRENT_DUTY_SAT_HIGH,
-	CTRL_PARAM_CURRENT_DUTY_SAT_LOW);
-
-	//ctrl_PID_controller_init(&ctrl_pi_flyback_voltage, CTRL_PARAM_HV_KP, CTRL_PARAM_BH_KI, 0, 0.5, 0);
-	//ctrl_PID_controller_init(&ctrl_pi_flyback_current, kp, ki, kd, sat_high, sat_low)
-
-
 }
 
 /**
@@ -102,11 +104,28 @@ ctrl_mode_t statemachine_mode_to_ctrl_mode(statemachine_modes_t mode) {
 void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	switch (mode) {
 
+	case CTRL_MODE_CHARGE:
+		ctrl_main_apply_reference(mode, 0);
+		ctrl_PID_reset(&ctrl_pi_voltage_buck);
+		ctrl_PID_reset(&ctrl_pi_charge_current);
+		// Pre-load the integrator at the saturation boundary so the very
+		// first cycle's action==sat_limit_high, which (via the inverted
+		// duty math in ctrl_main_ctrl_charge_current()) yields SEK duty
+		// 0 at startup instead of jumping straight to ~sat_limit_high.
+		ctrl_pi_charge_current.prev_I_action = CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH;
+		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
+		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
+		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH);
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW);
+		hrtim_enable(HRTIM_CHANNEL_PRIM);
+		hrtim_enable(HRTIM_CHANNEL_SEK);
+		break;
 	case CTRL_MODE_60V:
 		ctrl_PID_reset(&ctrl_pi_voltage_boost);
 		ctrl_PID_reset(&ctrl_pi_boost_iout_limit);
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
+		// This is set to low, because it is part of the voltage ramp.
 		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_LOW);
 		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW);
 		hrtim_enable(HRTIM_CHANNEL_PRIM);
@@ -115,7 +134,6 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
 	case CTRL_MODE_10A:
-	case CTRL_MODE_CHARGE:
 		ctrl_PID_reset(&ctrl_pi_voltage_buck);
 		ctrl_PID_reset(&ctrl_pi_current);
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_HIGH);
@@ -168,18 +186,19 @@ void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data) {
 		/* Simple CC/CV: hold charge current until the end voltage is reached,
 		 * then hold that voltage. Reuses the buck path set up in
 		 * ctrl_main_start_ctrl() (same HRTIM channel as 10A/Resistance). */
-		if (adc_data->converted.v_out < CTRL_PARAM_CHARGE_END_VOLTAGE_mV)
-			ctrl_main_ctrl_current(adc_data->converted.i_out,
-					adc_data->converted.i_out_ext_mA);
-		else
-			ctrl_main_ctrl_voltage_buck(adc_data->converted.v_out,
-					adc_data->converted.v_term_ext_mv);
+		if (adc_data->converted.v_in < CTRL_PARAM_CHARGE_END_VOLTAGE_mV)
+			ctrl_main_ctrl_charge_current(-adc_data->converted.i_out,
+					-adc_data->converted.i_out_ext_mA);
+		//else
+			/*ctrl_main_ctrl_voltage_buck(adc_data->converted.v_in,
+					adc_data->converted.v_in);*/
 		break;
 
 	case CTRL_MODE_OFF:
 	default:
 		break;
 	}
+
 
 }
 
@@ -309,32 +328,36 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 	ctrl_PID_controller_execute(&ctrl_pi_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);
 
-	// Apply Duty
 	hrtim_set_duty(HRTIM_CHANNEL_PRIM, ctrl_pi_current.action);
+	ctrl_main_handle.duty = ctrl_pi_current.action*1000;
 
 }
-void ctrl_main_ctrl_hv(int32_t voltage_meas_mV, int16_t current_meas_mA) {
+
+void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
+		int16_t current_meas_accurate) {
 
 	// Startup Ramp
 	if (ctrl_main_handle.ramp > 1.0F) {
-		ctrl_pi_flyback_voltage.ref = ctrl_main_handle.voltage_iso_reference_V
-				/ 1000.0F;
+		ctrl_pi_charge_current.ref = ctrl_main_handle.current_reference_mA / 1000.0F;
 		ctrl_main_handle.ramp = 1.1F;
 	}
 
 	else {
 		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
-		ctrl_pi_flyback_voltage.ref = (ctrl_main_handle.voltage_reference_mV / 1000.0F)
+		ctrl_pi_charge_current.ref = (ctrl_main_handle.current_reference_mA / 1000.0F)
 				* ctrl_main_handle.ramp;
 	}
 
-	ctrl_PID_controller_execute(&ctrl_pi_flyback_voltage, voltage_meas_mV / 1000.0F,
-			voltage_meas_mV / 1000.0F, 0);
+	ctrl_PID_controller_execute(&ctrl_pi_charge_current, current_meas_mA / 1000.0F,
+			current_meas_accurate / 1000.0F, 0);
 
-	ctrl_pi_current.ref = ctrl_pi_flyback_voltage.action;
-	ctrl_PID_controller_execute(&ctrl_pi_current, current_meas_mA / 1000.0F,
-			current_meas_mA / 1000.0F, 0);
 	// Apply Duty
-	//hrtim_set_duty_pri(ctrl_pi_current.action);
+	// Apply Duty inverted, as the secondary Duty is inversed
+	if((CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_current.action)> 0.5)
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, 0.5);
+	else
+		hrtim_set_duty(HRTIM_CHANNEL_SEK,CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_current.action);
+	ctrl_main_handle.duty = (CTRL_PARAM_CONST_DUTY_HIGH-ctrl_pi_charge_current.action)*1000;
+
 }
 

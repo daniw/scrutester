@@ -88,6 +88,9 @@ static void config_store_setDefaults(void)
 	config_store.calibration.current_i       = CTRL_PARAM_CURRENT_I;
 	config_store.calibration.boost_iout_limit_p = CTRL_PARAM_BOOST_IOUT_LIMIT_P;
 	config_store.calibration.boost_iout_limit_i = CTRL_PARAM_BOOST_IOUT_LIMIT_I;
+	config_store.calibration.charge_current_p = CTRL_PARAM_CHARGE_CURRENT_P;
+	config_store.calibration.charge_current_i = CTRL_PARAM_CHARGE_CURRENT_I;
+	config_store.calibration.battery_capacity_mAs = CTRL_PARAM_BATTERY_CAPACITY_mAs;
 }
 
 /**

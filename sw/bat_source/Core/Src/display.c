@@ -65,12 +65,12 @@ static void draw_battery_icon(int16_t x, int16_t y, uint8_t pct) {
 static void draw_status_bar(const char *title, UG_COLOR accent) {
 	UG_FillFrame(0, STATUS_Y0, LCD_WIDTH - 1, STATUS_H - 1, C_BLACK);
 	LCD_PutStr(4, 4, (char*) title, FONT_SMALL, C_WHITE, C_BLACK);
-	draw_battery_icon(LCD_WIDTH - 40, 6, bms.Accumulator.charge_percentage);
+	draw_battery_icon(LCD_WIDTH - 40, 6, bms.charge_percentage);
 	UG_FillFrame(0, STATUS_H - 3, LCD_WIDTH - 1, STATUS_H - 1, accent);
 }
 
 static void update_status_bar(void) {
-	draw_battery_icon(LCD_WIDTH - 40, 6, bms.Accumulator.charge_percentage);
+	draw_battery_icon(LCD_WIDTH - 40, 6, bms.charge_percentage);
 }
 
 static void draw_footer(const char *left, const char *right) {
@@ -371,10 +371,16 @@ static void update_charge(uint8_t output_active) {
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
 
 	sprintf(text, "I %4d mA   %3u%%   %02u:%02u:%02u    ",
-			bms.CurrentRegisters.CC1Current, bms.Accumulator.charge_percentage,
+			bms.CurrentRegisters.CC1Current, bms.charge_percentage,
 			(unsigned) (elapsed_s / 3600), (unsigned) ((elapsed_s / 60) % 60),
 			(unsigned) (elapsed_s % 60));
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	int32_t debug_value = ctrl_main_handle.duty;
+	sprintf(text, "%3d.%03d", (int) (debug_value / 1000),
+			(int) ((debug_value < 0 ?
+					-debug_value : debug_value) % 1000));
+	LCD_PutStr(16, SECOND_Y + 54, text, FONT_SMALL, C_WHITE, C_BLACK);
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -428,7 +434,7 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 		update_active_output(mode, output_active,
 				adc_data.converted.i_out_ext_mA / 10,
 				adc_data.converted.v_term_ext_mv_filt,
-				ctrl_main_handle.current_reference_mA, 0);
+				ctrl_main_handle.current_reference_mA, ctrl_main_handle.duty);
 		break;
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:

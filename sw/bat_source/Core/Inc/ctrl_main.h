@@ -34,6 +34,28 @@ typedef struct{
 
 } ctrl_main_t;
 
+/**
+ * One entry per tunable PID control loop: the live controller instance, the
+ * EEPROM-backed calibration fields it's saved to/loaded from, its default
+ * gains and (fixed, non-tunable) duty saturation limits, and a CLI-facing
+ * name. ctrl_main_init() and the CLI's setPI/saveEEPROM/readEEPROM commands
+ * all iterate ctrl_pid_table instead of hand-listing each controller, so
+ * adding a new tunable loop only means adding one row here.
+ */
+typedef struct {
+	PID_controller_t *ctrl;
+	float *cal_p;
+	float *cal_i;
+	float default_p;
+	float default_i;
+	float sat_high;
+	float sat_low;
+	const char *name;
+} ctrl_pid_entry_t;
+
+#define CTRL_PID_TABLE_LEN 5
+extern const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN];
+
 void ctrl_main_init(void);
 void ctrl_main_start_ctrl(ctrl_mode_t mode);
 void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data);

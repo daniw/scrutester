@@ -65,10 +65,6 @@ extern ADS131M04_handle ext_adc;
 extern ctrl_main_t ctrl_main_handle;
 extern I2C_HandleTypeDef *i2c_handle;
 extern w25n01gv_handle flash;
-extern PID_controller_t ctrl_pi_voltage_buck;
-extern PID_controller_t ctrl_pi_voltage_boost;
-extern PID_controller_t ctrl_pi_current;
-extern PID_controller_t ctrl_pi_boost_iout_limit;
 
 // Uart handling
 UART_HandleTypeDef *cli_huart;
@@ -212,7 +208,7 @@ const char *cmd_arg_str[] = {
 		"writeFlash [address] [size] [data]",
 		"testFlash",
 		"state [new state]",
-		"setPI [ID 0=Buck,1=Boost,2=Current,3=BoostIoutLimit] [P Gain] [I Gain]",
+		"setPI [ID 0=Buck,1=Boost,2=Current,3=BoostIoutLimit,4=ChargeCurrent] [P Gain] [I Gain]",
 		"pRTC",
 		"setRTC [year] [month] [day] [hour] [minute] [second] {weekday}",
 		"testLCD",
@@ -564,14 +560,11 @@ void cmd_saveEEPROM(void) {
 	config_store.calibration.i_iso_ext_offset  = adc_data.i_iso_ext_offset;
 	config_store.calibration.i_iso_ext_gain    = adc_data.i_iso_ext_gain;
 
-	config_store.calibration.voltage_buck_p  = ctrl_pi_voltage_buck.P_gain;
-	config_store.calibration.voltage_buck_i  = ctrl_pi_voltage_buck.I_gain;
-	config_store.calibration.voltage_boost_p = ctrl_pi_voltage_boost.P_gain;
-	config_store.calibration.voltage_boost_i = ctrl_pi_voltage_boost.I_gain;
-	config_store.calibration.current_p       = ctrl_pi_current.P_gain;
-	config_store.calibration.current_i       = ctrl_pi_current.I_gain;
-	config_store.calibration.boost_iout_limit_p = ctrl_pi_boost_iout_limit.P_gain;
-	config_store.calibration.boost_iout_limit_i = ctrl_pi_boost_iout_limit.I_gain;
+	for (int i = 0; i < CTRL_PID_TABLE_LEN; i++) {
+		const ctrl_pid_entry_t *e = &ctrl_pid_table[i];
+		*e->cal_p = e->ctrl->P_gain;
+		*e->cal_i = e->ctrl->I_gain;
+	}
 
 	if (config_store_store() == 0)
 		printf("EEPROM: calibration saved\r\n");
@@ -636,29 +629,14 @@ void cmd_readEEPROM(void) {
 	cli_printFloat(config_store.calibration.i_iso_ext_gain);
 	printf("\r\n");
 
-	printf("Voltage buck  P / I: ");
-	cli_printFloat(config_store.calibration.voltage_buck_p);
-	printf(" / ");
-	cli_printFloat(config_store.calibration.voltage_buck_i);
-	printf("\r\n");
-
-	printf("Voltage boost P / I: ");
-	cli_printFloat(config_store.calibration.voltage_boost_p);
-	printf(" / ");
-	cli_printFloat(config_store.calibration.voltage_boost_i);
-	printf("\r\n");
-
-	printf("Current loop  P / I: ");
-	cli_printFloat(config_store.calibration.current_p);
-	printf(" / ");
-	cli_printFloat(config_store.calibration.current_i);
-	printf("\r\n");
-
-	printf("Boost Iout-limit P / I: ");
-	cli_printFloat(config_store.calibration.boost_iout_limit_p);
-	printf(" / ");
-	cli_printFloat(config_store.calibration.boost_iout_limit_i);
-	printf("\r\n");
+	for (int i = 0; i < CTRL_PID_TABLE_LEN; i++) {
+		const ctrl_pid_entry_t *e = &ctrl_pid_table[i];
+		printf("%-16s P / I: ", e->name);
+		cli_printFloat(*e->cal_p);
+		printf(" / ");
+		cli_printFloat(*e->cal_i);
+		printf("\r\n");
+	}
 }
 
 /**
@@ -1427,19 +1405,11 @@ void cmd_setCtrlGain(void) {
 	id = strtol(arg_locs[1], &end, 10);
 	P = strtof(arg_locs[2], &end);
 	I = strtof(arg_locs[3], &end);
-	if (id == 0) {
-		ctrl_pi_voltage_buck.P_gain = P;
-		ctrl_pi_voltage_buck.I_gain = I / CTRL_FREQ;
-	}else if (id == 1) {
-			ctrl_pi_voltage_boost.P_gain = P;
-			ctrl_pi_voltage_boost.I_gain = I / CTRL_FREQ;
-	} else if (id == 2) {
-		ctrl_pi_current.P_gain = P;
-		ctrl_pi_current.I_gain = I / CTRL_FREQ;
-
-	} else if (id == 3) {
-		ctrl_pi_boost_iout_limit.P_gain = P;
-		ctrl_pi_boost_iout_limit.I_gain = I / CTRL_FREQ;
+	if (id < CTRL_PID_TABLE_LEN) {
+		ctrl_pid_table[id].ctrl->P_gain = P;
+		ctrl_pid_table[id].ctrl->I_gain = I / CTRL_FREQ;
+	} else {
+		printf("Invalid ID\r\n");
 	}
 }
 

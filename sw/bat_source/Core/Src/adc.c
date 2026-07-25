@@ -941,11 +941,18 @@ void adc_start(void){
 
 }
 
+// Which mode's injected channel is currently configured on hadc5 - both
+// ISOMETER (I_ISO) and CHARGE (I_BAT) share the same injected rank/callback,
+// so HAL_ADCEx_InjectedConvCpltCallback() needs this to know which raw field
+// the conversion result belongs to.
+static statemachine_modes_t adc_injected_mode = STATEMACHINE_IDLE;
+
 void adc_configure_mode(statemachine_modes_t mode) {
 
 	ADC_ChannelConfTypeDef sConfig = { 0 };
 	ADC_InjectionConfTypeDef sConfigInjected = {0};
 
+	adc_injected_mode = mode;
 
 	HAL_ADC_Stop_DMA(&hadc1);
 	HAL_ADC_Stop_DMA(&hadc2);
@@ -1025,11 +1032,32 @@ void adc_configure_mode(statemachine_modes_t mode) {
 
 		break;
 	case STATEMACHINE_MODE_CHARGE:
-		// Charging reuses ctrl_main_ctrl_current() - the same PRIM-driven
-		// current control loop as 10A_OUT - so it needs the identical ADC
-		// trigger setup, not a separate injected channel (an earlier,
-		// incomplete stub set up an unused injected channel here without
-		// ever configuring hadc1-4's trigger source at all).
+		hadc1.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
+		hadc2.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
+		hadc3.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
+		hadc4.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
+		sConfigInjected.InjectedChannel = ADC_CHANNEL_1;
+				  sConfigInjected.InjectedRank = ADC_INJECTED_RANK_1;
+				  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+				  sConfigInjected.InjectedSingleDiff = ADC_SINGLE_ENDED;
+				  sConfigInjected.InjectedOffsetNumber = ADC_OFFSET_NONE;
+				  sConfigInjected.InjectedOffset = 0;
+				  sConfigInjected.InjectedNbrOfConversion = 1;
+				  sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
+				  sConfigInjected.AutoInjectedConv = DISABLE;
+				  sConfigInjected.QueueInjectedContext = DISABLE;
+				  sConfigInjected.ExternalTrigInjecConv = ADC_TRIGGER_HRTIM_SEK;
+				  sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_RISING;
+				  sConfigInjected.InjecOversamplingMode = DISABLE;
+				  if (HAL_ADCEx_InjectedConfigChannel(&hadc5, &sConfigInjected) != HAL_OK)
+				  {
+				    Error_Handler();
+				  }
+				  // Same requirement as ISOMETER above: HAL_ADC_Stop_DMA(&hadc5) at
+				  // the top of this function stops the injected group too, so it
+				  // must be re-armed every time we (re-)enter CHARGE mode.
+				  HAL_ADCEx_InjectedStart_IT(&hadc5);
+				  break;
 	case STATEMACHINE_MODE_10A_OUT:
 		hadc1.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
 		hadc2.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
@@ -1114,12 +1142,17 @@ void adc_convert_data(void){
 
 void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-	// ISOMETER mode injects I_ISO (ADC5, rank 1, see adc_configure_mode()) --
-	// this was the only channel of this callback that was ever actually
-	// wired up on this hardware; the rest below predates the current
-	// refactor and stays commented out/dead.
+	// ISOMETER and CHARGE both inject on ADC5 rank 1 (see
+	// adc_configure_mode()), but onto different pins (I_ISO vs I_BAT), so
+	// the result has to be routed by whichever mode configured the injected
+	// group last - adc_injected_mode tracks that. The rest below predates
+	// the current refactor and stays commented out/dead.
 	if (hadc->Instance == ADC5) {
-		adc_data.raw.i_iso = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
+		if (adc_injected_mode == STATEMACHINE_MODE_ISOMETER) {
+			adc_data.raw.i_iso = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
+		} else if (adc_injected_mode == STATEMACHINE_MODE_CHARGE) {
+			adc_data.raw.i_bat = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
+		}
 	}
 
 	//adc_data.v_in_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);

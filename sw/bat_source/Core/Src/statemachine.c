@@ -180,10 +180,13 @@ void statemachine_step(void) {
 		// CHARGE is auto-entered, not menu/button-selected: whenever idle and
 		// a 15-25V supply is detected at the output with no BMS fault
 		// latched, start charging on our own.
-		/*if (adc_data.converted.v_term >= 15000 && adc_data.converted.v_term <= 25000
-				&& !(bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB)) {
+		if (adc_data.converted.v_term_ext_mv >= CTRL_PARAM_CHARGE_START_VIN_LOW_mV
+				&& adc_data.converted.v_term_ext_mv <= CTRL_PARAM_CHARGE_START_VIN_HIGH_mV
+				&& !(bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB)
+				&& bms.VoltageRegisters.StackVoltage
+						< CTRL_PARAM_CHARGE_END_VOLTAGE_mV - CTRL_PARAM_CHARGE_RESTART_MARGIN_mV) {
 			statemachine_switchfromIdle(STATEMACHINE_MODE_CHARGE);
-		}*/
+		}
 		break;
 
 	case STATEMACHINE_MODE_60V_OUT:
@@ -246,9 +249,20 @@ void statemachine_step(void) {
 		// vs. checking in the fast ADC-ISR-driven control loop.
 		display_update_mode(statemachine_handle.current_mode,
 				statemachine_handle.output_on);
+		if (bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
+			// Reached full: this is the 100% reference point for the
+			// coulomb counter (see BQ76905_updateChargePercentage()).
+			// Reset the hardware accumulator and update the local copy
+			// optimistically - the next EVENT_BMS_TIMER refresh (up to 1s
+			// away) would otherwise show a stale, near-empty percentage
+			// for a moment after a successful full charge.
+			BQ76905_resetChargeAccumulator(&bms);
+			bms.Accumulator.accumulatedCharge = 0;
+			bms.charge_percentage = 100;
+		}
 		if (bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
 				|| bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB
-				|| adc_data.converted.v_term < 14000) {
+				|| adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV) {
 			statemachine_switchtoIdle();
 		}
 		if (esc_button_pressed == 1) {

@@ -38,6 +38,12 @@
 
     void BQ76905_onI2CError(BQ76905_handle* handle);
 
+    /**
+     * Recomputes handle->charge_percentage from the freshly-read
+     * Accumulator.accumulatedCharge and handle->battery_capacity_mAs.
+     */
+    static void BQ76905_updateChargePercentage(BQ76905_handle* handle);
+
 
     /**
      * Defined in bq76905_config.h
@@ -112,7 +118,7 @@ void BQ76905_readAllValues(BQ76905_handle* handle) {
 
 	BQ76905_ReadRamRegister(handle, BQ76905_SUBCOMMAND_PASSQ, (uint8_t*)&handle->Accumulator, 12);
 
-
+	BQ76905_updateChargePercentage(handle);
 }
 
 // Initiates asynchronous read of all cell voltages
@@ -134,6 +140,26 @@ inline void BQ76905_resetAlarmStatus(BQ76905_handle* handle){
 
 inline void BQ76905_resetChargeAccumulator(BQ76905_handle* handle){
 	BQ76905_WriteRamRegister(handle,BQ76905_SUBCOMMAND_RESET_PASSQ, 0, 0);
+}
+
+/**
+ * PASSQ accumulates net charge INTO the pack (positive while charging,
+ * negative while discharging). Called with accumulatedCharge==0 taken to
+ * mean "full" (see BQ76905_resetChargeAccumulator(), called on charge
+ * completion in statemachine.c), percentage is 100 at that reference point
+ * and falls as the pack discharges, clamped to [0,100].
+ */
+static void BQ76905_updateChargePercentage(BQ76905_handle* handle) {
+	if (handle->battery_capacity_mAs == 0)
+		return;
+
+	int64_t pct = 100 + (handle->Accumulator.accumulatedCharge * 100)
+			/ (int64_t) handle->battery_capacity_mAs;
+	if (pct < 0)
+		pct = 0;
+	else if (pct > 100)
+		pct = 100;
+	handle->charge_percentage = (uint8_t) pct;
 }
 
 inline void BQ76905_resetDevice(BQ76905_handle* handle){
@@ -320,11 +346,16 @@ void BQ76905_onI2CComplete(BQ76905_handle* handle) {
 		handle->command_tx2[3] = BQ76905_TRANSFER_BUFFER_LOW;
 		i2c_Write(handle->address, handle->command_tx2, 3, 0,handle, &BQ76905_onI2CError);
 		i2c_Write(handle->address, &handle->command_tx2[3], 1, 0,handle, &BQ76905_onI2CError);
-		i2c_Read(handle->address, (uint8_t*) &handle->Accumulator, sizeof(handle->Accumulator),&BQ76905_onI2CComplete, handle, &BQ76905_onI2CError);
+		// 12, not sizeof(handle->Accumulator): the struct's 8-byte alignment
+		// (forced by the int64_t member) pads sizeof() up to 16, which would
+		// over-read 4 bytes past the real 12-byte PASSQ register into
+		// whatever RAM address follows it on the chip.
+		i2c_Read(handle->address, (uint8_t*) &handle->Accumulator, 12,&BQ76905_onI2CComplete, handle, &BQ76905_onI2CError);
 		break;
 
 	case READ_PASSQ:
 		handle->asyncState = IDLE;
+		BQ76905_updateChargePercentage(handle);
 		break;
 	default:
 		break;
