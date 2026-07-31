@@ -22,7 +22,6 @@
 #include "bq76905.h"
 #include "adc.h"
 #include "ads131m04.h"
-#include "bq76905.h"
 #include "dac.h"
 #include <stdarg.h>
 #include "tim.h"
@@ -218,7 +217,7 @@ const char *cmd_arg_str[] = {
 		"writeFlash [address] [size] [data]",
 		"testFlash",
 		"state [new state: 0-10]",
-		"setPI [ID 0=Buck,1=Boost,2=Current,3=BoostIoutLimit,4=ChargeCurrent] [P Gain] [I Gain]",
+		"setPI [ID] [P Gain] [I Gain]",
 		"pRTC",
 		"setRTC [year] [month] [day] [hour] [minute] [second] {weekday}",
 		"testLCD",
@@ -534,6 +533,12 @@ void cmd_help(void) {
 			if (strcmp(arg_locs[1], cmd_str[i]) == 0) {
 				printf("Usage: \r\n");
 				printf("  %s\r\n", cmd_arg_str[i]);
+				if (strcmp(cmd_str[i], "setPI") == 0) {
+					printf("Valid IDs:\r\n");
+					for (int j = 0; j < CTRL_PID_TABLE_LEN; j++) {
+						printf("  %d = %s\r\n", j, ctrl_pid_table[j].name);
+					}
+				}
 				return;
 			}
 		}
@@ -595,11 +600,14 @@ void cmd_saveEEPROM(void) {
  * silently drops %f support - this avoids depending on it at all.
  */
 static void cli_printFloat(float value) {
-	int32_t whole = (int32_t) value;
-	float frac = value - (float) whole;
-	if (frac < 0)
-		frac = -frac;
-	printf("%ld.%06lu", (long) whole, (unsigned long) (frac * 1000000.0f));
+	int is_negative = value < 0;
+	float abs_value = is_negative ? -value : value;
+	int32_t whole = (int32_t) abs_value;
+	float frac = abs_value - (float) whole;
+	if (is_negative)
+		printf("-%ld.%06lu", (long) whole, (unsigned long) (frac * 1000000.0f));
+	else
+		printf("%ld.%06lu", (long) whole, (unsigned long) (frac * 1000000.0f));
 }
 
 void cmd_readEEPROM(void) {
@@ -876,9 +884,7 @@ void cmd_printBMS(void){
 	  printf("CurrentRegisters.RawCurrent          = 0x%04X%04X\r\n",  (uint16_t)(bms.CurrentRegisters.RawCurrent>>16),(uint16_t)(bms.CurrentRegisters.RawCurrent));
 	  printf("CurrentRegisters.CC2Current          = %d mA\r\n",       bms.CurrentRegisters.CC2Current);
 	  printf("CurrentRegisters.CC1Current          = %d mA\r\n",       bms.CurrentRegisters.CC1Current);
-	  printf("Passed Charge                        = %ld mAs\r\n",     bms.Accumulator.accumulatedCharge);
-	  printf("Passed Charge (low bytes)            = %ld mAs\r\n",     (int32_t)(bms.Accumulator.accumulatedCharge&0xFFFFFFFF));
-	  printf("Passed Charge (high bytes)           = %ld mAs\r\n",     (int32_t)(bms.Accumulator.accumulatedCharge>>32));
+	  printf("Passed Charge                        = %lld mAs\r\n",    (long long) bms.Accumulator.accumulatedCharge);
 	  printf("Passed Time                          = %ld s\r\n",       bms.Accumulator.passedTime/4);
 	  printf("\n");
 	  printf("SystemCtrl.AlarmStatus               = 0x%04X\r\n", bms.SystemCtrl.AlarmStatus);

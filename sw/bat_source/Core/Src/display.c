@@ -164,6 +164,8 @@ static void enter_active_output(statemachine_modes_t mode, const char *big_unit,
 		const char *secondary_label, const char *secondary_unit,
 		const char *setpoint_unit) {
 	const menu_entry_t *entry = menu_entry_for_mode(mode);
+	if (entry == NULL)
+		return;
 
 	draw_status_bar(menu_name_for_mode(mode), entry->accent);
 	draw_output_border(entry->accent, 0);
@@ -185,26 +187,28 @@ static void update_active_output(statemachine_modes_t mode,
 		uint8_t output_active, int32_t big_value_x100,
 		int32_t secondary_value_x1000, uint32_t setpoint_value_x1000,  int32_t debug_value) {
 	const menu_entry_t *entry = menu_entry_for_mode(mode);
+	if (entry == NULL)
+		return;
 
 	draw_output_border(entry->accent, output_active);
 	update_status_bar();
 
-	sprintf(text, "%3d.%02d", (int) (big_value_x100 / 100),
+	snprintf(text, sizeof(text), "%3d.%02d", (int) (big_value_x100 / 100),
 			(int) ((big_value_x100 < 0 ? -big_value_x100 : big_value_x100) % 100));
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
 
-	sprintf(text, "%3d.%03d", (int) (secondary_value_x1000 / 1000),
+	snprintf(text, sizeof(text), "%3d.%03d", (int) (secondary_value_x1000 / 1000),
 			(int) ((secondary_value_x1000 < 0 ?
 					-secondary_value_x1000 : secondary_value_x1000) % 1000));
 	LCD_PutStr(16, SECOND_Y + 36, text, FONT_SMALL, C_WHITE, C_BLACK);
 
 
-	sprintf(text, "%3d.%03d", (int) (debug_value / 1000),
+	snprintf(text, sizeof(text), "%3d.%03d", (int) (debug_value / 1000),
 			(int) ((debug_value < 0 ?
 					-debug_value : debug_value) % 1000));
 	LCD_PutStr(16, SECOND_Y + 54, text, FONT_SMALL, C_WHITE, C_BLACK);
 
-	sprintf(text, "%3u.%03u", (unsigned) (setpoint_value_x1000 / 1000),
+	snprintf(text, sizeof(text), "%3u.%03u", (unsigned) (setpoint_value_x1000 / 1000),
 			(unsigned) (setpoint_value_x1000 % 1000));
 	LCD_PutStr(LCD_WIDTH - 100, SECOND_Y + 36, text, FONT_SMALL, C_WHITE,
 	C_BLACK);
@@ -224,6 +228,8 @@ static int16_t passive_readout_y;
 
 static void enter_passive_readout(statemachine_modes_t mode, const char *unit) {
 	const menu_entry_t *entry = menu_entry_for_mode(mode);
+	if (entry == NULL)
+		return;
 	int16_t value_w = PASSIVE_VALUE_CHARS * UG_GetFontWidth(FONT_HUGE);
 	int16_t unit_w = (int16_t) (strlen(unit) * UG_GetFontWidth(FONT_BIG));
 	int16_t total_w = value_w + PASSIVE_GAP_PX + unit_w;
@@ -243,7 +249,7 @@ static void enter_passive_readout(statemachine_modes_t mode, const char *unit) {
 
 static void update_passive_readout(int32_t value_x100) {
 	update_status_bar();
-	sprintf(text, "%3d.%02d", (int) (value_x100 / 100),
+	snprintf(text, sizeof(text), "%3d.%02d", (int) (value_x100 / 100),
 			(int) ((value_x100 < 0 ? -value_x100 : value_x100) % 100));
 	LCD_PutStr(passive_readout_x, passive_readout_y, text, FONT_HUGE, C_WHITE,
 	C_BLACK);
@@ -255,6 +261,8 @@ static void update_passive_readout(int32_t value_x100) {
 
 static void enter_resistance(statemachine_modes_t mode) {
 	const menu_entry_t *entry = menu_entry_for_mode(mode);
+	if (entry == NULL)
+		return;
 	const char *excitation =
 			(mode == STATEMACHINE_MODE_RESISTANCE_1A) ?
 					"I_set  = 1.000 A" : "I_set  = 1.000 mA";
@@ -289,37 +297,37 @@ static void update_resistance(statemachine_modes_t mode) {
 			(adc_data.r_mOhmx10 > ADC_R_MOHMX10_MAX_VALUE || adc_data.r_mOhmx10 == UINT32_MAX) :
 			(adc_data.r_Ohmx10 == UINT32_MAX);
 	if (over_range) {
-		sprintf(text, " OVER ");
+		snprintf(text, sizeof(text), " OVER ");
 	} else if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: r_mOhmx10 is already mOhm*10. */
-		sprintf(text, "%4u.%01u", (unsigned) (adc_data.r_mOhmx10 / 10),
+		snprintf(text, sizeof(text), "%4u.%01u", (unsigned) (adc_data.r_mOhmx10 / 10),
 				(unsigned) (adc_data.r_mOhmx10 % 10));
 	} else {
 		/* Ohmmeter: reformat the same field as Ohms (mOhm/1000), one decimal digit. */
 		uint32_t ohm_x10 = adc_data.r_Ohmx10;
-		sprintf(text, "%4u.%01u", (unsigned) (ohm_x10 / 10),
+		snprintf(text, sizeof(text), "%4u.%01u", (unsigned) (ohm_x10 / 10),
 				(unsigned) (ohm_x10 % 10));
 	}
 	// ToDo: Remove/mask Debug Values using a define DEBUG
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
 	if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: Take V_sense */
-		sprintf(text, "V_sense = %d uV     ",
+		snprintf(text, sizeof(text), "V_sense = %d uV     ",
 				(int) adc_data.converted.v_sens_ext_uv);
 	} else {
 		/* Ohmmeter: take V_term*/
-		sprintf(text, "V_term = %d mV     ",
+		snprintf(text, sizeof(text), "V_term = %d mV     ",
 				(int) adc_data.converted.v_term_ext_mv);
 	}
 	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, C_WHITE_63, C_BLACK);
 
 	if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: Take V_sense */
-		sprintf(text, "I_meas = %d mA    ",
+		snprintf(text, sizeof(text), "I_meas = %d mA    ",
 				(int) adc_data.converted.i_out_ext_mA);
 	} else {
 		/* Ohmmeter: take V_term*/
-		sprintf(text, "I_meas= %d mA     ",
+		snprintf(text, sizeof(text), "I_meas= %d mA     ",
 				(int) adc_data.converted.i_out_ext_mA);
 	}
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
@@ -331,6 +339,8 @@ static void update_resistance(statemachine_modes_t mode) {
 
 static void enter_isometer(void) {
 	const menu_entry_t *entry = menu_entry_for_mode(STATEMACHINE_MODE_ISOMETER);
+	if (entry == NULL)
+		return;
 
 	draw_status_bar("Isolation Test", entry->accent);
 	draw_output_border(entry->accent, 1);
@@ -342,7 +352,7 @@ static void enter_isometer(void) {
 static void update_isometer(void) {
 	update_status_bar();
 
-	sprintf(text, "Test Voltage: %4u V   ",
+	snprintf(text, sizeof(text), "Test Voltage: %4u V   ",
 			ctrl_main_handle.voltage_iso_reference_V);
 	LCD_PutStr(16, SECOND_Y, text, FONT_TINY, C_WHITE_63, C_BLACK);
 
@@ -352,20 +362,20 @@ static void update_isometer(void) {
 		int32_t r_megaohm_x10 =
 				(int32_t) adc_data.converted.v_term_ext_mv / 100
 						/ adc_data.converted.i_iso_ext_uA;
-		sprintf(text, "%3d.%01d", (int) (r_megaohm_x10 / 10),
+		snprintf(text, sizeof(text), "%3d.%01d", (int) (r_megaohm_x10 / 10),
 				(int) (r_megaohm_x10 % 10));
 	} else {
-		sprintf(text, " OVER");
+		snprintf(text, sizeof(text), " OVER");
 	}
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
 
-	sprintf(text, "Ileak = %d uA     ", (int) adc_data.converted.i_iso_ext_uA);
+	snprintf(text, sizeof(text), "Ileak = %d uA     ", (int) adc_data.converted.i_iso_ext_uA);
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
 
-	sprintf(text, "Vterm = %d V     ", (int) adc_data.converted.v_term_ext_mv_filt/1000);
+	snprintf(text, sizeof(text), "Vterm = %d V     ", (int) adc_data.converted.v_term_ext_mv_filt/1000);
 	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, C_WHITE_63, C_BLACK);
 
-	sprintf(text, "Duty = %3d.%01d  ", (int) ( ctrl_main_handle.duty/ 10),
+	snprintf(text, sizeof(text), "Duty = %3d.%01d  ", (int) ( ctrl_main_handle.duty/ 10),
 			(int) ((ctrl_main_handle.duty < 0 ?
 					-ctrl_main_handle.duty : ctrl_main_handle.duty) % 10));
 	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, C_WHITE_63, C_BLACK);
@@ -377,6 +387,8 @@ static void update_isometer(void) {
 
 static void enter_charge(void) {
 	const menu_entry_t *entry = menu_entry_for_mode(STATEMACHINE_MODE_CHARGE);
+	if (entry == NULL)
+		return;
 
 	draw_status_bar("Charge", entry->accent);
 	draw_output_border(entry->accent, 0);
@@ -387,22 +399,24 @@ static void enter_charge(void) {
 
 static void update_charge(uint8_t output_active) {
 	const menu_entry_t *entry = menu_entry_for_mode(STATEMACHINE_MODE_CHARGE);
+	if (entry == NULL)
+		return;
 	uint32_t elapsed_s = bms.Accumulator.passedTime / 4;
 
 	draw_output_border(entry->accent, output_active);
 	update_status_bar();
 
-	sprintf(text, "%2u.%03u", bms.VoltageRegisters.StackVoltage / 1000,
+	snprintf(text, sizeof(text), "%2u.%03u", bms.VoltageRegisters.StackVoltage / 1000,
 			bms.VoltageRegisters.StackVoltage % 1000);
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
 
-	sprintf(text, "I %4d mA   %3u%%   %02u:%02u:%02u    ",
+	snprintf(text, sizeof(text), "I %4d mA   %3u%%   %02u:%02u:%02u    ",
 			bms.CurrentRegisters.CC1Current, bms.charge_percentage,
 			(unsigned) (elapsed_s / 3600), (unsigned) ((elapsed_s / 60) % 60),
 			(unsigned) (elapsed_s % 60));
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
 	int32_t debug_value = ctrl_main_handle.duty;
-	sprintf(text, "%3d.%03d", (int) (debug_value / 1000),
+	snprintf(text, sizeof(text), "%3d.%03d", (int) (debug_value / 1000),
 			(int) ((debug_value < 0 ?
 					-debug_value : debug_value) % 1000));
 	LCD_PutStr(16, SECOND_Y + 54, text, FONT_SMALL, C_WHITE, C_BLACK);
@@ -517,54 +531,54 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 	draw_footer("ESC: Back", 0);
 
 	if (submenu_index == STATEMACHINE_SETTINGS_MODE_ABOUT) {
-		sprintf(text, "BatSource Firmware");
+		snprintf(text, sizeof(text), "BatSource Firmware");
 		LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, C_WHITE, C_BLACK);
-		sprintf(text, "Built %s %s", __DATE__, __TIME__);
+		snprintf(text, sizeof(text), "Built %s %s", __DATE__, __TIME__);
 		LCD_PutStr(16, STATUS_H + 34, text, FONT_TINY, C_WHITE_63, C_BLACK);
-		sprintf(text, "HW revision: %u", aux_io_ctrl_readHW_Revision());
+		snprintf(text, sizeof(text), "HW revision: %u", aux_io_ctrl_readHW_Revision());
 		LCD_PutStr(16, STATUS_H + 52, text, FONT_TINY, C_WHITE_63, C_BLACK);
-		sprintf(text, "MCU: STM32G474VET6");
+		snprintf(text, sizeof(text), "MCU: STM32G474VET6");
 		LCD_PutStr(16, STATUS_H + 70, text, FONT_TINY, C_WHITE_63, C_BLACK);
-		sprintf(text, "FW version: %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
+		snprintf(text, sizeof(text), "FW version: %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
 		LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, C_WHITE_63, C_BLACK);
 	}
 }
 
 static void update_settings_bms(void) {
-	sprintf(text, "Safety Alert  AB = 0x%04X",
+	snprintf(text, sizeof(text), "Safety Alert  AB = 0x%04X",
 			(bms.SafetyRegisters.safetyAlertA << 8)
 					| bms.SafetyRegisters.safetyAlertB);
 	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, C_WHITE, C_BLACK);
 
-	sprintf(text, "Safety Status AB = 0x%04X",
+	snprintf(text, sizeof(text), "Safety Status AB = 0x%04X",
 			(bms.SafetyRegisters.safetyStatusA << 8)
 					| bms.SafetyRegisters.safetyStatusB);
 	LCD_PutStr(16, STATUS_H + 24, text, FONT_TINY, C_WHITE, C_BLACK);
 
-	sprintf(text, "Cell = %u %u %u %u mV",
+	snprintf(text, sizeof(text), "Cell = %u %u %u %u mV",
 			bms.CellVoltageRegisters.CellVoltages[0],
 			bms.CellVoltageRegisters.CellVoltages[1],
 			bms.CellVoltageRegisters.CellVoltages[2],
 			bms.CellVoltageRegisters.CellVoltages[3]);
 	LCD_PutStr(16, STATUS_H + 40, text, FONT_TINY, C_WHITE, C_BLACK);
 
-	sprintf(text, "Current = %d mA    ", bms.CurrentRegisters.CC2Current);
+	snprintf(text, sizeof(text), "Current = %d mA    ", bms.CurrentRegisters.CC2Current);
 	LCD_PutStr(16, STATUS_H + 56, text, FONT_TINY, C_WHITE, C_BLACK);
 
-	sprintf(text, "Passed Q = %d mAs    ",
+	snprintf(text, sizeof(text), "Passed Q = %d mAs    ",
 			(int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF));
 	LCD_PutStr(16, STATUS_H + 72, text, FONT_TINY, C_WHITE, C_BLACK);
 
-	sprintf(text, "Passed T = %u s    ",
+	snprintf(text, sizeof(text), "Passed T = %u s    ",
 			(unsigned) (bms.Accumulator.passedTime / 4));
 	LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, C_WHITE, C_BLACK);
 }
 
 static void update_settings_display(void) {
-	sprintf(text, "Ambient light: %u clux    ",
+	snprintf(text, sizeof(text), "Ambient light: %u clux    ",
 			(unsigned) ui_ctrl_readBrightness());
 	LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, C_WHITE, C_BLACK);
-	sprintf(text, "Display brightness: %u%%    ",
+	snprintf(text, sizeof(text), "Display brightness: %u%%    ",
 			(unsigned) ui_ctrl_readBacklightPercent());
 	LCD_PutStr(16, STATUS_H + 40, text, FONT_SMALL, C_WHITE, C_BLACK);
 }
@@ -587,15 +601,15 @@ void display_update_settings_detail(uint8_t submenu_index) {
 /* ---------------------------------------------------------------------- */
 
 static void draw_calibration_live(calibration_channel_t ch, int16_t y) {
-	sprintf(text, "Raw: %-8ld  %ld %s          ", (long) calibration_read_raw(ch),
+	snprintf(text, sizeof(text), "Raw: %-8ld  %ld %s          ", (long) calibration_read_raw(ch),
 			(long) calibration_read_converted(ch), calibration_channel_unit(ch));
 	LCD_PutStr(16, y, text, FONT_SMALL, C_WHITE, C_BLACK);
 
 	if (calibration_has_ext(ch)) {
-		sprintf(text, "Ext: %ld %s          ",
+		snprintf(text, sizeof(text), "Ext: %ld %s          ",
 				(long) calibration_read_ext_converted(ch), calibration_channel_unit(ch));
 	} else {
-		sprintf(text, "                        ");
+		snprintf(text, sizeof(text), "                        ");
 	}
 	LCD_PutStr(16, y + 16, text, FONT_SMALL, C_WHITE, C_BLACK);
 }
@@ -609,7 +623,7 @@ void display_calibration_enter(calibration_channel_t ch, uint8_t ui_state) {
 		draw_footer("ESC: Back", "OK: Select");
 		break;
 	case 1:
-		sprintf(text, "Calibration: %s", calibration_channel_name(ch));
+		snprintf(text, sizeof(text), "Calibration: %s", calibration_channel_name(ch));
 		draw_status_bar(text, C_SILVER);
 		LCD_PutStr(16, STATUS_H + 8, "Set input to 0", FONT_SMALL, C_WHITE,
 		C_BLACK);
@@ -618,7 +632,7 @@ void display_calibration_enter(calibration_channel_t ch, uint8_t ui_state) {
 		draw_footer("ESC: Cancel", "OK: Zero");
 		break;
 	case 2:
-		sprintf(text, "Calibration: %s", calibration_channel_name(ch));
+		snprintf(text, sizeof(text), "Calibration: %s", calibration_channel_name(ch));
 		draw_status_bar(text, C_SILVER);
 		LCD_PutStr(16, STATUS_H + 8, "Apply known reference,", FONT_SMALL,
 		C_WHITE, C_BLACK);
@@ -639,7 +653,7 @@ void display_calibration_update(calibration_channel_t ch, uint8_t ui_state,
 			int16_t y = STATUS_H + 8 + i * 20;
 			uint8_t selected = (i == ch);
 
-			sprintf(text, "%-6s (%s)                ",
+			snprintf(text, sizeof(text), "%-6s (%s)                ",
 					calibration_channel_name((calibration_channel_t) i),
 					calibration_channel_unit((calibration_channel_t) i));
 			LCD_PutStr(selected ? 26 : 16, y, text, FONT_TINY, C_WHITE,
@@ -652,7 +666,7 @@ void display_calibration_update(calibration_channel_t ch, uint8_t ui_state,
 		draw_calibration_live(ch, STATUS_H + 60);
 		break;
 	case 2:
-		sprintf(text, "Reference: %ld %s        ", (long) reference_value,
+		snprintf(text, sizeof(text), "Reference: %ld %s        ", (long) reference_value,
 				calibration_channel_unit(ch));
 		LCD_PutStr(16, STATUS_H + 52, text, FONT_SMALL, C_WHITE, C_BLACK);
 		draw_calibration_live(ch, STATUS_H + 76);

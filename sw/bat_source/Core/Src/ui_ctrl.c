@@ -78,6 +78,10 @@ void ui_ctrl_Dim(void) {
 }
 
 uint8_t ui_ctrl_readBacklightPercent(void) {
+	if (backlight_current_x0_1mA <= BACKLIGHT_CURRENT_MIN)
+		return 0;
+	if (backlight_current_x0_1mA >= BACKLIGHT_CURRENT_MAX)
+		return 100;
 	return (uint8_t) (((uint32_t) (backlight_current_x0_1mA - BACKLIGHT_CURRENT_MIN) * 100)
 			/ (BACKLIGHT_CURRENT_MAX - BACKLIGHT_CURRENT_MIN));
 }
