@@ -185,27 +185,35 @@ void ctrl_main_stop_control(void) {
 /**
  * Main control task
  */
-void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data) {
+/*
+ * Takes the converted measurements directly rather than the whole
+ * ADC_MEAS_DATA. The caller (HAL_ADC_ConvCpltCallback() in adc.c) hands over
+ * an ISR-private set of freshly converted values whose enclosing struct has
+ * no populated raw/calibration members, so narrowing the parameter here makes
+ * reaching for one a compile error instead of a silent read of zeros in the
+ * control loop.
+ */
+void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 	switch (ctrl_main_handle.mode) {
 
 	case CTRL_MODE_60V:
-		ctrl_main_ctrl_voltage_boost(adc_data->converted.v_out,
-				adc_data->converted.v_term_ext_mv, adc_data->converted.i_out_ext_mA);
+		ctrl_main_ctrl_voltage_boost(meas->v_out,
+				meas->v_term_ext_mv, meas->i_out_ext_mA);
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
-		ctrl_main_ctrl_voltage_buck(adc_data->converted.v_out,
-				adc_data->converted.v_out);
+		ctrl_main_ctrl_voltage_buck(meas->v_out,
+				meas->v_out);
 		break;
 	case CTRL_MODE_10A:
-		ctrl_main_ctrl_current(adc_data->converted.i_out,
-				adc_data->converted.i_out_ext_mA);
+		ctrl_main_ctrl_current(meas->i_out,
+				meas->i_out_ext_mA);
 
 		break;
 	case CTRL_MODE_ISOMETER:
-		ctrl_main_ctrl_voltage_hv(adc_data->converted.v_hv,
-				adc_data->converted.v_term_ext_mv,
-				adc_data->converted.i_iso_ext_uA);
+		ctrl_main_ctrl_voltage_hv(meas->v_hv,
+				meas->v_term_ext_mv,
+				meas->i_iso_ext_uA);
 		break;
 	case CTRL_MODE_CHARGE:
 		/* CC/CV: hold charge current until the end voltage is reached, then
@@ -216,7 +224,7 @@ void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data) {
 		 * (set up in ctrl_main_start_ctrl()), unlike ctrl_main_ctrl_voltage_buck()
 		 * which drives HRTIM_CHANNEL_PRIM. */
 		if (!ctrl_main_handle.charge_cv_phase
-				&& adc_data->converted.v_in >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
+				&& meas->v_in >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
 			ctrl_main_handle.charge_cv_phase = 1;
 			// Bumpless transfer: seed the CV loop's integrator from the CC
 			// loop's last output duty, so the switchover doesn't jerk the
@@ -226,10 +234,10 @@ void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data) {
 		}
 
 		if (!ctrl_main_handle.charge_cv_phase)
-			ctrl_main_ctrl_charge_current(-adc_data->converted.i_out,
-					-adc_data->converted.i_out_ext_mA);
+			ctrl_main_ctrl_charge_current(-meas->i_out,
+					-meas->i_out_ext_mA);
 		else
-			ctrl_main_ctrl_charge_voltage(adc_data->converted.v_in,
+			ctrl_main_ctrl_charge_voltage(meas->v_in,
 					bms.VoltageRegisters.StackVoltage);
 		break;
 

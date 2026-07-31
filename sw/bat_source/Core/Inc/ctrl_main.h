@@ -61,7 +61,7 @@ extern const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN];
 
 void ctrl_main_init(void);
 void ctrl_main_start_ctrl(ctrl_mode_t mode);
-void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data);
+void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas);
 void ctrl_main_stop_control(void);
 void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count);
 ctrl_mode_t statemachine_mode_to_ctrl_mode(statemachine_modes_t mode);

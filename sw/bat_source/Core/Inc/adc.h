@@ -106,56 +106,77 @@ void MX_ADC5_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 
+// adc_data.raw is a DMA destination (see HAL_ADC_Start_DMA() calls in adc.c)
+// and the injected channels (i_iso/i_bat) are written from ISR context
+// (HAL_ADCEx_InjectedConvCpltCallback()) -- both write it fully asynchronously
+// to any main-context code reading it (adc_convert_data(), CLI commands,
+// etc.). Without volatile, the compiler is free to cache a raw.* read across
+// a whole function at -Os and never observe an update; volatile forces every
+// access back to memory.
+typedef struct  {
+	volatile uint16_t v_in;		        // ADC3_IN3
+	volatile uint16_t v_hv;              // ADC4_IN5
+	volatile uint16_t v_term;            // ADC2_IN2
+	volatile uint16_t i_out;             // ADC1_IN1
+	volatile uint16_t i_iso;             // ADC5_IN2
+	volatile uint16_t v_out;             // ADC4_IN2
+	volatile uint16_t i_bat;             // ADC5_IN1
+
+	volatile uint16_t v_3v3; 		    // ADC5_IN6
+	volatile uint16_t temp_sec;      	// ADC5_IN7
+	volatile uint16_t v_3v3a;           	// ADC5_IN8
+	volatile uint16_t temp_trafo;   		// ADC5_IN9
+	volatile uint16_t temp_current;      // ADC5_IN12
+	volatile uint16_t temp_prim;         // ADC5_IN13
+	volatile uint16_t v_15v;             // ADC5_IN14
+	volatile uint16_t v_vcc;             // ADC5_IN15
+	volatile uint16_t v_5v;              // ADC5_IN16
+	volatile uint16_t int_temp;          // ADC5
+	volatile uint16_t v_bat;             // ADC5
+	volatile uint16_t v_ref_int;         // ADC5
+} ADC_RAW_DATA;
+
+// Holds adc_data.converted's field set. Two distinct instances of this type
+// exist (see adc.c): one is ISR-private and is what adc_convert_fast_data()
+// (called from HAL_ADC_ConvCpltCallback()) actually writes every ADC
+// interrupt -- ctrl_main_ctrl() reads that instance directly, in the same
+// ISR, so its control loop always sees this tick's fresh values. The other is
+// ADC_MEAS_DATA.converted below, which main context (display_*(), CLI
+// commands, protection_update(), adc_convert_data()) reads; it is only ever
+// updated as a whole via adc_snapshot_converted()'s critical-section copy
+// from the ISR-private instance, so main context always sees a coherent,
+// same-instant set of fields instead of a torn mix of two samples.
 typedef struct {
-	struct  {
-		uint16_t v_in;		        // ADC3_IN3
-		uint16_t v_hv;              // ADC4_IN5
-		uint16_t v_term;            // ADC2_IN2
-		uint16_t i_out;             // ADC1_IN1
-		uint16_t i_iso;             // ADC5_IN2
-		uint16_t v_out;             // ADC4_IN2
-		uint16_t i_bat;             // ADC5_IN1
+	int32_t  v_in;		        // ADC3_IN3
+	int32_t  v_hv;              // ADC4_IN5
+	int32_t  v_term;            // ADC2_IN2
+	int16_t  i_out;             // ADC1_IN1
+	int16_t  i_iso;             // ADC5_IN2
+	int32_t  v_out;             // ADC4_IN2
+	int16_t  i_bat;             // ADC5_IN1
 
-		uint16_t v_3v3; 		    // ADC5_IN6
-		uint16_t temp_sec;      	// ADC5_IN7
-		uint16_t v_3v3a;           	// ADC5_IN8
-		uint16_t temp_trafo;   		// ADC5_IN9
-		uint16_t temp_current;      // ADC5_IN12
-		uint16_t temp_prim;         // ADC5_IN13
-		uint16_t v_15v;             // ADC5_IN14
-		uint16_t v_vcc;             // ADC5_IN15
-		uint16_t v_5v;              // ADC5_IN16
-		uint16_t int_temp;          // ADC5
-		uint16_t v_bat;             // ADC5
-		uint16_t v_ref_int;         // ADC5
-	} raw;
-	struct {
-		int32_t  v_in;		        // ADC3_IN3
-		int32_t  v_hv;              // ADC4_IN5
-		int32_t  v_term;            // ADC2_IN2
-		int16_t  i_out;             // ADC1_IN1
-		int16_t  i_iso;             // ADC5_IN2
-		int32_t  v_out;             // ADC4_IN2
-		int16_t  i_bat;             // ADC5_IN1
+	uint16_t v_3v3; 		    // ADC5_IN6
+	int16_t  temp_sec;      	// ADC5_IN7
+	uint16_t v_3v3a;           	// ADC5_IN8
+	int16_t  temp_trafo;   		// ADC5_IN9
+	int16_t  temp_current;      // ADC5_IN12
+	int16_t  temp_prim;         // ADC5_IN13
+	uint16_t v_15v;             // ADC5_IN14
+	uint16_t v_vcc;             // ADC5_IN15
+	uint16_t v_5v;              // ADC5_IN16
+	int16_t  int_temp;          // ADC5
+	uint16_t v_bat;             // ADC5
+	uint16_t v_ref_int;         // ADC5
+    int32_t  v_term_ext_mv;		// Extern ADC 1
+    int32_t  v_term_ext_mv_filt; // Extern ADC 1
+    int32_t  i_out_ext_mA;		// Extern ADC 2
+    int32_t  v_sens_ext_uv;      // Extern ADC 3
+    int32_t  i_iso_ext_uA;		// Extern ADC 4
+} ADC_CONVERTED_DATA;
 
-		uint16_t v_3v3; 		    // ADC5_IN6
-		int16_t  temp_sec;      	// ADC5_IN7
-		uint16_t v_3v3a;           	// ADC5_IN8
-		int16_t  temp_trafo;   		// ADC5_IN9
-		int16_t  temp_current;      // ADC5_IN12
-		int16_t  temp_prim;         // ADC5_IN13
-		uint16_t v_15v;             // ADC5_IN14
-		uint16_t v_vcc;             // ADC5_IN15
-		uint16_t v_5v;              // ADC5_IN16
-		int16_t  int_temp;          // ADC5
-		uint16_t v_bat;             // ADC5
-		uint16_t v_ref_int;         // ADC5
-	    int32_t  v_term_ext_mv;		// Extern ADC 1
-	    int32_t  v_term_ext_mv_filt; // Extern ADC 1
-	    int32_t  i_out_ext_mA;		// Extern ADC 2
-	    int32_t  v_sens_ext_uv;      // Extern ADC 3
-	    int32_t  i_iso_ext_uA;		// Extern ADC 4
-	} converted;
+typedef struct {
+	ADC_RAW_DATA raw;
+	ADC_CONVERTED_DATA converted;
 
 
 	uint16_t v_in_offset;
@@ -203,6 +224,13 @@ void adc_start(void);
 void adc_convert_fast_data(void);
 void adc_convert_data(void);
 void adc_configure_mode(statemachine_modes_t mode);
+// Takes a coherent, race-free copy of the ISR-written "converted" fields into
+// adc_data.converted, under a short save/restore critical section. Must be
+// called once per statemachine_step() tick, before adc_convert_data(), so
+// every main-context reader (adc_convert_data() itself, protection_update(),
+// display_*(), CLI commands) sees one consistent snapshot instead of racing
+// the ADC ISR. See adc.c for the field-ownership rationale.
+void adc_snapshot_converted(void);
 
 
 /* USER CODE END Prototypes */

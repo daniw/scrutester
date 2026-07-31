@@ -146,6 +146,14 @@ static void statemachine_step_calibration(void) {
 void statemachine_step(void) {
 	uint8_t temp;
 
+	// Coherent, race-free copy of the ISR-written "converted" fast fields
+	// into adc_data.converted, taken once per tick under a short critical
+	// section (see adc_snapshot_converted()). Must run before
+	// adc_convert_data(), since that also reads some of those fast fields
+	// (i_out_ext_mA/v_sens_ext_uv/v_term_ext_mv) while computing r_mOhmx10 /
+	// r_Ohmx10, and everything below this line (protection_update(),
+	// display_*()) relies on adc_data.converted being self-consistent too.
+	adc_snapshot_converted();
 	adc_convert_data();
 	protection_update(statemachine_handle.current_mode);
 	ui_ctrl_step();

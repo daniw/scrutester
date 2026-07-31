@@ -29,6 +29,25 @@
 extern ADC_MEAS_DATA adc_data;
 
 volatile uint8_t adc_interrupt_cnt;
+
+// ISR-private copy of the converted measurements. adc_convert_fast_data()
+// (ISR context, from HAL_ADC_ConvCpltCallback()) recomputes these every ADC
+// interrupt from adc_data.raw plus adc_data's calibration, and
+// ctrl_main_ctrl() -- called from that same ISR invocation, right after --
+// reads them straight back, so the control loop always sees this tick's
+// fresh values.
+//
+// adc_data.converted, which is what every main-context reader sees, is
+// updated only by adc_snapshot_converted()'s critical-section copy of this,
+// once per statemachine_step() tick. That stops main context and the ISR
+// tearing each other's reads and writes of the same fields, without costing
+// the control loop any freshness.
+//
+// This holds only the converted block, not a whole ADC_MEAS_DATA: the raw
+// and calibration members of a duplicate struct would be permanently zero,
+// and ctrl_main_ctrl() taking a const ADC_CONVERTED_DATA* makes reaching for
+// one a compile error rather than a silent read of zeros in the control loop.
+static ADC_CONVERTED_DATA adc_converted_isr;
 /* USER CODE END 0 */
 
 ADC_HandleTypeDef hadc1;
@@ -1090,22 +1109,48 @@ void adc_configure_mode(statemachine_modes_t mode) {
 }
 
 void adc_convert_fast_data(void){
-	adc_data.converted.v_in   = (adc_data.raw.v_in   - adc_data.v_in_offset  )* ADC_VIN_GAIN_MV;
-	adc_data.converted.v_out  = (adc_data.raw.v_out  - adc_data.v_out_offset )* adc_data.v_out_gain;
-	adc_data.converted.v_term = (adc_data.raw.v_term - adc_data.v_term_offset)* adc_data.v_term_gain;
-	adc_data.converted.v_hv   = (adc_data.raw.v_hv   - adc_data.v_hv_offset  )* adc_data.v_hv_gain;
-	adc_data.converted.i_bat  = (adc_data.raw.i_bat  - adc_data.i_bat_offset )* ADC_IBAT_GAIN_MA;
-	adc_data.converted.i_out  = (adc_data.raw.i_out  - adc_data.i_out_offset ) * adc_data.i_out_gain;
-	adc_data.converted.i_iso  = (adc_data.raw.i_iso  - adc_data.i_iso_offset ) * adc_data.i_iso_gain;
-	adc_data.converted.v_term_ext_mv = (adc_data.ext_adc_data[0] - adc_data.v_term_ext_offset) * adc_data.v_term_ext_gain;
+	// Runs in ISR context (HAL_ADC_ConvCpltCallback()) -- writes the
+	// ISR-private instance only. ctrl_main_ctrl() (called right after, same
+	// ISR) reads this same instance for its control loop. Main context never
+	// touches adc_converted_isr directly; it only ever sees a coherent copy via
+	// adc_snapshot_converted() (see statemachine_step()).
+	adc_converted_isr.v_in   = (adc_data.raw.v_in   - adc_data.v_in_offset  )* ADC_VIN_GAIN_MV;
+	adc_converted_isr.v_out  = (adc_data.raw.v_out  - adc_data.v_out_offset )* adc_data.v_out_gain;
+	adc_converted_isr.v_term = (adc_data.raw.v_term - adc_data.v_term_offset)* adc_data.v_term_gain;
+	adc_converted_isr.v_hv   = (adc_data.raw.v_hv   - adc_data.v_hv_offset  )* adc_data.v_hv_gain;
+	adc_converted_isr.i_bat  = (adc_data.raw.i_bat  - adc_data.i_bat_offset )* ADC_IBAT_GAIN_MA;
+	adc_converted_isr.i_out  = (adc_data.raw.i_out  - adc_data.i_out_offset ) * adc_data.i_out_gain;
+	adc_converted_isr.i_iso  = (adc_data.raw.i_iso  - adc_data.i_iso_offset ) * adc_data.i_iso_gain;
+	adc_converted_isr.v_term_ext_mv = (adc_data.ext_adc_data[0] - adc_data.v_term_ext_offset) * adc_data.v_term_ext_gain;
 	// v_term_ext_mv_filt was previously never assigned (the only write to it was
 	// inside a commented-out legacy callback using a pre-refactor field name),
 	// so Voltmeter/60V readouts that display this field always read zero.
-	adc_data.converted.v_term_ext_mv_filt = (int32_t) ((1.0f - ADC_R_MOHM_FILT_ALPHA)* adc_data.converted.v_term_ext_mv_filt
-			+ ADC_R_MOHM_FILT_ALPHA * adc_data.converted.v_term_ext_mv);
-	adc_data.converted.i_out_ext_mA  = (adc_data.ext_adc_data[1] - adc_data.i_out_ext_offset) * adc_data.i_out_ext_gain;
-	adc_data.converted.v_sens_ext_uv = (adc_data.ext_adc_data[2] - adc_data.v_sens_ext_offset) * adc_data.v_sens_ext_gain;
-	adc_data.converted.i_iso_ext_uA  = (adc_data.ext_adc_data[3] - adc_data.i_iso_ext_offset) * adc_data.i_iso_ext_gain;
+	adc_converted_isr.v_term_ext_mv_filt = (int32_t) ((1.0f - ADC_R_MOHM_FILT_ALPHA)* adc_converted_isr.v_term_ext_mv_filt
+			+ ADC_R_MOHM_FILT_ALPHA * adc_converted_isr.v_term_ext_mv);
+	adc_converted_isr.i_out_ext_mA  = (adc_data.ext_adc_data[1] - adc_data.i_out_ext_offset) * adc_data.i_out_ext_gain;
+	adc_converted_isr.v_sens_ext_uv = (adc_data.ext_adc_data[2] - adc_data.v_sens_ext_offset) * adc_data.v_sens_ext_gain;
+	adc_converted_isr.i_iso_ext_uA  = (adc_data.ext_adc_data[3] - adc_data.i_iso_ext_offset) * adc_data.i_iso_ext_gain;
+}
+
+// Copies the ISR-private "converted" fields (adc_converted_isr, see
+// above) into adc_data.converted -- the copy every main-context reader
+// (adc_convert_data(), protection_update(), display_*(), CLI commands) uses
+// -- as one atomic snapshot. Must run once per statemachine_step() tick,
+// before adc_convert_data(), so main context always sees a self-consistent
+// set of fields from the same sample instant instead of a torn mix of two.
+//
+// Critical section cost: sizeof(ADC_CONVERTED_DATA) is 68 bytes (measured
+// with the project's arm-none-eabi-gcc, including struct padding), copied as
+// a straight struct assignment with interrupts fully disabled and nothing
+// else in the section. At -Os that's on the order of 20-30 word/halfword
+// load-store pairs -- tens of cycles, well under 100ns at the 170MHz core
+// clock -- against the ~40us ADC period, so it cannot cause a missed
+// conversion.
+void adc_snapshot_converted(void) {
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+	adc_data.converted = adc_converted_isr;
+	__set_PRIMASK(primask);
 }
 
 void adc_convert_data(void){
@@ -1206,7 +1251,12 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 		if (adc_interrupt_cnt > 1) {
 			adc_interrupt_cnt = 0;
 			adc_convert_fast_data();
-			ctrl_main_ctrl(&adc_data);
+			// Pass the ISR-private instance, not &adc_data: ctrl_main_ctrl()
+			// only reads ->converted.* (v_out/v_term_ext_mv/i_out_ext_mA/...),
+			// and it needs THIS tick's freshly-computed values, not whatever
+			// main context's adc_snapshot_converted() last copied into
+			// adc_data.converted up to 20ms ago.
+			ctrl_main_ctrl(&adc_converted_isr);
 		}
 	}
 }
