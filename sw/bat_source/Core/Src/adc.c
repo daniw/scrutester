@@ -24,6 +24,7 @@
 #include "ctrl_main.h"
 #include "aux_io_ctrl.h"
 #include "config_store.h"
+#include "dac.h"
 
 extern ADC_MEAS_DATA adc_data;
 
@@ -1085,6 +1086,7 @@ void adc_configure_mode(statemachine_modes_t mode) {
 	HAL_ADC_Start_DMA(&hadc1, (uint32_t*) &adc_data.raw.i_out,1);
 	HAL_ADC_Start_DMA(&hadc2, (uint32_t*) &adc_data.raw.v_term,1);
 	HAL_ADC_Start_DMA(&hadc3, (uint32_t*) &adc_data.raw.v_in,1);
+	HAL_ADC_Start_DMA(&hadc5, (uint32_t*) &adc_data.raw.v_3v3, 12);
 }
 
 void adc_convert_fast_data(void){
@@ -1112,14 +1114,41 @@ void adc_convert_data(void){
 
 
 	//// Calculate resistance
-	if (adc_data.converted.i_out_ext_mA != 0) {
-		adc_data.r_mOhmx10 = 10*adc_data.converted.v_sens_ext_uv / adc_data.converted.i_out_ext_mA ;
-		adc_data.r_Ohmx10 = 10*adc_data.converted.v_term_ext_mv / adc_data.converted.i_out_ext_mA ;
+	// RESISTANCE_1A drives the ~1A test current as a 1Hz/50% duty pulse
+	// (dac_sqwave_start(), started in statemachine_switchfromIdle()), so
+	// i_out_ext_mA is only a valid, settled ~1A reading during the pulse's
+	// "high" half - during "low" it's near-zero/noise, and a fresh ratio
+	// computed from it is garbage. While in RESISTANCE_1A, gate the
+	// calculation to the "high" phase and hold the last good values through
+	// "low" instead of overwriting them. Any other mode (notably
+	// RESISTANCE_1mA/Ohmmeter, which uses a continuous, unpulsed reference)
+	// keeps the original unconditional, per-tick computation unchanged.
+	if (adc_injected_mode != STATEMACHINE_MODE_RESISTANCE_1A || dac_sqwave_is_high()) {
+		if (adc_data.converted.i_out_ext_mA != 0) {
+			uint32_t r_mOhmx10_raw = 10*adc_data.converted.v_sens_ext_uv / adc_data.converted.i_out_ext_mA;
+			if (adc_injected_mode == STATEMACHINE_MODE_RESISTANCE_1A) {
+				if (adc_data.r_mOhmx10 == UINT32_MAX) {
+					// No valid filter history yet - seed with the fresh
+					// sample instead of blending with the sentinel.
+					adc_data.r_mOhmx10 = r_mOhmx10_raw;
+				} else {
+					// One-pole low-pass, fc ~= 2Hz @ 50Hz - see
+					// ADC_R_MOHM_FILT_ALPHA.
+					adc_data.r_mOhmx10 = (uint32_t) (ADC_R_MOHM_FILT_ALPHA * r_mOhmx10_raw
+							+ (1.0f - ADC_R_MOHM_FILT_ALPHA) * adc_data.r_mOhmx10);
+				}
+			} else {
+				adc_data.r_mOhmx10 = r_mOhmx10_raw;
+			}
+			adc_data.r_Ohmx10 = 10*adc_data.converted.v_term_ext_mv / adc_data.converted.i_out_ext_mA ;
+		}
+		else {
+			adc_data.r_mOhmx10 = UINT32_MAX;
+			adc_data.r_Ohmx10 = UINT32_MAX;
+		}
 	}
-	else {
-		adc_data.r_mOhmx10 = UINT32_MAX;
-		adc_data.r_Ohmx10 = UINT32_MAX;
-	}
+	// else: RESISTANCE_1A, pulse currently "low" - hold last computed
+	// r_mOhmx10/r_Ohmx10 rather than recompute from a near-zero current.
 
 	// Calculate / Estimate Temperatures
 	 adc_data.converted.temp_trafo   =  temp_deg_int(adc_data.raw.temp_trafo   >> 4);

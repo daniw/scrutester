@@ -55,6 +55,13 @@ extern ADC_HandleTypeDef hadc5;
 
 #define ADC_IOUT_GAIN_MA   (2500.0f*1000/43.33/4096) // ToDo: Calculate
 #define ADC_IISO_GAIN_MA   0 // ToDo: Calculate
+
+// One-pole low-pass for the milliohm reading (r_mOhmx10), used only while
+// RESISTANCE_1A is active (see adc_convert_data()) - fc ~= 2Hz at the 50Hz
+// statemachine_step() tick rate the gated samples arrive at (Ts = 20ms):
+// alpha = 1 - exp(-2*pi*fc*Ts) = 1 - exp(-2*pi*2*0.02) ~= 0.2222
+#define ADC_R_MOHM_FILT_ALPHA 0.2222f
+
 								// Empirical Value	// Calculated Value 	// Calculation
 #define ADC_EXT_VTERM_GAIN_MV 	0.1431914341802f 		//0.1373291015625 		//(1200.0f/8388608 * 14400/15) (ADC * Resistor divider) Max Value 1152 V
 #define ADC_EXT_VSENS_GAIN_UV	0.7152557f  //(1200.0f/8388608 * 1 * 5)(ADC * ADC GAIN * Resistor divider) Max Value 6V
@@ -119,12 +126,12 @@ typedef struct {
 		uint16_t v_ref_int;         // ADC5
 	} raw;
 	struct {
-		uint16_t v_in;		        // ADC3_IN3
-		uint32_t v_hv;              // ADC4_IN5
+		int32_t  v_in;		        // ADC3_IN3
+		int32_t  v_hv;              // ADC4_IN5
 		int32_t  v_term;            // ADC2_IN2
 		int16_t  i_out;             // ADC1_IN1
 		int16_t  i_iso;             // ADC5_IN2
-		uint32_t v_out;             // ADC4_IN2
+		int32_t  v_out;             // ADC4_IN2
 		int16_t  i_bat;             // ADC5_IN1
 
 		uint16_t v_3v3; 		    // ADC5_IN6
