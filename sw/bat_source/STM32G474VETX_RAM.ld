@@ -39,7 +39,11 @@ ENTRY(Reset_Handler)
 _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 
 _Min_Heap_Size = 0x200; /* required amount of heap */
-_Min_Stack_Size = 0x400; /* required amount of stack */
+/* Kept in step with STM32G474VETX_FLASH.ld -- see the rationale there. The
+ * RAM region is the same 128 KB in both scripts, so 4 KB is equally
+ * affordable here, and a debug-in-RAM build must not be left with a thinner
+ * stack than the flash build it is meant to reproduce. */
+_Min_Stack_Size = 0x1000; /* required amount of stack */
 
 /* Memories definition */
 MEMORY
