@@ -17,4 +17,5 @@ DisplayTest/.settings
 
 Ext_Loader/Debug
 Ext_Loader/Release
-Ext_Loader/External Loader
+Ext_Loader/External Loader Windows
+Ext_Loader/External Loader Linux
