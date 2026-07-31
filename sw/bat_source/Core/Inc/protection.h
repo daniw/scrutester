@@ -2,6 +2,7 @@
 #define INC_PROTECTION_H_
 
 #include <stdint.h>
+#include "statemachine.h"
 
 typedef enum {
     PROTECTION_LEVEL_OK = 0,
@@ -20,7 +21,7 @@ typedef enum {
 } protection_source_t;
 
 void protection_init(void);
-void protection_update(void);   /* call once per ~100ms statemachine tick */
+void protection_update(statemachine_modes_t mode);   /* call once per ~100ms statemachine tick */
 
 protection_level_t protection_get_worst_level(void);
 uint16_t protection_get_warning_mask(void);

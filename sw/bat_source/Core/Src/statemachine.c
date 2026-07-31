@@ -146,7 +146,7 @@ void statemachine_step(void) {
 	uint8_t temp;
 
 	adc_convert_data();
-	protection_update();
+	protection_update(statemachine_handle.current_mode);
 	ui_ctrl_step();
 
 	// Handle Buttons press
@@ -309,27 +309,45 @@ void statemachine_step(void) {
 
 	// Generic protection interlock, runs every tick regardless of mode: force
 	// the converter output off the instant an ERROR-level fault (over-temp,
-	// OVP, OCP) is latched, and automatically resume once it clears -- OUT
-	// modes wait for a fresh OUT press (mirrors their normal button-toggle
-	// behaviour), the auto-started modes just resume on their own.
+	// OVP, OCP) is latched. OUT modes (60V_OUT, 10A_OUT, ISOMETER) then only
+	// resume once the OUT button has been seen released and pressed again --
+	// protection_wait_for_release guards against a press already held down
+	// through the fault clearing, which would otherwise resume instantly
+	// with no fresh press at all. The auto-started modes (CHARGE,
+	// RESISTANCE_1A/1mA) just resume on their own once the fault clears.
 	static uint8_t protection_forced_output_off = 0;
+	static uint8_t protection_wait_for_release = 0;
 	ctrl_mode_t active_ctrl_mode = statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode);
+	uint8_t protection_button_gated_mode =
+			(statemachine_handle.current_mode == STATEMACHINE_MODE_60V_OUT ||
+					statemachine_handle.current_mode == STATEMACHINE_MODE_10A_OUT ||
+					statemachine_handle.current_mode == STATEMACHINE_MODE_ISOMETER);
+	// ISOMETER drives its output enable via GPIO_HV_CTRL_EN, not
+	// GPIO_CONV_CTRL_EN like every other mode - match whichever pin the
+	// mode's own OUT-button toggle uses so force-off/resume stay consistent.
+	uint8_t protection_enable_gpio =
+			(statemachine_handle.current_mode == STATEMACHINE_MODE_ISOMETER) ?
+					GPIO_HV_CTRL_EN : GPIO_CONV_CTRL_EN;
 
 	if (active_ctrl_mode != CTRL_MODE_OFF) {
 		if (protection_get_worst_level() == PROTECTION_LEVEL_ERROR) {
 			if (ctrl_main_handle.mode != CTRL_MODE_OFF) {
 				ctrl_main_stop_control();
-				aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+				aux_io_ctrl_manual_set_io(protection_enable_gpio, 0);
 			}
 			statemachine_handle.output_on = 0;
 			protection_forced_output_off = 1;
+			protection_wait_for_release = 1;
 		} else if (protection_forced_output_off) {
-			if (statemachine_handle.current_mode == STATEMACHINE_MODE_60V_OUT ||
-					statemachine_handle.current_mode == STATEMACHINE_MODE_10A_OUT) {
-				if (out_button_pressed) {
+			if (protection_button_gated_mode) {
+				if (protection_wait_for_release) {
+					if (!out_button_pressed)
+						protection_wait_for_release = 0;
+				} else if (out_button_pressed) {
 					statemachine_handle.output_on = 1;
 					ctrl_main_start_ctrl(active_ctrl_mode);
-					aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
+					aux_io_ctrl_manual_set_io(protection_enable_gpio, 1);
+					protection_forced_output_off = 0;
 				}
 			} else {
 				ctrl_main_start_ctrl(active_ctrl_mode);
@@ -340,11 +358,12 @@ void statemachine_step(void) {
 						statemachine_handle.current_mode == STATEMACHINE_MODE_RESISTANCE_1mA) {
 					aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
 				}
+				protection_forced_output_off = 0;
 			}
-			protection_forced_output_off = 0;
 		}
 	} else {
 		protection_forced_output_off = 0;
+		protection_wait_for_release = 0;
 	}
 }
 

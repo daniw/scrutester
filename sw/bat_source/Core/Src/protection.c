@@ -54,7 +54,7 @@ void protection_init(void) {
 	protection_error_mask = 0;
 }
 
-void protection_update(void) {
+void protection_update(statemachine_modes_t mode) {
 	const int16_t temps[PROTECTION_TEMP_IDX_COUNT] = {
 		[PROTECTION_TEMP_IDX_SEC]     = adc_data.converted.temp_sec,
 		[PROTECTION_TEMP_IDX_TRAFO]   = adc_data.converted.temp_trafo,
@@ -78,7 +78,10 @@ void protection_update(void) {
 	if (HAL_GPIO_ReadPin(OVP_N_GPIO_Port, OVP_N_Pin) == GPIO_PIN_RESET) {
 		error_mask |= (uint16_t) PROTECTION_SRC_OVP;
 	}
-	if (HAL_GPIO_ReadPin(OCP_N_GPIO_Port, OCP_N_Pin) == GPIO_PIN_RESET) {
+	// OCP_N is only meaningful while ISOMETER is driving the HV converter --
+	// it trips spuriously in other modes, so only evaluate it there.
+	if (mode == STATEMACHINE_MODE_ISOMETER
+			&& HAL_GPIO_ReadPin(OCP_N_GPIO_Port, OCP_N_Pin) == GPIO_PIN_RESET) {
 		error_mask |= (uint16_t) PROTECTION_SRC_OCP;
 	}
 
