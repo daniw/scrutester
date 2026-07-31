@@ -98,6 +98,18 @@
 // charge params.
 #define CTRL_PARAM_CHARGE_TAPER_CURRENT_mA 225
 
+// Plausibility window for bms.VoltageRegisters.StackVoltage before it is
+// trusted to gate the CC->CV transition. The BMS is read asynchronously over
+// I2C at ~1Hz, so the field reads 0 before the first successful poll and
+// holds its last value if the bus fails - and a 0 would sit below the end
+// voltage forever, leaving the charger stuck in constant current with the CV
+// phase that is supposed to end it never engaging. A 4-cell LiFePO4 stack
+// below 8V is either deeply discharged (in which case the BMS should have cut
+// the FETs long before) or not a real reading; above 20V is not a 4-cell
+// LiFePO4 stack at all.
+#define CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV 8000
+#define CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV 20000
+
 #define CTRL_PARAM_CHARGE_START_VIN_LOW_mV 15000
 #define CTRL_PARAM_CHARGE_START_VIN_HIGH_mV 24000
 #define CTRL_PARAM_CHARGE_STOP_VIN_mV (CTRL_PARAM_CHARGE_END_VOLTAGE_mV+200)

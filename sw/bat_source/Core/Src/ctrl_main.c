@@ -232,8 +232,30 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 		 * bounce the loop back into CC. Both phases drive HRTIM_CHANNEL_SEK
 		 * (set up in ctrl_main_start_ctrl()), unlike ctrl_main_ctrl_voltage_buck()
 		 * which drives HRTIM_CHANNEL_PRIM. */
-		if (!ctrl_main_handle.charge_cv_phase
-				&& meas->v_in >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
+		/* Latch on the BMS stack voltage, not on meas->v_in. Both used to be
+		 * compared against CTRL_PARAM_CHARGE_END_VOLTAGE_mV -- this latch
+		 * against v_in, and statemachine.c's end-of-cycle test against the
+		 * BMS -- so one threshold was being evaluated from two different
+		 * sensors. v_in is the internal ADC3 channel, and the BMS reading is
+		 * the accurate one, so they could reach the threshold at different
+		 * real pack voltages and CV could engage earlier or later than the
+		 * cycle-end logic assumed. The BMS value is already in scope here:
+		 * ctrl_main_ctrl_charge_voltage() below takes it as its accurate
+		 * I-term input.
+		 *
+		 * Only ~1Hz fresh, which is ample for a one-shot, one-way latch,
+		 * and it is range-checked first: an unpolled or failed read comes
+		 * back as 0, which would sit below the threshold forever and leave
+		 * the charger in constant current with nothing to end it. If the
+		 * reading is not plausible the phase simply does not advance this
+		 * tick, so CC continues under its own current limit until a good
+		 * reading arrives. */
+		uint16_t stack_mV = bms.VoltageRegisters.StackVoltage;
+		uint8_t stack_valid = (stack_mV >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV)
+				&& (stack_mV <= CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV);
+
+		if (!ctrl_main_handle.charge_cv_phase && stack_valid
+				&& stack_mV >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
 			ctrl_main_handle.charge_cv_phase = 1;
 			// Bumpless transfer: seed the CV loop's integrator from the CC
 			// loop's last output duty, so the switchover doesn't jerk the
