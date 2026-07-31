@@ -190,7 +190,7 @@ static int32_t calibration_get_offset(calibration_channel_t ch) {
 	case CAL_CH_V_TERM:
 		return adc_data.v_term_offset;
 	case CAL_CH_V_SENS:
-		return adc_data.v_sens_offset;
+		return adc_data.v_sens_ext_offset;
 	case CAL_CH_V_OUT:
 		return adc_data.v_out_offset;
 	case CAL_CH_V_HV:
@@ -217,8 +217,8 @@ void calibration_zero(calibration_channel_t ch) {
 		config_store.calibration.v_term_ext_offset = raw_ext;
 		break;
 	case CAL_CH_V_SENS:
-		adc_data.v_sens_offset = raw;
-		config_store.calibration.v_sens_offset = raw;
+		adc_data.v_sens_ext_offset = raw;
+		config_store.calibration.v_sens_ext_offset = raw;
 		break;
 	case CAL_CH_V_OUT:
 		adc_data.v_out_offset = (uint16_t) raw;
@@ -239,6 +239,94 @@ void calibration_zero(calibration_channel_t ch) {
 		config_store.calibration.i_iso_offset_ua = (uint16_t) raw;
 		adc_data.i_iso_ext_offset = raw_ext;
 		config_store.calibration.i_iso_ext_offset = raw_ext;
+		break;
+	default:
+		return;
+	}
+	config_store_store();
+}
+
+void calibration_set_offset_raw(calibration_channel_t ch, int32_t raw_offset, const int32_t *raw_ext_offset) {
+	switch (ch) {
+	case CAL_CH_V_TERM:
+		adc_data.v_term_offset = (uint16_t) raw_offset;
+		config_store.calibration.v_term_offset_mv = (uint16_t) raw_offset;
+		if (raw_ext_offset) {
+			adc_data.v_term_ext_offset = *raw_ext_offset;
+			config_store.calibration.v_term_ext_offset = *raw_ext_offset;
+		}
+		break;
+	case CAL_CH_V_SENS:
+		adc_data.v_sens_ext_offset = raw_offset;
+		config_store.calibration.v_sens_ext_offset = raw_offset;
+		break;
+	case CAL_CH_V_OUT:
+		adc_data.v_out_offset = (uint16_t) raw_offset;
+		config_store.calibration.v_out_offset = (uint16_t) raw_offset;
+		break;
+	case CAL_CH_V_HV:
+		adc_data.v_hv_offset = (uint16_t) raw_offset;
+		config_store.calibration.v_hv_offset = (uint16_t) raw_offset;
+		break;
+	case CAL_CH_I_OUT:
+		adc_data.i_out_offset = (uint16_t) raw_offset;
+		config_store.calibration.i_out_offset_ma = (uint16_t) raw_offset;
+		if (raw_ext_offset) {
+			adc_data.i_out_ext_offset = *raw_ext_offset;
+			config_store.calibration.i_out_ext_offset = *raw_ext_offset;
+		}
+		break;
+	case CAL_CH_I_ISO:
+		adc_data.i_iso_offset = (uint16_t) raw_offset;
+		config_store.calibration.i_iso_offset_ua = (uint16_t) raw_offset;
+		if (raw_ext_offset) {
+			adc_data.i_iso_ext_offset = *raw_ext_offset;
+			config_store.calibration.i_iso_ext_offset = *raw_ext_offset;
+		}
+		break;
+	default:
+		return;
+	}
+	config_store_store();
+}
+
+void calibration_set_gain_raw(calibration_channel_t ch, float gain, const float *ext_gain) {
+	switch (ch) {
+	case CAL_CH_V_TERM:
+		adc_data.v_term_gain = gain;
+		config_store.calibration.v_term_gain = gain;
+		if (ext_gain) {
+			adc_data.v_term_ext_gain = *ext_gain;
+			config_store.calibration.v_term_ext_gain = *ext_gain;
+		}
+		break;
+	case CAL_CH_V_SENS:
+		adc_data.v_sens_ext_gain = gain;
+		config_store.calibration.v_sens_ext_gain = gain;
+		break;
+	case CAL_CH_V_OUT:
+		adc_data.v_out_gain = gain;
+		config_store.calibration.v_out_gain = gain;
+		break;
+	case CAL_CH_V_HV:
+		adc_data.v_hv_gain = gain;
+		config_store.calibration.v_hv_gain = gain;
+		break;
+	case CAL_CH_I_OUT:
+		adc_data.i_out_gain = gain;
+		config_store.calibration.i_out_gain = gain;
+		if (ext_gain) {
+			adc_data.i_out_ext_gain = *ext_gain;
+			config_store.calibration.i_out_ext_gain = *ext_gain;
+		}
+		break;
+	case CAL_CH_I_ISO:
+		adc_data.i_iso_gain = gain;
+		config_store.calibration.i_iso_gain = gain;
+		if (ext_gain) {
+			adc_data.i_iso_ext_gain = *ext_gain;
+			config_store.calibration.i_iso_ext_gain = *ext_gain;
+		}
 		break;
 	default:
 		return;
@@ -271,8 +359,8 @@ void calibration_set_gain(calibration_channel_t ch, float reference_value) {
 		config_store.calibration.v_term_ext_gain = ext_gain;
 		break;
 	case CAL_CH_V_SENS:
-		adc_data.v_sens_gain = gain;
-		config_store.calibration.v_sens_gain = gain;
+		adc_data.v_sens_ext_gain = gain;
+		config_store.calibration.v_sens_ext_gain = gain;
 		break;
 	case CAL_CH_V_OUT:
 		adc_data.v_out_gain = gain;

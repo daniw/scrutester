@@ -110,6 +110,8 @@ void cmd_testLCD(void);
 void cmd_control(void);
 void cmd_zeroCal(void);
 void cmd_gainCal(void);
+void cmd_setOffset(void);
+void cmd_setGain(void);
 void cmd_setSerial(void);
 void cmd_flashIcons(void);
 void cmd_printProtection(void);
@@ -145,6 +147,8 @@ void (*cmd_func[])(void) = {
 	cmd_control,
 	cmd_zeroCal,
 	cmd_gainCal,
+	cmd_setOffset,
+	cmd_setGain,
 	cmd_setSerial,
 	cmd_flashIcons,
 	cmd_printProtection,
@@ -182,6 +186,8 @@ const char *cmd_str[] = {
 		"control",
 		"zeroCal",
 		"gainCal",
+		"setOffset",
+		"setGain",
 		"setSerial",
 		"flashIcons",
 		"pProt",
@@ -219,6 +225,8 @@ const char *cmd_arg_str[] = {
 		"control -- arrows=encoder Enter=OK Esc=ESC Space=OUT(toggle) q=quit",
 		"zeroCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO]",
 		"gainCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO] [reference value]",
+		"setOffset [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO] [raw offset] {ext raw offset}",
+		"setGain [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO] [gain] {ext gain}",
 		"setSerial [serial number]",
 		"flashIcons",
 		"pProt",
@@ -552,8 +560,8 @@ void cmd_saveEEPROM(void) {
 	config_store.calibration.i_out_gain       = adc_data.i_out_gain;
 	config_store.calibration.i_iso_offset_ua  = adc_data.i_iso_offset;
 	config_store.calibration.i_iso_gain       = adc_data.i_iso_gain;
-	config_store.calibration.v_sens_offset    = adc_data.v_sens_offset;
-	config_store.calibration.v_sens_gain      = adc_data.v_sens_gain;
+	config_store.calibration.v_sens_ext_offset    = adc_data.v_sens_ext_offset;
+	config_store.calibration.v_sens_ext_gain      = adc_data.v_sens_ext_gain;
 	config_store.calibration.v_out_offset     = adc_data.v_out_offset;
 	config_store.calibration.v_out_gain       = adc_data.v_out_gain;
 	config_store.calibration.v_hv_offset      = adc_data.v_hv_offset;
@@ -610,16 +618,16 @@ void cmd_readEEPROM(void) {
 	cli_printFloat(config_store.calibration.i_iso_gain);
 	printf("\r\n");
 
-	printf("V_SENS offset/gain:  %ld uV / ", (long) config_store.calibration.v_sens_offset);
-	cli_printFloat(config_store.calibration.v_sens_gain);
-	printf("\r\n");
-
 	printf("V_OUT  offset/gain:  %u mV / ", config_store.calibration.v_out_offset);
 	cli_printFloat(config_store.calibration.v_out_gain);
 	printf("\r\n");
 
 	printf("V_HV   offset/gain:  %u mV / ", config_store.calibration.v_hv_offset);
 	cli_printFloat(config_store.calibration.v_hv_gain);
+	printf("\r\n");
+
+	printf("V_SENS_EXT offset/gain:  %ld uV / ", (long) config_store.calibration.v_sens_ext_offset);
+	cli_printFloat(config_store.calibration.v_sens_ext_gain);
 	printf("\r\n");
 
 	printf("V_TERM_EXT off/gain: %ld mV / ", (long) config_store.calibration.v_term_ext_offset);
@@ -688,6 +696,66 @@ void cmd_gainCal(void) {
 	reference_value = strtof(arg_locs[2], &end);
 	calibration_set_gain((calibration_channel_t) id, reference_value);
 	printf("%s gain set (reference %s %s).\r\n", calibration_channel_name((calibration_channel_t) id),
+			arg_locs[2], calibration_channel_unit((calibration_channel_t) id));
+}
+
+/**
+ * Directly sets a channel's offset (raw ADC counts) to an already-known
+ * value, without physically presenting a reference and sampling - e.g.
+ * to restore a previously recorded calibration. Persists immediately
+ * to the EEPROM. The optional third argument also sets the channel's
+ * ext-ADC counterpart offset, for channels that have one (V_TERM/I_OUT/
+ * I_ISO); omit it to leave the ext offset untouched.
+ */
+void cmd_setOffset(void) {
+	uint8_t id;
+	int32_t raw_offset, raw_ext_offset;
+	char *end;
+
+	CLI_CHECK_ARG_CNT_RANGE(2, 3);
+	id = strtoul(arg_locs[1], &end, 10);
+	if (id >= CAL_CH_COUNT) {
+		printf("Invalid channel\r\n");
+		return;
+	}
+	raw_offset = strtol(arg_locs[2], &end, 10);
+	if (number_of_args == 3) {
+		raw_ext_offset = strtol(arg_locs[3], &end, 10);
+		calibration_set_offset_raw((calibration_channel_t) id, raw_offset, &raw_ext_offset);
+	} else {
+		calibration_set_offset_raw((calibration_channel_t) id, raw_offset, NULL);
+	}
+	printf("%s offset set to %ld %s.\r\n", calibration_channel_name((calibration_channel_t) id),
+			(long) raw_offset, calibration_channel_unit((calibration_channel_t) id));
+}
+
+/**
+ * Directly sets a channel's gain to an already-known value, without
+ * physically presenting a reference and sampling - e.g. to restore a
+ * previously recorded calibration. Persists immediately to the EEPROM.
+ * The optional third argument also sets the channel's ext-ADC
+ * counterpart gain, for channels that have one (V_TERM/I_OUT/I_ISO);
+ * omit it to leave the ext gain untouched.
+ */
+void cmd_setGain(void) {
+	uint8_t id;
+	float gain, ext_gain;
+	char *end;
+
+	CLI_CHECK_ARG_CNT_RANGE(2, 3);
+	id = strtoul(arg_locs[1], &end, 10);
+	if (id >= CAL_CH_COUNT) {
+		printf("Invalid channel\r\n");
+		return;
+	}
+	gain = strtof(arg_locs[2], &end);
+	if (number_of_args == 3) {
+		ext_gain = strtof(arg_locs[3], &end);
+		calibration_set_gain_raw((calibration_channel_t) id, gain, &ext_gain);
+	} else {
+		calibration_set_gain_raw((calibration_channel_t) id, gain, NULL);
+	}
+	printf("%s gain set to %s %s/count.\r\n", calibration_channel_name((calibration_channel_t) id),
 			arg_locs[2], calibration_channel_unit((calibration_channel_t) id));
 }
 

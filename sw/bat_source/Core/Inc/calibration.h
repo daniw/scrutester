@@ -53,6 +53,22 @@ void calibration_zero(calibration_channel_t ch);
  *  offset), stores it, then persists to EEPROM. */
 void calibration_set_gain(calibration_channel_t ch, float reference_value);
 
+/** Directly stores a caller-supplied offset (raw ADC counts) for ch,
+ *  skipping the ADC sampling calibration_zero() does, then persists to
+ *  EEPROM. raw_ext_offset additionally sets the ext-ADC counterpart's
+ *  offset (see calibration_has_ext()) when non-NULL; pass NULL to leave
+ *  it untouched, which is also the correct/only choice for channels
+ *  without an ext counterpart. */
+void calibration_set_offset_raw(calibration_channel_t ch, int32_t raw_offset, const int32_t *raw_ext_offset);
+
+/** Directly stores a caller-supplied gain for ch, skipping the ADC
+ *  sampling calibration_set_gain() does, then persists to EEPROM.
+ *  ext_gain additionally sets the ext-ADC counterpart's gain (see
+ *  calibration_has_ext()) when non-NULL; pass NULL to leave it
+ *  untouched, which is also the correct/only choice for channels
+ *  without an ext counterpart. */
+void calibration_set_gain_raw(calibration_channel_t ch, float gain, const float *ext_gain);
+
 /** True for V_TERM/I_OUT/I_ISO: channels that have an external-ADC
  *  (ADS131M04) counterpart which calibration_zero()/calibration_set_gain()
  *  calibrate automatically alongside the internal channel, since both
