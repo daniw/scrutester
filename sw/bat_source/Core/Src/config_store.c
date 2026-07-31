@@ -12,6 +12,7 @@
 #include "eeprom.h"
 #include "adc.h"
 #include "ctrl_param.h"
+#include "ctrl_main.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -80,18 +81,17 @@ static void config_store_setDefaults(void)
 	config_store.calibration.i_iso_ext_offset  = 0;
 	config_store.calibration.i_iso_ext_gain    = ADC_EXT_IISO_GAIN_UA;
 
-	config_store.calibration.voltage_buck_p  = CTRL_PARAM_VOLTAGE_BUCK_P;
-	config_store.calibration.voltage_buck_i  = CTRL_PARAM_VOLTAGE_BUCK_I;
-	config_store.calibration.voltage_boost_p = CTRL_PARAM_VOLTAGE_BOOST_P;
-	config_store.calibration.voltage_boost_i = CTRL_PARAM_VOLTAGE_BOOST_I;
-	config_store.calibration.current_p       = CTRL_PARAM_CURRENT_P;
-	config_store.calibration.current_i       = CTRL_PARAM_CURRENT_I;
-	config_store.calibration.boost_iout_limit_p = CTRL_PARAM_BOOST_IOUT_LIMIT_P;
-	config_store.calibration.boost_iout_limit_i = CTRL_PARAM_BOOST_IOUT_LIMIT_I;
-	config_store.calibration.charge_current_p = CTRL_PARAM_CHARGE_CURRENT_P;
-	config_store.calibration.charge_current_i = CTRL_PARAM_CHARGE_CURRENT_I;
-	config_store.calibration.charge_voltage_p = CTRL_PARAM_CHARGE_VOLTAGE_P;
-	config_store.calibration.charge_voltage_i = CTRL_PARAM_CHARGE_VOLTAGE_I;
+	// ctrl_pid_table (ctrl_main.c) is the single source of truth for PID
+	// defaults: every tunable loop has exactly one row there, so looping
+	// over it here means a newly added row can't be forgotten in this
+	// function the way voltage_hv_p/i and flyback_current_p/i once were.
+	for (int i = 0; i < CTRL_PID_TABLE_LEN; i++)
+	{
+		const ctrl_pid_entry_t *e = &ctrl_pid_table[i];
+		*e->cal_p = e->default_p;
+		*e->cal_i = e->default_i;
+	}
+
 	config_store.calibration.battery_capacity_mAs = CTRL_PARAM_BATTERY_CAPACITY_mAs;
 	config_store.calibration.i_1a_ref_dac_value = CTRL_PARAM_1A_REF_DAC_VALUE;
 }
