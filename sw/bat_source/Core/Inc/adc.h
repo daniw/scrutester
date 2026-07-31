@@ -48,21 +48,24 @@ extern ADC_HandleTypeDef hadc5;
 
 /* USER CODE BEGIN Private defines */
 
-#define ADC_VIN_GAIN_MV    (2500.0f * 21 / 4096)
-#define ADC_VHV_GAIN_MV    (2500.0f * 441 /4096)
-#define ADC_VOUT_GAIN_MV   (2500.0f * 2731/4096/91)
-#define ADC_VTERM_GAIN_MV  (2500.0f * 1001/4096/1.0417f)
 
-#define ADC_IOUT_GAIN_MA   (2500.0f*1000/43.33/4096) // ToDo: Calculate
-#define ADC_IISO_GAIN_MA   0 // ToDo: Calculate
 
 // One-pole low-pass for the milliohm reading (r_mOhmx10), used only while
 // RESISTANCE_1A is active (see adc_convert_data()) - fc ~= 2Hz at the 50Hz
 // statemachine_step() tick rate the gated samples arrive at (Ts = 20ms):
 // alpha = 1 - exp(-2*pi*fc*Ts) = 1 - exp(-2*pi*2*0.02) ~= 0.2222
 #define ADC_R_MOHM_FILT_ALPHA 0.2222f
+#define ADC_R_MOHMX10_MAX_VALUE 5000
 
 								// Empirical Value	// Calculated Value 	// Calculation
+
+#define ADC_VTERM_OFFSET_MV 2006
+#define ADC_VTERM_GAIN_MV  296.444458 //(2500.0f * 1001/4096/1.0417f)
+#define ADC_IOUT_OFFSET  2060
+#define ADC_IOUT_GAIN_MA   (2500.0f*1000/43.33/4096) // ToDo: Calculate
+#define ADC_IISO_OFFSET_UA  0 // ToDo: Measure. See known issue: 129uA offset on isolation current channel
+#define ADC_IISO_GAIN_MA   0 // ToDo: Calculate
+
 #define ADC_EXT_VTERM_GAIN_MV 	0.1431914341802f 		//0.1373291015625 		//(1200.0f/8388608 * 14400/15) (ADC * Resistor divider) Max Value 1152 V
 #define ADC_EXT_VSENS_GAIN_UV	0.7152557f  //(1200.0f/8388608 * 1 * 5)(ADC * ADC GAIN * Resistor divider) Max Value 6V
 #define ADC_EXT_IISO_GAIN_UA 	0.00143051f  //(1200.0f/8388608 * 1 * 0.01) (ADC * ADC Gain * mA/mV)
@@ -75,15 +78,16 @@ extern ADC_HandleTypeDef hadc5;
 #define ADC_GAIN_V_5V          (2500.0f*78/10/65536)
 #define ADC_GAIN_V_BAT         (2500.0f*3/4096)
 
-#define ADC_IBAT_GAIN_MA  0.004761905f //(3300 *200 / 10/4096)
+
+#define ADC_VOUT_OFFSET_MV  0
+#define ADC_VOUT_GAIN_MV   (2500.0f * 2731/4096/91)
+#define ADC_VHV_OFFSET_MV   0
+#define ADC_VHV_GAIN_MV    (2500.0f * 441 /4096)
 
 #define ADC_VIN_OFFSET_MV   0
-#define ADC_VOUT_OFFSET_MV  0
-#define ADC_VTERM_OFFSET_MV 2006
-#define ADC_VHV_OFFSET_MV   0
+#define ADC_VIN_GAIN_MV    (2500.0f * 21 / 4096)
 #define ADC_IBAT_OFFSET_MA  1926
-#define ADC_IOUT_OFFSET  2060
-#define ADC_IISO_OFFSET_UA  0 // ToDo: Measure. See known issue: 129uA offset on isolation current channel
+#define ADC_IBAT_GAIN_MA  0.004761905f //(3300 *200 / 10/4096)
 
 
 #define ADC_POTI_MAX 127
@@ -173,9 +177,8 @@ typedef struct {
     float    i_iso_gain;
     uint16_t temp_trafo_offset;
 
-    int32_t  v_sens_offset;
-    float    v_sens_gain;
-
+    int32_t  v_sens_ext_offset;
+    float    v_sens_ext_gain;
     int32_t  v_term_ext_offset;
     float    v_term_ext_gain;
     int32_t  i_out_ext_offset;

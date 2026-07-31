@@ -913,8 +913,8 @@ void adc_init(int32_t* ext_adc_data)
 	  adc_data.i_out_gain    = config_store.calibration.i_out_gain;
 	  adc_data.i_iso_offset  = config_store.calibration.i_iso_offset_ua;
 	  adc_data.i_iso_gain    = config_store.calibration.i_iso_gain;
-	  adc_data.v_sens_offset = config_store.calibration.v_sens_offset;
-	  adc_data.v_sens_gain   = config_store.calibration.v_sens_gain;
+	  adc_data.v_sens_ext_offset = config_store.calibration.v_sens_ext_offset;
+	  adc_data.v_sens_ext_gain   = config_store.calibration.v_sens_ext_gain;
 	  adc_data.v_out_offset  = config_store.calibration.v_out_offset;
 	  adc_data.v_out_gain    = config_store.calibration.v_out_gain;
 	  adc_data.v_hv_offset   = config_store.calibration.v_hv_offset;
@@ -1101,10 +1101,10 @@ void adc_convert_fast_data(void){
 	// v_term_ext_mv_filt was previously never assigned (the only write to it was
 	// inside a commented-out legacy callback using a pre-refactor field name),
 	// so Voltmeter/60V readouts that display this field always read zero.
-	adc_data.converted.v_term_ext_mv_filt = (int32_t) (0.9f * adc_data.converted.v_term_ext_mv_filt
-			+ 0.1f * adc_data.converted.v_term_ext_mv);
+	adc_data.converted.v_term_ext_mv_filt = (int32_t) ((1.0f - ADC_R_MOHM_FILT_ALPHA)* adc_data.converted.v_term_ext_mv_filt
+			+ ADC_R_MOHM_FILT_ALPHA * adc_data.converted.v_term_ext_mv);
 	adc_data.converted.i_out_ext_mA  = (adc_data.ext_adc_data[1] - adc_data.i_out_ext_offset) * adc_data.i_out_ext_gain;
-	adc_data.converted.v_sens_ext_uv = (adc_data.ext_adc_data[2] - adc_data.v_sens_offset) * adc_data.v_sens_gain;
+	adc_data.converted.v_sens_ext_uv = (adc_data.ext_adc_data[2] - adc_data.v_sens_ext_offset) * adc_data.v_sens_ext_gain;
 	adc_data.converted.i_iso_ext_uA  = (adc_data.ext_adc_data[3] - adc_data.i_iso_ext_offset) * adc_data.i_iso_ext_gain;
 }
 
@@ -1137,6 +1137,8 @@ void adc_convert_data(void){
 					adc_data.r_mOhmx10 = (uint32_t) (ADC_R_MOHM_FILT_ALPHA * r_mOhmx10_raw
 							+ (1.0f - ADC_R_MOHM_FILT_ALPHA) * adc_data.r_mOhmx10);
 				}
+				if(adc_data.r_mOhmx10>ADC_R_MOHMX10_MAX_VALUE)
+					adc_data.r_mOhmx10 = UINT32_MAX;
 			} else {
 				adc_data.r_mOhmx10 = r_mOhmx10_raw;
 			}

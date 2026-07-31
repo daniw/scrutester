@@ -18,7 +18,7 @@
 #define CONFIG_STORE_PSVN 1 // Version of the persistent storage layout
 
 #define CONFIG_STORE_HARDWARE_DATA_SIZE 16
-#define CONFIG_STORE_CALIBRATION_SIZE   128
+#define CONFIG_STORE_CALIBRATION_SIZE   192
 
 /**
  * Factory-programmed hardware identification. Hardware revision is
@@ -61,8 +61,8 @@ typedef struct
 	uint16_t i_iso_offset_ua;
 	float    i_iso_gain;
 
-	int32_t  v_sens_offset;
-	float    v_sens_gain;
+	int32_t  v_sens_ext_offset;
+	float    v_sens_ext_gain;
 	uint16_t v_out_offset;
 	float    v_out_gain;
 	uint16_t v_hv_offset;
@@ -85,6 +85,10 @@ typedef struct
 	float boost_iout_limit_i;
 	float charge_current_p;
 	float charge_current_i;
+	float voltage_hv_p;
+	float voltage_hv_i;
+	float flyback_current_p;
+	float flyback_current_i;
 
 	// Rated pack capacity in mA-seconds - see CTRL_PARAM_BATTERY_CAPACITY_mAs.
 	uint32_t battery_capacity_mAs;

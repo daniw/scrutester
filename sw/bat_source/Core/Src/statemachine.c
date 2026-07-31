@@ -220,7 +220,16 @@ void statemachine_step(void) {
 
 	case STATEMACHINE_MODE_ISOMETER:
 		statemachine_apply_encoder_setpoint();
-		display_update_mode(statemachine_handle.current_mode, 1);
+		if (out_button_pressed == 1) {
+					statemachine_handle.output_on = 1;
+					ctrl_main_start_ctrl(statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode));
+					aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 1);
+				} else if (out_button_pressed == 0) {
+					statemachine_handle.output_on = 0;
+					ctrl_main_stop_control();
+					aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+				}
+		display_update_mode(statemachine_handle.current_mode, statemachine_handle.output_on);
 		if (esc_button_pressed == 1) {
 			statemachine_switchtoIdle();
 		}
@@ -369,9 +378,6 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		ctrl_main_start_ctrl(statemachine_mode_to_ctrl_mode(mode));
 		aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
 		dac_sqwave_start(DAC_CHANNEL_2, config_store.calibration.i_1a_ref_dac_value);
-		// Avoid briefly showing a stale reading from a previous session
-		// before the milliohm filter reseeds (adc_convert_data()).
-		adc_data.r_mOhmx10 = UINT32_MAX;
 		display_enter_mode(mode);
 		break;
 
@@ -387,10 +393,9 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 
 	case STATEMACHINE_MODE_ISOMETER:
 		ui_ctrl_ledOutOn();
-
-		statemachine_handle.current_mode = mode;
 		adc_configure_mode(mode);
-		ctrl_main_start_ctrl(CTRL_MODE_ISOMETER);
+		statemachine_handle.current_mode = mode;
+		statemachine_handle.output_on = 0;
 		display_enter_mode(mode);
 		break;
 

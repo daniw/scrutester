@@ -21,6 +21,7 @@
 #include "aux_io_ctrl.h"
 #include "ui_ctrl.h"
 #include "icon_store.h"
+#include "version.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -256,7 +257,7 @@ static void enter_resistance(statemachine_modes_t mode) {
 	const menu_entry_t *entry = menu_entry_for_mode(mode);
 	const char *excitation =
 			(mode == STATEMACHINE_MODE_RESISTANCE_1A) ?
-					"I = 1.000 A" : "I = 1.000 mA";
+					"I_set  = 1.000 A" : "I_set  = 1.000 mA";
 	const char *unit =
 			(mode == STATEMACHINE_MODE_RESISTANCE_1A) ? "mOhm" : "Ohm";
 
@@ -271,8 +272,8 @@ static void enter_resistance(statemachine_modes_t mode) {
 
 static void update_resistance(statemachine_modes_t mode) {
 	update_status_bar();
-	if (adc_data.r_mOhmx10 == UINT32_MAX || adc_data.r_Ohmx10 == UINT32_MAX ) {
-		sprintf(text, "OVER ");
+	if (adc_data.r_mOhmx10 > 5000 || adc_data.r_Ohmx10 == UINT32_MAX ) {
+		sprintf(text, " OVER ");
 	} else if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: r_mOhmx10 is already mOhm*10. */
 		sprintf(text, "%4u.%01u", (unsigned) (adc_data.r_mOhmx10 / 10),
@@ -283,6 +284,7 @@ static void update_resistance(statemachine_modes_t mode) {
 		sprintf(text, "%4u.%01u", (unsigned) (ohm_x10 / 10),
 				(unsigned) (ohm_x10 % 10));
 	}
+	// ToDo: Remove/mask Debug Values using a define DEBUG
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
 	if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: Take V_sense */
@@ -332,7 +334,7 @@ static void update_isometer(void) {
 		/* R[Mohm] = V / I[uA] (since Mohm = V/uA algebraically); keep one
 		 * decimal digit of precision via a x10 fixed-point intermediate. */
 		int32_t r_megaohm_x10 =
-				(int32_t) ctrl_main_handle.voltage_iso_reference_V * 10
+				(int32_t) adc_data.converted.v_term_ext_mv / 100
 						/ adc_data.converted.i_iso_ext_uA;
 		sprintf(text, "%3d.%01d", (int) (r_megaohm_x10 / 10),
 				(int) (r_megaohm_x10 % 10));
@@ -343,6 +345,14 @@ static void update_isometer(void) {
 
 	sprintf(text, "Ileak = %d uA     ", (int) adc_data.converted.i_iso_ext_uA);
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
+
+	sprintf(text, "Vterm = %d V     ", (int) adc_data.converted.v_term_ext_mv_filt/1000);
+	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, C_WHITE_63, C_BLACK);
+
+	sprintf(text, "Duty = %3d.%01d  ", (int) ( ctrl_main_handle.duty/ 10),
+			(int) ((ctrl_main_handle.duty < 0 ?
+					-ctrl_main_handle.duty : ctrl_main_handle.duty) % 10));
+	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, C_WHITE_63, C_BLACK);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -499,6 +509,8 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 		LCD_PutStr(16, STATUS_H + 52, text, FONT_TINY, C_WHITE_63, C_BLACK);
 		sprintf(text, "MCU: STM32G474VET6");
 		LCD_PutStr(16, STATUS_H + 70, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		sprintf(text, "FW version: %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
+		LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, C_WHITE_63, C_BLACK);
 	}
 }
 

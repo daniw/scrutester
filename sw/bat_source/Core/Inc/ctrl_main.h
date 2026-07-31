@@ -53,7 +53,7 @@ typedef struct {
 	const char *name;
 } ctrl_pid_entry_t;
 
-#define CTRL_PID_TABLE_LEN 5
+#define CTRL_PID_TABLE_LEN 7
 extern const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN];
 
 void ctrl_main_init(void);

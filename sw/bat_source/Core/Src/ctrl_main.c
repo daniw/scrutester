@@ -20,6 +20,8 @@ PID_controller_t ctrl_pi_voltage_boost;
 PID_controller_t ctrl_pi_current;
 PID_controller_t ctrl_pi_boost_iout_limit;
 PID_controller_t ctrl_pi_charge_current;
+PID_controller_t ctrl_pi_voltage_hv;
+PID_controller_t ctrl_pi_hv_iout_limit;
 
 const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
@@ -40,6 +42,12 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = {
 	{ &ctrl_pi_charge_current,   &config_store.calibration.charge_current_p,   &config_store.calibration.charge_current_i,
 	  CTRL_PARAM_CHARGE_CURRENT_P,     CTRL_PARAM_CHARGE_CURRENT_I,
 	  CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH, CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW, "ChargeCurrent" },
+	{ &ctrl_pi_voltage_hv,   &config_store.calibration.voltage_hv_p,   &config_store.calibration.voltage_hv_i,
+	  CTRL_PARAM_HV_VOLTAGE_P,     CTRL_PARAM_HV_VOLTAGE_I,
+	  CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW, "HVVoltage" },
+	{ &ctrl_pi_hv_iout_limit,   &config_store.calibration.flyback_current_p,   &config_store.calibration.flyback_current_i,
+	  CTRL_PARAM_HV_CURRENT_P,     CTRL_PARAM_HV_CURRENT_I,
+	  CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW, "HVCurrent" },
 };
 
 /******************* Function Prototypes **************************/
@@ -51,6 +59,8 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate);
 void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate);
+void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
+		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
 
 /**
  * Initializes the controllers
@@ -66,9 +76,8 @@ void ctrl_main_init(void) {
 		ctrl_PID_controller_init(e->ctrl, *e->cal_p, *e->cal_i, 0, e->sat_high, e->sat_low);
 	}
 
-	// Fixed reference for the boost current-limit loop; not part of the
-	// generic per-entry init since it's not a gain/saturation value.
 	ctrl_pi_boost_iout_limit.ref = CTRL_PARAM_BOOST_IOUT_LIMIT_mA / 1000.0F;
+	ctrl_pi_hv_iout_limit.ref = CTRL_PARAM_HV_IOUT_LIMIT_mA / 1000.0F;
 }
 
 /**
@@ -108,10 +117,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		ctrl_main_apply_reference(mode, 0);
 		ctrl_PID_reset(&ctrl_pi_voltage_buck);
 		ctrl_PID_reset(&ctrl_pi_charge_current);
-		// Pre-load the integrator at the saturation boundary so the very
-		// first cycle's action==sat_limit_high, which (via the inverted
-		// duty math in ctrl_main_ctrl_charge_current()) yields SEK duty
-		// 0 at startup instead of jumping straight to ~sat_limit_high.
+		// Preload for smoother turn on
 		ctrl_pi_charge_current.prev_I_action = CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH;
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
@@ -133,6 +139,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
+		ctrl_main_apply_reference(mode, 0);
 	case CTRL_MODE_10A:
 		ctrl_PID_reset(&ctrl_pi_voltage_buck);
 		ctrl_PID_reset(&ctrl_pi_current);
@@ -144,6 +151,11 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		hrtim_enable(HRTIM_CHANNEL_SEK);
 		break;
 	case CTRL_MODE_ISOMETER:
+		ctrl_PID_reset(&ctrl_pi_voltage_hv);
+		ctrl_PID_reset(&ctrl_pi_hv_iout_limit);
+		hrtim_set_freq(HRTIM_CHANNEL_HV, CTRL_PARAM_SW_FREQ_HV);
+		hrtim_set_duty(HRTIM_CHANNEL_HV, 0);
+		hrtim_enable(HRTIM_CHANNEL_HV);
 		break;
 
 	case CTRL_MODE_OFF:
@@ -172,7 +184,7 @@ void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data) {
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
 		ctrl_main_ctrl_voltage_buck(adc_data->converted.v_out,
-				adc_data->converted.v_term_ext_mv);
+				adc_data->converted.v_out);
 		break;
 	case CTRL_MODE_10A:
 		ctrl_main_ctrl_current(adc_data->converted.i_out,
@@ -180,7 +192,9 @@ void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data) {
 
 		break;
 	case CTRL_MODE_ISOMETER:
-		//ctrl_main_ctrl_hv(adc_data->)
+		ctrl_main_ctrl_voltage_hv(adc_data->converted.v_hv,
+				adc_data->converted.v_term_ext_mv,
+				adc_data->converted.i_iso_ext_uA);
 		break;
 	case CTRL_MODE_CHARGE:
 		/* Simple CC/CV: hold charge current until the end voltage is reached,
@@ -215,10 +229,10 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 	switch (mode) {
 
 	case CTRL_MODE_60V:
-		ctrl_main_handle.voltage_reference_mV = reference_poti_count * 500; // 500mV Auflösung, Max range 63V
+		ctrl_main_handle.voltage_reference_mV = reference_poti_count * 500; // 500mV Resolution, Max range 63V
 		break;
 	case CTRL_MODE_10A:
-		ctrl_main_handle.current_reference_mA = reference_poti_count * 100; // 100mA Auflösung, Max Range 10A
+		ctrl_main_handle.current_reference_mA = reference_poti_count * 100; // 100mA Resolution, Max Range 10A
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 		ctrl_main_handle.voltage_reference_mV = CTRL_PARAM_IDLE_VOLTAGE_1A_mV;
@@ -231,7 +245,6 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 				ctrl_main_iso_values[reference_poti_count & 0x3];
 		break;
 	case CTRL_MODE_CHARGE:
-		/* Charge current/end-voltage are fixed, not user-adjustable via the encoder. */
 		ctrl_main_handle.current_reference_mA = CTRL_PARAM_CHARGE_CURRENT_mA;
 		ctrl_main_handle.voltage_reference_mV = CTRL_PARAM_CHARGE_END_VOLTAGE_mV;
 		break;
@@ -292,10 +305,6 @@ uint8_t duty;
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_boost, voltage_meas_mV / 1000.0F,
 			voltage_meas_accurate_mV / 1000.0F, 0);
 
-	// Current-limit foldback: independent PI loop on the accurate external
-	// ADC current reading, min-selected against the voltage loop's duty
-	// output (standard CV/CC crossover). No anti-windup interaction between
-	// the two loops - each runs and saturates independently.
 	ctrl_PID_controller_execute(&ctrl_pi_boost_iout_limit,
 			current_meas_ext_mA / 1000.0F, current_meas_ext_mA / 1000.0F, 0);
 
@@ -306,8 +315,6 @@ uint8_t duty;
 	// Apply Duty
 	hrtim_set_duty(HRTIM_CHANNEL_SEK, duty_limited);
 	ctrl_main_handle.duty = duty_limited*1000;
-	//if(ctrl_pi_voltage.action > 0.24F || ctrl_pi_voltage.action<0.24F)
-	//	printf("%d\r\n", duty);
 }
 
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
@@ -361,3 +368,37 @@ void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 
 }
 
+void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
+		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA) {
+	uint8_t duty;
+
+	// Startup Ramp
+	if (ctrl_main_handle.ramp > 1.0F) {
+		ctrl_pi_voltage_hv.ref = ctrl_main_handle.voltage_iso_reference_V;
+
+		ctrl_main_handle.ramp = 1.1F;
+	}
+
+	else {
+		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
+
+		ctrl_pi_voltage_hv.ref = (ctrl_main_handle.voltage_iso_reference_V
+				) * ctrl_main_handle.ramp;
+	}
+
+	ctrl_PID_controller_execute(&ctrl_pi_voltage_hv,
+			voltage_meas_mV / 1000.0F, voltage_meas_accurate_mV / 1000.0F, 0);
+
+
+	ctrl_PID_controller_execute(&ctrl_pi_hv_iout_limit,
+			current_meas_iso_uA / 1000000.0F, current_meas_iso_uA / 1000000.0F, 0);
+
+	float duty_limited = ctrl_pi_voltage_hv.action;
+	if (ctrl_pi_hv_iout_limit.action < duty_limited)
+		duty_limited = ctrl_pi_hv_iout_limit.action;
+
+	// Apply Duty
+	hrtim_set_duty(HRTIM_CHANNEL_HV, duty_limited);
+	ctrl_main_handle.duty = duty_limited * 1000;
+
+}
