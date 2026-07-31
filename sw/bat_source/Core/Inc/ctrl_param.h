@@ -70,7 +70,6 @@
 
 #define CTRL_PARAM_CHARGE_CURRENT_mA 1000
 #define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3550*4)
-#define CTRL_PARAM_CHARGE_BO_VOLTAGE_mV (16000)
 
 // Rated pack capacity, in mA-seconds to match the BQ76905 PASSQ
 // accumulator's units (4.5Ah LiFePO4 = 4500mAh * 3600s/h). Stored

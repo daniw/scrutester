@@ -32,10 +32,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "i2c.h"
 #include "driver_pca9554.h"
 #include "aux_io_ctrl.h"
-#include "dac.h"
 #include "bq76905.h"
 #include "bq76905_config.h"
 #include "ctrl_main.h"
@@ -43,10 +41,8 @@
 #include "display.h"
 #include "opt3004.h"
 #include "lp581x.h"
-#include "hrtim.h"
 #include "ui_ctrl.h"
 #include "statemachine.h"
-#include "adc.h"
 #include "cli.h"
 #include "config_store.h"
 #include <stdio.h>
@@ -154,7 +150,6 @@ int main(void)
   /*
    * Setup internal timer structure
    */
-  //gpio_turnOn();
   timer_init();
 
   /*
@@ -211,15 +206,6 @@ int main(void)
    * QSPI flash memory init
    */
   flash_status = w25n01gv_init(&flash, &hqspi1, 1000);
-/*  if (flash_status == HAL_OK){
-    flash_status = w25n01gv_wait_busy(&flash);
-  }
-  if (flash_status == HAL_OK){
-  	flash_status = w25n01gv_buffer_mode_disable(&flash);
-  }
-  if (flash_status == HAL_OK){
-    flash_status = w25n01gv_wait_busy(&flash);
-  }*/
   if (flash_status != W25N01GV_OK) {
     printf("Flash initialisation failed!\r\n");
   }
@@ -241,48 +227,7 @@ int main(void)
   while (1)
   {
 
-
-	  /*
-	   * LED test
-	   */
-	  /*if (led_current < 192)
-	  {
-		  led_current *= 2;
-	  }
-	  else
-	  {
-		  led_current = 3;
-	  }
-	  uint8_t led_currents[] = {0x14, led_current, led_current, led_current};
-	  i2c_WriteBlocking(led_address, led_currents, sizeof(led_currents));
-	  */
-
 	  cli_loop();
-
-
-	  /*
-	   * Ambient light sensor test
-	   */
-
-
-	  /*amb_brightness = opt3004_readLux(&hamb);
-
-	  led_current = amb_brightness/1000;
-
-	  if (led_current > 200)
-	  {
-		  led_current = 200;
-	  }
-	  else if (amb_brightness < 1000)
-	  {
-		  led_current = 2;
-	  }
-	  uint8_t led_currents[] = {0x14, led_current, led_current/2, led_current/2};
-	  lp581x_setAnalogDimming(&hled, 0, led_current);
-	  lp581x_setAnalogDimming(&hled, 0, led_current/2);
-	  lp581x_setAnalogDimming(&hled, 0, led_current/2);
-
-	  i2c_WriteBlocking(led_address, led_currents, sizeof(led_currents));*/
 
 	  e = event_Get();
 	  switch(e.event){
@@ -317,8 +262,6 @@ int main(void)
 	   * Loop delay
 	   */
 	  HAL_Delay(1);
-
-	  //LCD_Test();
 
     /* USER CODE END WHILE */
 
