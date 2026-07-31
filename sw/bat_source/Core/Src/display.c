@@ -272,7 +272,23 @@ static void enter_resistance(statemachine_modes_t mode) {
 
 static void update_resistance(statemachine_modes_t mode) {
 	update_status_bar();
-	if (adc_data.r_mOhmx10 > 5000 || adc_data.r_Ohmx10 == UINT32_MAX ) {
+	/* The two modes read different fields with different over-range
+	 * semantics (see adc_convert_data() in adc.c):
+	 *  - RESISTANCE_1A/Milliohmmeter: r_mOhmx10 is UINT32_MAX when the
+	 *    measured current is zero, and is additionally clamped to
+	 *    UINT32_MAX once it exceeds ADC_R_MOHMX10_MAX_VALUE. That clamp is
+	 *    keyed on adc.c's adc_injected_mode, not on the statemachine mode
+	 *    tested here, and the two can diverge (calibration.c retargets the
+	 *    ADCs without changing the statemachine mode), so the threshold
+	 *    test below is load-bearing rather than merely defensive - do not
+	 *    drop it as redundant with the clamp.
+	 *  - RESISTANCE_1mA/Ohmmeter: r_Ohmx10 is an unclamped ratio, only ever
+	 *    UINT32_MAX via the zero-current sentinel - it must not be gated by
+	 *    the milliohm threshold/value, which belongs to the other mode. */
+	uint8_t over_range = (mode == STATEMACHINE_MODE_RESISTANCE_1A) ?
+			(adc_data.r_mOhmx10 > ADC_R_MOHMX10_MAX_VALUE || adc_data.r_mOhmx10 == UINT32_MAX) :
+			(adc_data.r_Ohmx10 == UINT32_MAX);
+	if (over_range) {
 		sprintf(text, " OVER ");
 	} else if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: r_mOhmx10 is already mOhm*10. */
