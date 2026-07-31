@@ -111,15 +111,22 @@ void i2c_Get(void)
  */
 void i2c_Add(I2C_METHODE methode, uint8_t address, uint32_t numbytes,
 		uint8_t *buf, void* callback, void* argument, void* error_callback, uint8_t wait) {
-	if (queue_Full(i2c_queue, I2C_QUEUE_SIZE)) {
-		//if (wait) {
-			while (queue_Full(i2c_queue, I2C_QUEUE_SIZE))
-				HAL_Delay(1);
+	/*
+	 * i2c_Add() runs in main-loop context, but the queue it manipulates
+	 * (head/tail/i2c_work) is also touched from I2C4 ISR context by
+	 * HAL_I2C_MasterRxCpltCallback()/MasterTxCpltCallback()/ErrorCallback()
+	 * via queue_Pop()/i2c_Get(). Guard the check-push-start sequence with a
+	 * PRIMASK-saving critical section rather than an unconditional
+	 * __enable_irq() at the end, since a bare enable would be wrong if the
+	 * caller itself was already inside a critical section.
+	 */
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
 
-		//} else {
-		//	error_Add(ERROR_IIC_OVF, address);
-		//	return;
-		//}
+	if (queue_Full(i2c_queue, I2C_QUEUE_SIZE)) {
+		__set_PRIMASK(primask);
+		error_Add(ERROR_IIC_OVF, address);
+		return;
 	}
 
 	queue_Set(i2c_queue).methode = methode;
@@ -134,6 +141,8 @@ void i2c_Add(I2C_METHODE methode, uint8_t address, uint32_t numbytes,
 	if (i2c_work == WORK_I2C_IDLE) {
 		i2c_Get();
 	}
+
+	__set_PRIMASK(primask);
 }
 
 /**

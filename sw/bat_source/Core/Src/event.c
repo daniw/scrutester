@@ -8,13 +8,22 @@
 #include "event.h"
 #include "queue.h"
 #include "error.h"
+#include "main.h"
 
 #define EVENT_TIMER_LOAD ((1 << 29) - 1)
 
+/*
+ * head/tail are shared between the producers (I2C and timer ISRs, and
+ * potentially the main loop) and the single consumer (event_Get(), called
+ * from main()). They must be volatile: the consumer's queue_NotEmpty() check
+ * in event_Get() and the producers' overflow check against tail both need to
+ * observe writes made from the other execution context, and nothing else
+ * here forces the compiler to re-read them on every access.
+ */
 struct event_queue{
 	EVENT_STRUCT queue[EVENT_QUEUE_SIZE];
-	uint8_t head;
-	uint8_t tail;
+	volatile uint8_t head;
+	volatile uint8_t tail;
 };
 struct event_queue event_queue;
 
@@ -99,26 +108,64 @@ uint32_t event_Timer(EVENTS e)
  */
 void event_Add(EVENTS e, void* callback, void* argument)
 {
-	int newhead, oldhead;
-	do
+	uint8_t oldhead, newhead;
+	uint32_t primask;
+	uint8_t overflowed = 0;
+
+	/*
+	 * Reserve, fill and publish the slot as one indivisible step.
+	 *
+	 * The obvious lock-free shape -- fill the slot, then CAS head forward --
+	 * is NOT safe here, because reading head and filling the slot are two
+	 * separate steps. A producer can read head = N, be preempted before it
+	 * writes anything, and resume only after a second producer has filled
+	 * slot N and published it. The first producer then overwrites a slot the
+	 * consumer may already be about to read, and retries into the next one:
+	 * the second producer's event is lost and the first producer's is
+	 * delivered twice. Since main() dispatches EVENT_IIC_RX/TX by calling
+	 * e.callback as a function pointer, that is not a benign corruption.
+	 *
+	 * Producers are the I2C and TIM2 ISRs and (potentially) the main loop.
+	 * None of them is the ADC control-loop ISR, and this section is a handful
+	 * of stores, so masking interrupts here costs the 25 kHz control loop
+	 * tens of nanoseconds against its 40 us period. Correctness under
+	 * preemption is worth far more than that, especially now that the
+	 * interrupt priorities are no longer all equal and producers genuinely
+	 * can nest.
+	 *
+	 * PRIMASK is saved and restored rather than unconditionally re-enabled,
+	 * so this composes if a caller is already inside a critical section.
+	 */
+	primask = __get_PRIMASK();
+	__disable_irq();
+
+	oldhead = event_queue.head;
+	newhead = (oldhead + 1) % EVENT_QUEUE_SIZE;
+	if (newhead == event_queue.tail)
 	{
-		oldhead = event_queue.head;
-		newhead = (oldhead + 1) % EVENT_QUEUE_SIZE ;
-		if ((((oldhead + 1) % EVENT_QUEUE_SIZE) == event_queue.tail))
-		{
-			if (event_overflow == 0)
-			{
-				error_Add(ERROR_EVENT_OVF, (event_old << 16) | (e));
-				event_overflow = 1;
-			}
-			return;
-		}
+		overflowed = (event_overflow == 0);
+		event_overflow = 1;
+	}
+	else
+	{
 		event_overflow = 0;
-		newhead = __sync_val_compare_and_swap(&event_queue.head, oldhead, newhead);
-	} while (newhead != oldhead);
-	event_queue.queue[oldhead].event = e;
-	event_queue.queue[oldhead].callback = callback;
-	event_queue.queue[oldhead].argument = argument;
+		event_queue.queue[oldhead].event = e;
+		event_queue.queue[oldhead].callback = callback;
+		event_queue.queue[oldhead].argument = argument;
+		event_queue.head = newhead;
+	}
+
+	__set_PRIMASK(primask);
+
+	/*
+	 * Logged outside the critical section: error_Add() can itself call
+	 * error_Work(), so keeping it out of here bounds how long interrupts
+	 * stay masked.
+	 */
+	if (overflowed)
+	{
+		error_Add(ERROR_EVENT_OVF, (event_old << 16) | (e));
+	}
 }
 
 /**

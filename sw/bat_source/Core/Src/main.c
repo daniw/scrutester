@@ -143,6 +143,15 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   /*
+   * Init the event and error queues. Must run before timer_init()/
+   * timer_start(), since the timer interrupt is the first thing that can
+   * post an event via event_Add(), and before anything that can call
+   * error_Add() (e.g. i2c_Add() below).
+   */
+  event_Init();
+  error_Init();
+
+  /*
    * Setup internal timer structure
    */
   //gpio_turnOn();

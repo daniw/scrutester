@@ -9,6 +9,7 @@
 
 #include "stdint.h"
 #include "queue.h"
+#include "main.h" // CMSIS __get_PRIMASK/__disable_irq/__set_PRIMASK
 
 #define ERROR_QUEUE_SIZE 8
 
@@ -18,14 +19,14 @@ typedef struct
 	uint32_t data;
 	uint32_t date;
 	uint32_t time;
-} ERROR;
+} ERROR_ENTRY; // not "ERROR": CMSIS (via main.h) defines that as an ErrorStatus enumerator
 
 /**
  * Struct for Error Queue
  */
 struct error_queue
 {
-	ERROR queue[ERROR_QUEUE_SIZE];
+	ERROR_ENTRY queue[ERROR_QUEUE_SIZE];
 	uint8_t head;
 	uint8_t tail;
 };
@@ -112,6 +113,22 @@ char error_Work(void)
  */
 void error_Add(ERROR_CODE code, uint32_t data)
 {
+	/*
+	 * Reachable from both main context (eeprom_waitReady(), timer_addTimer(),
+	 * i2c_Add()) and ISR context (event_Add()'s overflow path, itself called
+	 * from the I2C and TIM2 ISRs), so the queue has to be guarded the same
+	 * way the event and I2C queues are. Without this, an error logged from an
+	 * ISR that lands between a main-context queue_Set() and its queue_Push()
+	 * writes the same slot, and one of the two entries is silently lost --
+	 * which is a poor failure mode for the mechanism that exists to record
+	 * failures.
+	 *
+	 * PRIMASK is saved and restored rather than unconditionally re-enabled,
+	 * so this stays correct when called from inside another critical section.
+	 */
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+
 	if (queue_Full(error_queue, ERROR_QUEUE_SIZE))
 	{
 		error_Work();
@@ -121,4 +138,6 @@ void error_Add(ERROR_CODE code, uint32_t data)
 	queue_Set(error_queue).date = 0;// parameter_Get(PARAMETER_RTC_DATE);
 	queue_Set(error_queue).time = 0;//parameter_Get(PARAMETER_RTC_TIME);
 	queue_Push(error_queue, ERROR_QUEUE_SIZE);
+
+	__set_PRIMASK(primask);
 }
