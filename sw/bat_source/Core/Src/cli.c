@@ -23,6 +23,7 @@
 #include "adc.h"
 #include "ads131m04.h"
 #include "bq76905.h"
+#include "dac.h"
 #include <stdarg.h>
 #include "tim.h"
 #include "hrtim.h"
@@ -102,6 +103,7 @@ void cmd_writeFlash(void);
 void cmd_testFlash(void);
 void cmd_changeState(void);
 void cmd_setCtrlGain(void);
+void cmd_set1ARef(void);
 void cmd_printRTC(void);
 void cmd_setRTC(void);
 void cmd_testLCD(void);
@@ -145,7 +147,8 @@ void (*cmd_func[])(void) = {
 	cmd_gainCal,
 	cmd_setSerial,
 	cmd_flashIcons,
-	cmd_printProtection
+	cmd_printProtection,
+	cmd_set1ARef
 };
 
 // List of command names
@@ -181,7 +184,8 @@ const char *cmd_str[] = {
 		"gainCal",
 		"setSerial",
 		"flashIcons",
-		"pProt"
+		"pProt",
+		"set1ARef"
 };
 
 // List of command names including arguments
@@ -192,7 +196,7 @@ const char *cmd_arg_str[] = {
 		"turnOff" ,
 		"pGPIO",
 		"setGPIO [pin] [value]",
-		"setDAC [pin] [value]",
+		"setDAC [value]",
 		"pBMS",
 		"pADC {loops}",
 		"setDuty [channel] [duty]",
@@ -217,7 +221,8 @@ const char *cmd_arg_str[] = {
 		"gainCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO] [reference value]",
 		"setSerial [serial number]",
 		"flashIcons",
-		"pProt"
+		"pProt",
+		"set1ARef [12-bit DAC value]"
 };
 
 int cmd_index;
@@ -637,6 +642,8 @@ void cmd_readEEPROM(void) {
 		cli_printFloat(*e->cal_i);
 		printf("\r\n");
 	}
+
+	printf("I_1A_REF DAC value:  %u\r\n", config_store.calibration.i_1a_ref_dac_value);
 }
 
 /**
@@ -759,15 +766,15 @@ void cmd_setGPIO(void) {
 void cmd_setDAC(void) {
 	uint8_t  pin;
 	uint16_t value;
-	CLI_CHECK_ARG_CNT(2);
+	CLI_CHECK_ARG_CNT(1);
 
 	char *end;
-	pin = strtoul(arg_locs[1], &end, 10);
-	value = strtoul(arg_locs[2], &end, 10);
+	//pin = strtoul(arg_locs[1], &end, 10);
+	value = strtoul(arg_locs[1], &end, 10);
 	//if (pin == 0)
 		//dac_setValueRef(value);
 	//else
-		//dac_setValue1ARef(value);
+		dac_setValue1ARef(value);
 }
 
 void cmd_setRef(void){
@@ -826,7 +833,7 @@ void cmd_printADC() {
 	for(int i=0; i<loopcount; i++)	{
 		adc_convert_data();
 		printf("Triggered ADC Measurements: \r\n");
-		printf(" 	 v_in    (ADC3_IN3 ) : %u \t: %d mV\r\n",  adc_data.raw.v_in   , adc_data.converted.v_in  );
+		printf(" 	 v_in    (ADC3_IN3 ) : %u \t: %ld mV\r\n", adc_data.raw.v_in   , adc_data.converted.v_in  );
 		printf(" 	 v_out   (ADC4_IN2 ) : %u \t: %ld mV\r\n", adc_data.raw.v_out  , adc_data.converted.v_out );
 		printf(" 	 v_term  (ADC2_IN2 ) : %u \t: %ld mV\r\n", adc_data.raw.v_term , adc_data.converted.v_term);
 		printf(" 	 v_hv    (ADC4_IN5 ) : %u \t: %ld mV\r\n", adc_data.raw.v_hv   , adc_data.converted.v_hv  );
@@ -1411,6 +1418,17 @@ void cmd_setCtrlGain(void) {
 	} else {
 		printf("Invalid ID\r\n");
 	}
+}
+
+/**
+ * Sets the RESISTANCE_1A mode's pulsed I_1A_REF DAC level (raw 12-bit
+ * code) for bench calibration. Only updates the live value - run
+ * saveEEPROM afterward to persist it, same as setPI.
+ */
+void cmd_set1ARef(void) {
+	CLI_CHECK_ARG_CNT(1);
+	char *end;
+	config_store.calibration.i_1a_ref_dac_value = strtoul(arg_locs[1], &end, 10);
 }
 
 void cmd_printRTC(void){

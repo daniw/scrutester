@@ -140,6 +140,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_RTC_Init();
   MX_TIM2_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   /*
    * Setup internal timer structure
@@ -150,9 +151,7 @@ int main(void)
   /*
    * DAC test setup
    */
-  uint16_t dac_value = 0;
   dac_setValueRef2(2048);
-  dac_setValue1ARef(dac_value);
 
   /*
    * CLI Setup
@@ -234,24 +233,6 @@ int main(void)
   {
 
 
-	  /*
-	   * DAC Test
-	   */
-	  /*if (dac_value + 256 >= 4096)
-	  {
-		  dac_value = 0;
-	  }
-	  else
-	  {
-		  dac_value += 256;
-	  */
-	  if (dac_value <= 2048) {
-		  dac_value = 3804;
-	  }
-	  else {
-		  dac_value = 2048;
-	  }
-	  dac_setValue1ARef(dac_value);
 	  /*
 	   * LED test
 	   */

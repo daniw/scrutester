@@ -41,8 +41,13 @@
 #define CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH 0.985F
 #define CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW 0.0F
 
-#define CTRL_PARAM_IDLE_VOLTAGE_1A_mV 5000
+#define CTRL_PARAM_IDLE_VOLTAGE_1A_mV 2000
 #define CTRL_PARAM_IDLE_VOLTAGE_1mA_mV 3000
+
+// 12 bit DAC code for the "high" half of the RESISTANCE_1A test-current
+// reference square wave. Placeholder mid-scale value only - needs real
+// bench tuning against the actual 1A current source hardware.
+#define CTRL_PARAM_1A_REF_DAC_VALUE 2048
 
 #define CTRL_PARAM_CHARGE_CURRENT_mA 1000
 #define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3550*4)

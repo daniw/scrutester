@@ -9,6 +9,7 @@
 #include "error.h"
 #include "main.h"
 #include "list.h"
+#include "dac.h"
 
 /**
  * Struct that represents one timer event.
@@ -44,6 +45,14 @@ extern TIM_HandleTypeDef htim2;
  */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+	// TIM6 is a separate, simpler always-running hardware timer that drives
+	// the milliohmmeter mode's DAC square wave - it's not part of the
+	// timer_handle/event-queue system below, so it's dispatched independently.
+	if (htim->Instance == TIM6)
+	{
+		dac_sqwave_tick();
+		return;
+	}
 	if(htim != timer_handle.instance)
 		return;
 	uint8_t i;

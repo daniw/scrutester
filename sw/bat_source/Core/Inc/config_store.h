@@ -88,6 +88,11 @@ typedef struct
 
 	// Rated pack capacity in mA-seconds - see CTRL_PARAM_BATTERY_CAPACITY_mAs.
 	uint32_t battery_capacity_mAs;
+
+	// Raw 12-bit DAC code for the RESISTANCE_1A mode's pulsed I_1A_REF
+	// reference - see CTRL_PARAM_1A_REF_DAC_VALUE. Adaptable via EEPROM so
+	// it can be bench-calibrated instead of staying a fixed placeholder.
+	uint16_t i_1a_ref_dac_value;
 } calibration_t;
 
 typedef struct

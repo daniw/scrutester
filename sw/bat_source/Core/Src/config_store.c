@@ -91,6 +91,7 @@ static void config_store_setDefaults(void)
 	config_store.calibration.charge_current_p = CTRL_PARAM_CHARGE_CURRENT_P;
 	config_store.calibration.charge_current_i = CTRL_PARAM_CHARGE_CURRENT_I;
 	config_store.calibration.battery_capacity_mAs = CTRL_PARAM_BATTERY_CAPACITY_mAs;
+	config_store.calibration.i_1a_ref_dac_value = CTRL_PARAM_1A_REF_DAC_VALUE;
 }
 
 /**

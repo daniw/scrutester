@@ -22,6 +22,8 @@
 #include "ctrl_param.h"
 #include "calibration.h"
 #include "protection.h"
+#include "dac.h"
+#include "config_store.h"
 
 statemachine_t statemachine_handle;
 uint16_t ok_button_pressed;
@@ -165,7 +167,7 @@ void statemachine_step(void) {
 	// Select transition to next state
 	switch (statemachine_handle.current_mode) {
 	case STATEMACHINE_IDLE:
-		temp = (input_encoder_read() / 2) % MENU_ORDER_LENGTH;
+		temp = (input_encoder_read()) % MENU_ORDER_LENGTH;
 		if (temp != statemachine_handle.current_menu_index) {
 			statemachine_handle.current_menu_index = temp;
 			display_show_idle(temp);
@@ -210,7 +212,7 @@ void statemachine_step(void) {
 
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
-		display_update_mode(statemachine_handle.current_mode, 1);
+		display_update_mode(statemachine_handle.current_mode, statemachine_handle.output_on);
 		if (esc_button_pressed == 1) {
 			statemachine_switchtoIdle();
 		}
@@ -239,23 +241,9 @@ void statemachine_step(void) {
 		break;
 
 	case STATEMACHINE_MODE_CHARGE:
-		// Charging starts immediately on auto-detected entry (see the IDLE
-		// case above) and stops the same way, without a manual OK toggle.
-		// End-of-charge, BMS fault, or the external supply being removed
-		// (14V exit vs. the 15V entry threshold - hysteresis so the mode
-		// doesn't flap right at the boundary) all stop charging the same
-		// way. BMS data only refreshes once a second (EVENT_BMS_TIMER)
-		// regardless, so checking it here at the 100ms tick loses nothing
-		// vs. checking in the fast ADC-ISR-driven control loop.
 		display_update_mode(statemachine_handle.current_mode,
 				statemachine_handle.output_on);
 		if (bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
-			// Reached full: this is the 100% reference point for the
-			// coulomb counter (see BQ76905_updateChargePercentage()).
-			// Reset the hardware accumulator and update the local copy
-			// optimistically - the next EVENT_BMS_TIMER refresh (up to 1s
-			// away) would otherwise show a stale, near-empty percentage
-			// for a moment after a successful full charge.
 			BQ76905_resetChargeAccumulator(&bms);
 			bms.Accumulator.accumulatedCharge = 0;
 			bms.charge_percentage = 100;
@@ -273,7 +261,7 @@ void statemachine_step(void) {
 	case STATEMACHINE_MODE_SETTINGS:
 		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_MENU) {
 			temp = STATEMACHINE_SETTINGS_MODE_BMS
-					+ (input_encoder_read() / 2)
+					+ (input_encoder_read())
 							% (STATEMACHINE_SETTINGS_MODE_LENGTH - 1);
 			if (temp != statemachine_handle.current_menu_index) {
 				statemachine_handle.current_menu_index = temp;
@@ -380,6 +368,10 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		adc_configure_mode(mode);
 		ctrl_main_start_ctrl(statemachine_mode_to_ctrl_mode(mode));
 		aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
+		dac_sqwave_start(DAC_CHANNEL_2, config_store.calibration.i_1a_ref_dac_value);
+		// Avoid briefly showing a stale reading from a previous session
+		// before the milliohm filter reseeds (adc_convert_data()).
+		adc_data.r_mOhmx10 = UINT32_MAX;
 		display_enter_mode(mode);
 		break;
 
@@ -464,6 +456,7 @@ void statemachine_switchtoIdle(void) {
 	aux_io_ctrl_set_config(STATEMACHINE_IDLE);
 	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
 	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
+	dac_sqwave_stop(); // no-op unless RESISTANCE_1A left the DAC square wave running
 	input_encoder_reset(62);
 	statemachine_handle.current_mode = STATEMACHINE_IDLE;
 	statemachine_handle.current_menu_index = 0xFF; /* force a redraw on the next tick */
