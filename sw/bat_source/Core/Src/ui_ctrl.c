@@ -84,11 +84,11 @@ uint8_t ui_ctrl_readBacklightPercent(void) {
 
 void ui_ctrl_step(void) {
 	// ui_ctrl_Dim() does an I2C transaction on the shared I2C4 bus; called
-	// from statemachine_step() (100ms tick), throttle it to roughly once a
+	// from statemachine_step() (20ms tick), throttle it to roughly once a
 	// second rather than every tick.
 	static uint8_t tick = 0;
 
-	if (++tick >= 5) {
+	if (++tick >= 50) {
 		tick = 0;
 		ui_ctrl_Dim();
 	}

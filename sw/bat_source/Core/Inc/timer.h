@@ -20,7 +20,7 @@ typedef enum
 } TIMER_TYPE;
 
 #define TIMER_SUB_COUNT 2
-#define TIMER_FREQ 10 // in Hz
+#define TIMER_FREQ 50 // in Hz
 
 void timer_init(void);
 void timer_start(void);

@@ -10,7 +10,7 @@
 
 #include "stdint.h"
 
-#define STATEMACHINE_STEP_PERIOD_mS 100 //ms
+#define STATEMACHINE_STEP_PERIOD_mS 20 //ms
 
 typedef enum
 {
