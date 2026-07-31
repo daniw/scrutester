@@ -9,11 +9,36 @@
 #include "config_store.h"
 #include "statemachine.h"
 #include "stm32g4xx_hal.h"
+#include <math.h>
 
 extern ADC_MEAS_DATA adc_data;
 
 #define CALIBRATION_SAMPLE_COUNT 8
 #define CALIBRATION_SAMPLE_DELAY_MS 1
+
+/* Bounds for a computed/supplied gain to be accepted by
+ * calibration_set_gain()/calibration_set_gain_raw(). The real per-channel
+ * gains (adc.h's ADC_*_GAIN_* / ADC_EXT_*_GAIN_* constants) range from
+ * about 0.0014 (ADC_EXT_IISO_GAIN_UA) to about 296 (ADC_VTERM_GAIN_MV) --
+ * i.e. roughly 0.001..300. CALIBRATION_GAIN_MAX_MAGNITUDE is set to
+ * 10000, about 33x the largest real gain: generous enough that no
+ * legitimate calibration (sampled or hand-typed) is ever rejected, but
+ * still tight enough to catch the actual failure mode -- raw barely
+ * moving off the offset (a couple of ADC counts) while a large reference
+ * was dialed in/typed, e.g. a disconnected or short-circuited input --
+ * which otherwise produces a gain in the thousands-to-millions range.
+ * A gain of exactly 0 (or too small to be distinguishable from 0 in
+ * practice) is never valid either: it corresponds to raw == offset or a
+ * zero reference, both of which mean "no real second calibration point
+ * was actually applied". */
+#define CALIBRATION_GAIN_MAX_MAGNITUDE 10000.0f
+#define CALIBRATION_GAIN_MIN_MAGNITUDE 1e-6f
+
+static uint8_t calibration_gain_valid(float gain) {
+	float mag = fabsf(gain);
+	return isfinite(gain) && mag >= CALIBRATION_GAIN_MIN_MAGNITUDE
+			&& mag <= CALIBRATION_GAIN_MAX_MAGNITUDE;
+}
 
 static const char *const CAL_CHANNEL_NAMES[CAL_CH_COUNT] = {
 		[CAL_CH_V_TERM] = "V_TERM",
@@ -49,7 +74,7 @@ const char* calibration_channel_unit(calibration_channel_t ch) {
  * itself never does, since it never drives the output. Point the
  * relevant ADC(s) at the right channel before sampling; harmless to
  * call repeatedly (aux IO / output-enable are untouched by this call). */
-static void calibration_ensure_adc_mode(calibration_channel_t ch) {
+void calibration_ensure_adc_mode(calibration_channel_t ch) {
 	switch (ch) {
 	case CAL_CH_V_OUT:
 		adc_configure_mode(STATEMACHINE_MODE_60V_OUT);
@@ -94,6 +119,12 @@ int32_t calibration_read_raw(calibration_channel_t ch) {
 	return (int32_t) (sum / CALIBRATION_SAMPLE_COUNT);
 }
 
+/* Non-blocking: no averaging, no calibration_ensure_adc_mode() call.
+ * Relies on the caller having already armed ch (see calibration.h). */
+int32_t calibration_peek_raw(calibration_channel_t ch) {
+	return calibration_sample_raw_once(ch);
+}
+
 /* V_TERM/I_OUT/I_ISO each have an external-ADC (ADS131M04) counterpart
  * that is not itself a selectable calibration channel: it is sampled
  * continuously and independently by the ext ADC's own DRDY/SPI loop,
@@ -117,8 +148,8 @@ uint8_t calibration_has_ext(calibration_channel_t ch) {
 	return calibration_ext_index(ch) >= 0;
 }
 
-int32_t calibration_read_ext_converted(calibration_channel_t ch) {
-	calibration_ensure_adc_mode(ch);
+/* Non-blocking counterpart -- see calibration_peek_raw()'s comment. */
+int32_t calibration_peek_ext_converted(calibration_channel_t ch) {
 	switch (ch) {
 	case CAL_CH_V_TERM:
 		return adc_data.converted.v_term_ext_mv;
@@ -129,6 +160,11 @@ int32_t calibration_read_ext_converted(calibration_channel_t ch) {
 	default:
 		return 0;
 	}
+}
+
+int32_t calibration_read_ext_converted(calibration_channel_t ch) {
+	calibration_ensure_adc_mode(ch);
+	return calibration_peek_ext_converted(ch);
 }
 
 static int32_t calibration_get_ext_offset(calibration_channel_t ch) {
@@ -165,8 +201,8 @@ static void calibration_sample_pair(calibration_channel_t ch, int32_t *raw_out, 
 	*raw_ext_out = (int32_t) (sum_ext / CALIBRATION_SAMPLE_COUNT);
 }
 
-int32_t calibration_read_converted(calibration_channel_t ch) {
-	calibration_ensure_adc_mode(ch);
+/* Non-blocking counterpart -- see calibration_peek_raw()'s comment. */
+int32_t calibration_peek_converted(calibration_channel_t ch) {
 	switch (ch) {
 	case CAL_CH_V_TERM:
 		return adc_data.converted.v_term;
@@ -183,6 +219,11 @@ int32_t calibration_read_converted(calibration_channel_t ch) {
 	default:
 		return 0;
 	}
+}
+
+int32_t calibration_read_converted(calibration_channel_t ch) {
+	calibration_ensure_adc_mode(ch);
+	return calibration_peek_converted(ch);
 }
 
 static int32_t calibration_get_offset(calibration_channel_t ch) {
@@ -290,7 +331,12 @@ void calibration_set_offset_raw(calibration_channel_t ch, int32_t raw_offset, co
 	config_store_store();
 }
 
-void calibration_set_gain_raw(calibration_channel_t ch, float gain, const float *ext_gain) {
+calibration_status_t calibration_set_gain_raw(calibration_channel_t ch, float gain, const float *ext_gain) {
+	if (!calibration_gain_valid(gain))
+		return CALIBRATION_STATUS_ERR;
+	if (ext_gain && !calibration_gain_valid(*ext_gain))
+		return CALIBRATION_STATUS_ERR;
+
 	switch (ch) {
 	case CAL_CH_V_TERM:
 		adc_data.v_term_gain = gain;
@@ -329,15 +375,17 @@ void calibration_set_gain_raw(calibration_channel_t ch, float gain, const float 
 		}
 		break;
 	default:
-		return;
+		return CALIBRATION_STATUS_ERR;
 	}
 	config_store_store();
+	return CALIBRATION_STATUS_OK;
 }
 
-void calibration_set_gain(calibration_channel_t ch, float reference_value) {
+calibration_status_t calibration_set_gain(calibration_channel_t ch, float reference_value) {
 	int32_t raw, raw_ext;
 	float gain = 0.0f;
 	float ext_gain = 0.0f;
+	uint8_t has_ext = calibration_ext_index(ch) >= 0;
 
 	calibration_sample_pair(ch, &raw, &raw_ext);
 
@@ -345,11 +393,20 @@ void calibration_set_gain(calibration_channel_t ch, float reference_value) {
 	if (raw != offset)
 		gain = reference_value / (float) (raw - offset);
 
-	if (calibration_ext_index(ch) >= 0) {
+	if (has_ext) {
 		int32_t ext_offset = calibration_get_ext_offset(ch);
 		if (raw_ext != ext_offset)
 			ext_gain = reference_value / (float) (raw_ext - ext_offset);
 	}
+
+	// Reject the whole commit -- neither adc_data nor config_store is
+	// touched, and config_store_store() is never called -- if the primary
+	// gain, or (for channels with an ext counterpart) the ext gain, isn't
+	// usable. Both are sampled from the same reference application, so a
+	// bad ext result is just as much a sign that no real second point was
+	// applied as a bad primary result is.
+	if (!calibration_gain_valid(gain) || (has_ext && !calibration_gain_valid(ext_gain)))
+		return CALIBRATION_STATUS_ERR;
 
 	switch (ch) {
 	case CAL_CH_V_TERM:
@@ -383,7 +440,8 @@ void calibration_set_gain(calibration_channel_t ch, float reference_value) {
 		config_store.calibration.i_iso_ext_gain = ext_gain;
 		break;
 	default:
-		return;
+		return CALIBRATION_STATUS_ERR;
 	}
 	config_store_store();
+	return CALIBRATION_STATUS_OK;
 }

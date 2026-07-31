@@ -600,14 +600,19 @@ void display_update_settings_detail(uint8_t submenu_index) {
 /* Calibration (Settings > Calibration)                                   */
 /* ---------------------------------------------------------------------- */
 
+/* Non-blocking: called every statemachine tick (see display_calibration_update()),
+ * so this must never sample/reconfigure the ADC itself -- it just reads
+ * whatever calibration_peek_*() finds in adc_data right now. The ADC is
+ * pointed at the right mode for ch once, when ch is armed (see
+ * display_calibration_enter()/statemachine_step_calibration()), not here. */
 static void draw_calibration_live(calibration_channel_t ch, int16_t y) {
-	snprintf(text, sizeof(text), "Raw: %-8ld  %ld %s          ", (long) calibration_read_raw(ch),
-			(long) calibration_read_converted(ch), calibration_channel_unit(ch));
+	snprintf(text, sizeof(text), "Raw: %-8ld  %ld %s          ", (long) calibration_peek_raw(ch),
+			(long) calibration_peek_converted(ch), calibration_channel_unit(ch));
 	LCD_PutStr(16, y, text, FONT_SMALL, C_WHITE, C_BLACK);
 
 	if (calibration_has_ext(ch)) {
 		snprintf(text, sizeof(text), "Ext: %ld %s          ",
-				(long) calibration_read_ext_converted(ch), calibration_channel_unit(ch));
+				(long) calibration_peek_ext_converted(ch), calibration_channel_unit(ch));
 	} else {
 		snprintf(text, sizeof(text), "                        ");
 	}
@@ -639,6 +644,22 @@ void display_calibration_enter(calibration_channel_t ch, uint8_t ui_state) {
 		LCD_PutStr(16, STATUS_H + 28, "dial in its value:", FONT_SMALL,
 		C_WHITE, C_BLACK);
 		draw_footer("ESC: Skip", "OK: Set gain");
+		break;
+	case 3:
+		// One-shot failure message for a rejected gain (see
+		// statemachine_step_calibration()'s case 2): occupies the same
+		// STATUS_H+8/+28 lines as case 2's static instructions above, so
+		// it is left alone by display_calibration_update()'s ui_state 2,
+		// which never draws above STATUS_H+52 -- stays up until the user
+		// retries (redraws these lines again, either via this case or
+		// case 2) or backs out (case 0, which clears the whole frame).
+		snprintf(text, sizeof(text), "Calibration: %s", calibration_channel_name(ch));
+		draw_status_bar(text, C_SILVER);
+		LCD_PutStr(16, STATUS_H + 8, "Gain calibration failed!", FONT_SMALL,
+		C_RED, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 28, "Check reference value & retry",
+		FONT_TINY, C_WHITE_63, C_BLACK);
+		draw_footer("ESC: Skip", "OK: Retry");
 		break;
 	default:
 		break;

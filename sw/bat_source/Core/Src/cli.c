@@ -702,7 +702,12 @@ void cmd_gainCal(void) {
 		return;
 	}
 	reference_value = strtof(arg_locs[2], &end);
-	calibration_set_gain((calibration_channel_t) id, reference_value);
+	if (calibration_set_gain((calibration_channel_t) id, reference_value) != CALIBRATION_STATUS_OK) {
+		printf("%s gain calibration FAILED: reference not applied, channel at "
+				"offset, or result out of range -- nothing stored.\r\n",
+				calibration_channel_name((calibration_channel_t) id));
+		return;
+	}
 	printf("%s gain set (reference %s %s).\r\n", calibration_channel_name((calibration_channel_t) id),
 			arg_locs[2], calibration_channel_unit((calibration_channel_t) id));
 }
@@ -748,6 +753,7 @@ void cmd_setOffset(void) {
 void cmd_setGain(void) {
 	uint8_t id;
 	float gain, ext_gain;
+	calibration_status_t status;
 	char *end;
 
 	CLI_CHECK_ARG_CNT_RANGE(2, 3);
@@ -759,9 +765,15 @@ void cmd_setGain(void) {
 	gain = strtof(arg_locs[2], &end);
 	if (number_of_args == 3) {
 		ext_gain = strtof(arg_locs[3], &end);
-		calibration_set_gain_raw((calibration_channel_t) id, gain, &ext_gain);
+		status = calibration_set_gain_raw((calibration_channel_t) id, gain, &ext_gain);
 	} else {
-		calibration_set_gain_raw((calibration_channel_t) id, gain, NULL);
+		status = calibration_set_gain_raw((calibration_channel_t) id, gain, NULL);
+	}
+	if (status != CALIBRATION_STATUS_OK) {
+		printf("%s gain NOT set: value must be finite, non-zero and a "
+				"plausible magnitude -- nothing stored.\r\n",
+				calibration_channel_name((calibration_channel_t) id));
+		return;
 	}
 	printf("%s gain set to %s %s/count.\r\n", calibration_channel_name((calibration_channel_t) id),
 			arg_locs[2], calibration_channel_unit((calibration_channel_t) id));

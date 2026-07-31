@@ -93,13 +93,30 @@ static void statemachine_apply_encoder_setpoint(void) {
  * calibration steps of calibration.h can be triggered independently; ESC on
  * the channel list backs out to the Settings list (handled by the caller),
  * ESC on the zero/gain steps only cancels that step and returns to the
- * channel list. */
+ * channel list.
+ *
+ * ADC arming: calibration_ensure_adc_mode() is relatively expensive (stops/
+ * reconfigures/restarts up to three ADC DMA streams) and must run only when
+ * the *armed* channel actually changes, never once per tick -- this
+ * function is the only place that both owns calibration_selected_channel
+ * and can tell when that happens (initial entry into the calibration UI,
+ * and the encoder-driven selection change in case 0), so it -- not
+ * display.c, which only renders whatever calibration_peek_*() already
+ * finds in adc_data -- is where the calls belong. Symmetrically, leaving
+ * the calibration UI entirely (case 0's ESC) restores current_mode's own
+ * ADC routing (STATEMACHINE_MODE_SETTINGS's, unchanged for as long as the
+ * calibration UI is showing -- see statemachine_switchfromIdle()'s
+ * STATEMACHINE_MODE_SETTINGS case and statemachine_step()'s SETTINGS case,
+ * neither of which reassign current_mode while navigating Settings/
+ * Calibration) so the Settings list, and whatever real mode is picked
+ * next, aren't left with calibration's V_OUT/ISOMETER routing. */
 static void statemachine_step_calibration(void) {
 	switch (calibration_ui_state) {
 	case 0: { // channel list
 		uint8_t idx = (input_encoder_read() / 2) % CAL_CH_COUNT;
 		if (idx != calibration_selected_channel) {
 			calibration_selected_channel = (calibration_channel_t) idx;
+			calibration_ensure_adc_mode(calibration_selected_channel);
 		}
 		display_calibration_update(calibration_selected_channel, 0, 0.0f);
 		if (ok_button_pressed == 1) {
@@ -108,6 +125,7 @@ static void statemachine_step_calibration(void) {
 		}
 		if (esc_button_pressed == 1) {
 			statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
+			adc_configure_mode(statemachine_handle.current_mode);
 			display_show_settings_list(statemachine_handle.current_menu_index);
 		}
 		break;
@@ -130,9 +148,24 @@ static void statemachine_step_calibration(void) {
 				* CALIBRATION_REFERENCE_STEP[calibration_selected_channel];
 		display_calibration_update(calibration_selected_channel, 2, reference_value);
 		if (ok_button_pressed == 1) {
-			calibration_set_gain(calibration_selected_channel, reference_value);
-			calibration_ui_state = 0;
-			display_calibration_enter(calibration_selected_channel, 0);
+			if (calibration_set_gain(calibration_selected_channel, reference_value)
+					== CALIBRATION_STATUS_OK) {
+				calibration_ui_state = 0;
+				display_calibration_enter(calibration_selected_channel, 0);
+			} else {
+				// Invalid gain (see calibration_set_gain()) -- nothing was
+				// stored. Stay on the gain step (calibration_ui_state
+				// unchanged) so the user can dial in a real reference and
+				// retry, rather than silently returning to the channel
+				// list as if it had succeeded. ui_state 3 is a one-shot
+				// failure message occupying the same lines display_calibration_enter()'s
+				// ui_state 2 uses for its static instructions; the next
+				// tick's case 2 above keeps calling display_calibration_update(...,
+				// 2, ...), which only ever touches the live-reading lines
+				// further down, so the message stays up until the user
+				// retries or backs out.
+				display_calibration_enter(calibration_selected_channel, 3);
+			}
 		}
 		if (esc_button_pressed == 1) {
 			calibration_ui_state = 0;
@@ -299,6 +332,7 @@ void statemachine_step(void) {
 				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
 					calibration_ui_state = 0;
 					calibration_selected_channel = CAL_CH_V_TERM;
+					calibration_ensure_adc_mode(calibration_selected_channel);
 					display_calibration_enter(calibration_selected_channel, 0);
 				} else {
 					display_enter_settings_detail(statemachine_handle.settings_mode);
