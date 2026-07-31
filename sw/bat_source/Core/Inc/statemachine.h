@@ -43,6 +43,7 @@ typedef struct{
 	uint8_t output_on;
 	uint8_t current_menu_index;
 	statemachine_settings_modes_t settings_mode;
+	uint8_t protection_forced_output_off;
 
 }statemachine_t;
 
