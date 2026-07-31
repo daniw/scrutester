@@ -81,12 +81,23 @@ for src in Core/Src/*.c; do
     fi
 done
 
-# Keep only the diagnostic headline lines (file:line:col: warning/error: text).
-# The source-echo and caret lines that GCC interleaves are noise for a diff and
-# shift whenever unrelated lines move.
+# Keep only the diagnostic headline lines (file:line:col: warning/error: text),
+# dropping the source-echo and caret lines GCC interleaves.
+#
+# Line and column numbers are deliberately STRIPPED. Comparing them would make
+# the baseline shift whenever unrelated code above a warning grows or shrinks,
+# which pressures anyone (human or agent) editing this tree to reshape source
+# purely to keep line numbers stable -- exactly the wrong incentive. Comparing
+# on (file, diagnostic text) instead is stable under insertions and still
+# catches real regressions.
+#
+# Duplicates are preserved rather than collapsed, and comm() below does a
+# multiset difference on sorted input, so adding a SECOND instance of an
+# already-known warning in the same file is still reported as new.
 normalize() {
     grep -E '^[^ ].*:[0-9]+:[0-9]+: (warning|error):' "$1" \
         | sed -E "s|^${PROJECT_ROOT}/||" \
+        | sed -E 's|^([^:]+):[0-9]+:[0-9]+: |\1: |' \
         | sort
 }
 
