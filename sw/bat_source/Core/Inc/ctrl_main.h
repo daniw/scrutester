@@ -31,6 +31,9 @@ typedef struct{
 	float ramp;
 	ctrl_mode_t mode;
 	int32_t duty;
+	// One-way latch: set once CHARGE's CC phase reaches end-voltage and
+	// switches to CV, cleared only when CHARGE is (re-)started.
+	uint8_t charge_cv_phase;
 
 } ctrl_main_t;
 
@@ -53,7 +56,7 @@ typedef struct {
 	const char *name;
 } ctrl_pid_entry_t;
 
-#define CTRL_PID_TABLE_LEN 7
+#define CTRL_PID_TABLE_LEN 8
 extern const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN];
 
 void ctrl_main_init(void);

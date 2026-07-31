@@ -13,6 +13,9 @@
 #include <stdio.h>
 #include "aux_io_ctrl.h"
 #include "config_store.h"
+#include "bq76905.h"
+
+extern BQ76905_handle bms;
 
 ctrl_main_t ctrl_main_handle;
 PID_controller_t ctrl_pi_voltage_buck;
@@ -20,6 +23,7 @@ PID_controller_t ctrl_pi_voltage_boost;
 PID_controller_t ctrl_pi_current;
 PID_controller_t ctrl_pi_boost_iout_limit;
 PID_controller_t ctrl_pi_charge_current;
+PID_controller_t ctrl_pi_charge_voltage;
 PID_controller_t ctrl_pi_voltage_hv;
 PID_controller_t ctrl_pi_hv_iout_limit;
 
@@ -42,6 +46,9 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = {
 	{ &ctrl_pi_charge_current,   &config_store.calibration.charge_current_p,   &config_store.calibration.charge_current_i,
 	  CTRL_PARAM_CHARGE_CURRENT_P,     CTRL_PARAM_CHARGE_CURRENT_I,
 	  CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH, CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW, "ChargeCurrent" },
+	{ &ctrl_pi_charge_voltage,   &config_store.calibration.charge_voltage_p,   &config_store.calibration.charge_voltage_i,
+	  CTRL_PARAM_CHARGE_VOLTAGE_P,     CTRL_PARAM_CHARGE_VOLTAGE_I,
+	  CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_LOW, "ChargeVoltage" },
 	{ &ctrl_pi_voltage_hv,   &config_store.calibration.voltage_hv_p,   &config_store.calibration.voltage_hv_i,
 	  CTRL_PARAM_HV_VOLTAGE_P,     CTRL_PARAM_HV_VOLTAGE_I,
 	  CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW, "HVVoltage" },
@@ -59,6 +66,8 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate);
 void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate);
+void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
+		int32_t voltage_meas_accurate_mV);
 void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
 
@@ -117,6 +126,8 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		ctrl_main_apply_reference(mode, 0);
 		ctrl_PID_reset(&ctrl_pi_voltage_buck);
 		ctrl_PID_reset(&ctrl_pi_charge_current);
+		ctrl_PID_reset(&ctrl_pi_charge_voltage);
+		ctrl_main_handle.charge_cv_phase = 0;
 		// Preload for smoother turn on
 		ctrl_pi_charge_current.prev_I_action = CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH;
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
@@ -197,15 +208,29 @@ void ctrl_main_ctrl(ADC_MEAS_DATA *adc_data) {
 				adc_data->converted.i_iso_ext_uA);
 		break;
 	case CTRL_MODE_CHARGE:
-		/* Simple CC/CV: hold charge current until the end voltage is reached,
-		 * then hold that voltage. Reuses the buck path set up in
-		 * ctrl_main_start_ctrl() (same HRTIM channel as 10A/Resistance). */
-		if (adc_data->converted.v_in < CTRL_PARAM_CHARGE_END_VOLTAGE_mV)
+		/* CC/CV: hold charge current until the end voltage is reached, then
+		 * latch into CV and hold that voltage (statemachine.c decides when
+		 * the cycle is actually done, once current has also tapered off).
+		 * One-way latch so a small voltage sag once CV is holding doesn't
+		 * bounce the loop back into CC. Both phases drive HRTIM_CHANNEL_SEK
+		 * (set up in ctrl_main_start_ctrl()), unlike ctrl_main_ctrl_voltage_buck()
+		 * which drives HRTIM_CHANNEL_PRIM. */
+		if (!ctrl_main_handle.charge_cv_phase
+				&& adc_data->converted.v_in >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
+			ctrl_main_handle.charge_cv_phase = 1;
+			// Bumpless transfer: seed the CV loop's integrator from the CC
+			// loop's last output duty, so the switchover doesn't jerk the
+			// duty cycle - same preload trick ctrl_main_start_ctrl() uses
+			// for smooth turn-on.
+			ctrl_pi_charge_voltage.prev_I_action = ctrl_pi_charge_current.action;
+		}
+
+		if (!ctrl_main_handle.charge_cv_phase)
 			ctrl_main_ctrl_charge_current(-adc_data->converted.i_out,
 					-adc_data->converted.i_out_ext_mA);
-		//else
-			/*ctrl_main_ctrl_voltage_buck(adc_data->converted.v_in,
-					adc_data->converted.v_in);*/
+		else
+			ctrl_main_ctrl_charge_voltage(adc_data->converted.v_in,
+					bms.VoltageRegisters.StackVoltage);
 		break;
 
 	case CTRL_MODE_OFF:
@@ -365,6 +390,40 @@ void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 	else
 		hrtim_set_duty(HRTIM_CHANNEL_SEK,CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_current.action);
 	ctrl_main_handle.duty = (CTRL_PARAM_CONST_DUTY_HIGH-ctrl_pi_charge_current.action)*1000;
+
+}
+
+/**
+ * CV tail of the charge cycle: P-term from the fast internal ADC
+ * (voltage_meas_mV), I-term from the accurate but slow (~1Hz) BMS
+ * StackVoltage reading (voltage_meas_accurate_mV) - the PID just holds the
+ * last value between BMS refreshes, same as elsewhere in this file.
+ */
+void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
+		int32_t voltage_meas_accurate_mV) {
+
+	// Startup Ramp
+	if (ctrl_main_handle.ramp > 1.0F) {
+		ctrl_pi_charge_voltage.ref = ctrl_main_handle.voltage_reference_mV / 1000.0F;
+		ctrl_main_handle.ramp = 1.1F;
+	}
+
+	else {
+		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
+		ctrl_pi_charge_voltage.ref = (ctrl_main_handle.voltage_reference_mV / 1000.0F)
+				* ctrl_main_handle.ramp;
+	}
+
+	ctrl_PID_controller_execute(&ctrl_pi_charge_voltage, voltage_meas_mV / 1000.0F,
+			voltage_meas_accurate_mV / 1000.0F, 0);
+
+	// Apply Duty
+	// Apply Duty inverted, as the secondary Duty is inversed
+	if((CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_voltage.action)> 0.5)
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, 0.5);
+	else
+		hrtim_set_duty(HRTIM_CHANNEL_SEK,CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_voltage.action);
+	ctrl_main_handle.duty = (CTRL_PARAM_CONST_DUTY_HIGH-ctrl_pi_charge_voltage.action)*1000;
 
 }
 

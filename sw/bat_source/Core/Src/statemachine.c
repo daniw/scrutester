@@ -258,7 +258,13 @@ void statemachine_step(void) {
 			bms.Accumulator.accumulatedCharge = 0;
 			bms.charge_percentage = 100;
 		}
-		if (bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
+		// Successfully finished once voltage has reached the end voltage AND
+		// current has tapered off (charge current is negated elsewhere, e.g.
+		// -adc_data.converted.i_out_ext_mA, so mirror that sign convention
+		// here). Safety-fault and supply-removed conditions still stop
+		// immediately on their own, regardless of taper.
+		if ((bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
+					&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA)
 				|| bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB
 				|| adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV) {
 			statemachine_switchtoIdle();

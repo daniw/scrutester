@@ -42,6 +42,14 @@
 #define CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH 0.985F
 #define CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW 0.0F
 
+// CV tail of the charge cycle, once CTRL_PARAM_CHARGE_END_VOLTAGE_mV has
+// been reached. Sat limits are placeholders reusing the charge-current
+// loop's, pending real bench tuning.
+#define CTRL_PARAM_CHARGE_VOLTAGE_P 0.001F
+#define CTRL_PARAM_CHARGE_VOLTAGE_I (0.1F/CTRL_FREQ)
+#define CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_HIGH CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH
+#define CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_LOW CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW
+
 
 #define CTRL_PARAM_HV_VOLTAGE_P 0.001F
 #define CTRL_PARAM_HV_VOLTAGE_I (0.1F/CTRL_FREQ)
@@ -70,6 +78,12 @@
 // rather than hardcoded, so a different pack doesn't need a recompile -
 // this is only the power-on default.
 #define CTRL_PARAM_BATTERY_CAPACITY_mAs (4500UL*3600UL)
+
+// Charge is only considered finished once the current has tapered below
+// this (in addition to reaching CTRL_PARAM_CHARGE_END_VOLTAGE_mV) - roughly
+// C/20 for the 4.5Ah pack. Placeholder needing bench tuning, like the other
+// charge params.
+#define CTRL_PARAM_CHARGE_TAPER_CURRENT_mA 225
 
 #define CTRL_PARAM_CHARGE_START_VIN_LOW_mV 15000
 #define CTRL_PARAM_CHARGE_START_VIN_HIGH_mV 24000
