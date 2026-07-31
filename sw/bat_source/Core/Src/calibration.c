@@ -46,7 +46,8 @@ static const char *const CAL_CHANNEL_NAMES[CAL_CH_COUNT] = {
 		[CAL_CH_V_OUT] = "V_OUT",
 		[CAL_CH_V_HV] = "V_HV",
 		[CAL_CH_I_OUT] = "I_OUT",
-		[CAL_CH_I_ISO] = "I_ISO", };
+		[CAL_CH_I_ISO] = "I_ISO",
+		[CAL_CH_V_IN] = "V_IN", };
 
 static const char *const CAL_CHANNEL_UNITS[CAL_CH_COUNT] = {
 		[CAL_CH_V_TERM] = "mV",
@@ -54,7 +55,8 @@ static const char *const CAL_CHANNEL_UNITS[CAL_CH_COUNT] = {
 		[CAL_CH_V_OUT] = "mV",
 		[CAL_CH_V_HV] = "mV",
 		[CAL_CH_I_OUT] = "mA",
-		[CAL_CH_I_ISO] = "uA", };
+		[CAL_CH_I_ISO] = "uA",
+		[CAL_CH_V_IN] = "mV", };
 
 const char* calibration_channel_name(calibration_channel_t ch) {
 	if (ch >= CAL_CH_COUNT)
@@ -103,6 +105,8 @@ static int32_t calibration_sample_raw_once(calibration_channel_t ch) {
 		return (int32_t) adc_data.raw.i_out;
 	case CAL_CH_I_ISO:
 		return (int32_t) adc_data.raw.i_iso;
+	case CAL_CH_V_IN:
+		return (int32_t) adc_data.raw.v_in;
 	default:
 		return 0;
 	}
@@ -216,6 +220,8 @@ int32_t calibration_peek_converted(calibration_channel_t ch) {
 		return adc_data.converted.i_out;
 	case CAL_CH_I_ISO:
 		return adc_data.converted.i_iso;
+	case CAL_CH_V_IN:
+		return adc_data.converted.v_in;
 	default:
 		return 0;
 	}
@@ -240,6 +246,8 @@ static int32_t calibration_get_offset(calibration_channel_t ch) {
 		return adc_data.i_out_offset;
 	case CAL_CH_I_ISO:
 		return adc_data.i_iso_offset;
+	case CAL_CH_V_IN:
+		return adc_data.v_in_offset;
 	default:
 		return 0;
 	}
@@ -280,6 +288,10 @@ void calibration_zero(calibration_channel_t ch) {
 		config_store.calibration.i_iso_offset_ua = (uint16_t) raw;
 		adc_data.i_iso_ext_offset = raw_ext;
 		config_store.calibration.i_iso_ext_offset = raw_ext;
+		break;
+	case CAL_CH_V_IN:
+		adc_data.v_in_offset = (uint16_t) raw;
+		config_store.calibration.v_in_offset_mv = (uint16_t) raw;
 		break;
 	default:
 		return;
@@ -324,6 +336,10 @@ void calibration_set_offset_raw(calibration_channel_t ch, int32_t raw_offset, co
 			adc_data.i_iso_ext_offset = *raw_ext_offset;
 			config_store.calibration.i_iso_ext_offset = *raw_ext_offset;
 		}
+		break;
+	case CAL_CH_V_IN:
+		adc_data.v_in_offset = (uint16_t) raw_offset;
+		config_store.calibration.v_in_offset_mv = (uint16_t) raw_offset;
 		break;
 	default:
 		return;
@@ -373,6 +389,10 @@ calibration_status_t calibration_set_gain_raw(calibration_channel_t ch, float ga
 			adc_data.i_iso_ext_gain = *ext_gain;
 			config_store.calibration.i_iso_ext_gain = *ext_gain;
 		}
+		break;
+	case CAL_CH_V_IN:
+		adc_data.v_in_gain = gain;
+		config_store.calibration.v_in_gain = gain;
 		break;
 	default:
 		return CALIBRATION_STATUS_ERR;
@@ -438,6 +458,10 @@ calibration_status_t calibration_set_gain(calibration_channel_t ch, float refere
 		config_store.calibration.i_iso_gain = gain;
 		adc_data.i_iso_ext_gain = ext_gain;
 		config_store.calibration.i_iso_ext_gain = ext_gain;
+		break;
+	case CAL_CH_V_IN:
+		adc_data.v_in_gain = gain;
+		config_store.calibration.v_in_gain = gain;
 		break;
 	default:
 		return CALIBRATION_STATUS_ERR;

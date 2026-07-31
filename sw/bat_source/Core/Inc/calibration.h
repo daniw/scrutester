@@ -1,8 +1,8 @@
 /*
  * calibration.h
  *
- * Shared zero/gain calibration logic for the six field-calibratable
- * ADC channels (V_TERM, V_SENS, V_OUT, V_HV, I_OUT, I_ISO), used by
+ * Shared zero/gain calibration logic for the seven field-calibratable
+ * ADC channels (V_TERM, V_SENS, V_OUT, V_HV, I_OUT, I_ISO, V_IN), used by
  * both the Settings-menu UI (statemachine.c/display.c) and the CLI
  * (cli.c) so the sampling/math lives in exactly one place.
  *
@@ -32,6 +32,10 @@ typedef enum
 	CAL_CH_V_HV,
 	CAL_CH_I_OUT,
 	CAL_CH_I_ISO,
+	// Appended at the END, after the original six, so the existing channel
+	// numbers stay stable - they are user-facing CLI arguments (zeroCal/
+	// gainCal/setOffset/setGain) and are printed in usage strings.
+	CAL_CH_V_IN,
 	CAL_CH_COUNT
 } calibration_channel_t;
 

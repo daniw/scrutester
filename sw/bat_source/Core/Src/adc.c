@@ -920,13 +920,14 @@ void adc_init(int32_t* ext_adc_data)
 	HAL_ADCEx_Calibration_Start(&hadc4, ADC_SINGLE_ENDED);
 	HAL_ADCEx_Calibration_Start(&hadc5, ADC_SINGLE_ENDED);
 
-	  adc_data.v_in_offset   = ADC_VIN_OFFSET_MV  ;
 	  adc_data.i_bat_offset  = ADC_IBAT_OFFSET_MA ;
 
-	  // V_TERM/I_OUT/I_ISO/V_SENS/V_OUT/V_HV offset and gain come from
+	  // V_TERM/I_OUT/I_ISO/V_SENS/V_OUT/V_HV/V_IN offset and gain come from
 	  // config_store, which is loaded from EEPROM (or defaulted to the
 	  // ADC_* constants) before adc_init() runs - see config_store_init()
 	  // in main().
+	  adc_data.v_in_offset   = config_store.calibration.v_in_offset_mv;
+	  adc_data.v_in_gain     = config_store.calibration.v_in_gain;
 	  adc_data.v_term_offset = config_store.calibration.v_term_offset_mv;
 	  adc_data.v_term_gain   = config_store.calibration.v_term_gain;
 	  adc_data.i_out_offset  = config_store.calibration.i_out_offset_ma;
@@ -1120,7 +1121,7 @@ void adc_convert_fast_data(void){
 	// ISR) reads this same instance for its control loop. Main context never
 	// touches adc_converted_isr directly; it only ever sees a coherent copy via
 	// adc_snapshot_converted() (see statemachine_step()).
-	adc_converted_isr.v_in   = (adc_data.raw.v_in   - adc_data.v_in_offset  )* ADC_VIN_GAIN_MV;
+	adc_converted_isr.v_in   = (adc_data.raw.v_in   - adc_data.v_in_offset  )* adc_data.v_in_gain;
 	adc_converted_isr.v_out  = (adc_data.raw.v_out  - adc_data.v_out_offset )* adc_data.v_out_gain;
 	adc_converted_isr.v_term = (adc_data.raw.v_term - adc_data.v_term_offset)* adc_data.v_term_gain;
 	adc_converted_isr.v_hv   = (adc_data.raw.v_hv   - adc_data.v_hv_offset  )* adc_data.v_hv_gain;

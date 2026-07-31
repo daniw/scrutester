@@ -57,6 +57,9 @@ static const float CALIBRATION_REFERENCE_STEP[CAL_CH_COUNT] = {
 		[CAL_CH_V_HV] = 10000.0f,   // mV/detent, max ~1270V
 		[CAL_CH_I_OUT] = 100.0f,    // mA/detent, max ~12.7A
 		[CAL_CH_I_ISO] = 100.0f,    // uA/detent, max ~12.7mA
+		[CAL_CH_V_IN] = 500.0f,     // mV/detent, max ~63V (battery stack
+		                            // rail, nominal ~14V, ADC full scale
+		                            // ~51V per ADC_VIN_GAIN_MV)
 };
 
 void statemachine_init(void) {

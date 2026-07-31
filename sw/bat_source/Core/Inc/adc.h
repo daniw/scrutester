@@ -180,6 +180,7 @@ typedef struct {
 
 
 	uint16_t v_in_offset;
+    float    v_in_gain;
     uint16_t v_hv_offset;
     float    v_hv_gain;
     uint16_t i_bat_offset;

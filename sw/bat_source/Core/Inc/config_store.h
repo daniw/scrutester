@@ -15,7 +15,7 @@
 
 #include <stdint.h>
 
-#define CONFIG_STORE_PSVN 1 // Version of the persistent storage layout
+#define CONFIG_STORE_PSVN 2 // Version of the persistent storage layout
 
 #define CONFIG_STORE_HARDWARE_DATA_SIZE 16
 #define CONFIG_STORE_CALIBRATION_SIZE   192
@@ -99,6 +99,16 @@ typedef struct
 	// reference - see CTRL_PARAM_1A_REF_DAC_VALUE. Adaptable via EEPROM so
 	// it can be bench-calibrated instead of staying a fixed placeholder.
 	uint16_t i_1a_ref_dac_value;
+
+	// V_IN (battery stack rail, ADC3_IN3) offset/gain - added after the
+	// fields above, which is why it isn't grouped with the other internal
+	// voltage channels near the top of this struct. Appended at the END of
+	// calibration_t rather than inserted alongside v_out/v_hv so that no
+	// existing field's offset within the struct (and hence within the
+	// EEPROM block) moves - see CONFIG_STORE_PSVN's bump alongside this
+	// change for why that matters.
+	uint16_t v_in_offset_mv;
+	float    v_in_gain;
 } calibration_t;
 
 typedef struct

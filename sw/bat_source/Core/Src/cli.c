@@ -222,10 +222,10 @@ const char *cmd_arg_str[] = {
 		"setRTC [year] [month] [day] [hour] [minute] [second] {weekday}",
 		"testLCD",
 		"control -- arrows=encoder Enter=OK Esc=ESC Space=OUT(toggle) q=quit",
-		"zeroCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO]",
-		"gainCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO] [reference value]",
-		"setOffset [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO] [raw offset] {ext raw offset}",
-		"setGain [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO] [gain] {ext gain}",
+		"zeroCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN]",
+		"gainCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN] [reference value]",
+		"setOffset [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN] [raw offset] {ext raw offset}",
+		"setGain [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN] [gain] {ext gain}",
 		"setSerial [serial number]",
 		"flashIcons",
 		"pProt",
@@ -567,6 +567,8 @@ void cmd_saveEEPROM(void) {
 	config_store.calibration.i_iso_gain       = adc_data.i_iso_gain;
 	config_store.calibration.v_sens_ext_offset    = adc_data.v_sens_ext_offset;
 	config_store.calibration.v_sens_ext_gain      = adc_data.v_sens_ext_gain;
+	config_store.calibration.v_in_offset_mv   = adc_data.v_in_offset;
+	config_store.calibration.v_in_gain        = adc_data.v_in_gain;
 	config_store.calibration.v_out_offset     = adc_data.v_out_offset;
 	config_store.calibration.v_out_gain       = adc_data.v_out_gain;
 	config_store.calibration.v_hv_offset      = adc_data.v_hv_offset;
@@ -628,6 +630,10 @@ void cmd_readEEPROM(void) {
 
 	printf("V_OUT  offset/gain:  %u mV / ", config_store.calibration.v_out_offset);
 	cli_printFloat(config_store.calibration.v_out_gain);
+	printf("\r\n");
+
+	printf("V_IN   offset/gain:  %u mV / ", config_store.calibration.v_in_offset_mv);
+	cli_printFloat(config_store.calibration.v_in_gain);
 	printf("\r\n");
 
 	printf("V_HV   offset/gain:  %u mV / ", config_store.calibration.v_hv_offset);
