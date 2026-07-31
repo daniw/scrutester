@@ -205,8 +205,8 @@ const char *cmd_arg_str[] = {
 		"setDAC [value]",
 		"pBMS",
 		"pADC {loops}",
-		"setDuty [channel] [duty]",
-		"enPWM [channel] [0 disable | 1 enable]",
+		"setDuty [channel: 0=PRIM,1=SEK,2=HV] [duty]",
+		"enPWM [channel: 0=PRIM,1=SEK,2=HV,3=all (disable only)] [0 disable | 1 enable]",
 		"setRef [value]",
 		"test_i2c",
 		"setLED [current, 0.1mA]",
@@ -951,15 +951,47 @@ void cmd_setDuty(void){
 void cmd_PWM_en(void){
 	uint8_t  channel;
 	uint16_t value;
+	uint8_t hrtim_channel;
 	CLI_CHECK_ARG_CNT(2);
 
 	char *end;
 	channel = strtoul(arg_locs[1], &end, 10);
 	value = strtoul(arg_locs[2], &end, 10);
-	if(value == 1)
-		hrtim_enable(channel);
-	else
-		hrtim_disable(channel);
+
+	// Use the same [channel] numbering as setDuty (0=PRIM, 1=SEK, 2=HV)
+	// instead of passing the raw argument straight through to
+	// hrtim_enable()/hrtim_disable(), whose HRTIM_CHANNEL_* values don't
+	// match this numbering (e.g. raw channel 1 used to hit HRTIM_CHANNEL_PRIM
+	// instead of the SEK channel a caller following setDuty's convention
+	// would expect).
+	//
+	// Channel 3 = all channels at once. This exists because before the
+	// numbering was normalised, HRTIM_CHANNEL_ALL happened to equal 0 and the
+	// raw argument was passed straight through, so "enPWM 0 0" disabled every
+	// channel - an all-PWM-off that is worth keeping reachable on the bench.
+	// Without this case it would silently have become a PRIM-only stop.
+	// Enable has no all-channels form (hrtim_enable() intentionally has no
+	// ALL case: bringing every converter up at once is never wanted), so 3 is
+	// accepted for disable only.
+	switch (channel) {
+	case 0: hrtim_channel = HRTIM_CHANNEL_PRIM; break;
+	case 1: hrtim_channel = HRTIM_CHANNEL_SEK; break;
+	case 2: hrtim_channel = HRTIM_CHANNEL_HV; break;
+	case 3: hrtim_channel = HRTIM_CHANNEL_ALL; break;
+	default:
+		printf("Invalid channel\r\n");
+		return;
+	}
+
+	if (value == 1) {
+		if (hrtim_channel == HRTIM_CHANNEL_ALL) {
+			printf("Channel 3 (all) is disable-only\r\n");
+			return;
+		}
+		hrtim_enable(hrtim_channel);
+	} else {
+		hrtim_disable(hrtim_channel);
+	}
 }
 
 void cmd_test_i2c(void){

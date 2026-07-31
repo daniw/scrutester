@@ -35,7 +35,12 @@ extern "C" {
 extern HRTIM_HandleTypeDef hhrtim1;
 
 /* USER CODE BEGIN Private defines */
-#define HRTIM_CHANNEL_ALL 0
+/* HRTIM_CHANNEL_PRIM/SEK/HV are indices into HRTIM1->sTimerxRegs[] (Timer
+ * B/E/C respectively). HRTIM_CHANNEL_ALL is a software-only sentinel used by
+ * hrtim_disable() to mean "every channel at once" - it must NOT collide with
+ * any real sTimerxRegs[] index (0..5, Timers A..F), otherwise a function
+ * that doesn't special-case ALL would read/write Timer A's registers. */
+#define HRTIM_CHANNEL_ALL 0xFF
 #define HRTIM_CHANNEL_PRIM 1
 #define HRTIM_CHANNEL_SEK 4
 #define HRTIM_CHANNEL_HV 2

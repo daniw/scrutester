@@ -346,12 +346,51 @@ void hrtim_start_timer(void) {
 }
 
 /**
+ * @brief Checks whether channel is a valid index into HRTIM1->sTimerxRegs[]
+ *        for one of the channels this driver actually drives (PRIM/SEK/HV).
+ *        Deliberately excludes HRTIM_CHANNEL_ALL (a software-only sentinel
+ *        meaningful only to hrtim_disable()) and any other timer index, so
+ *        callers can never make hrtim_set_freq()/hrtim_set_duty() write an
+ *        unintended timer's registers.
+ * @param channel Channel to validate.
+ * @return 1 if valid, 0 otherwise.
+ */
+static uint8_t hrtim_channel_is_valid(uint8_t channel) {
+	return (channel == HRTIM_CHANNEL_PRIM) || (channel == HRTIM_CHANNEL_SEK)
+			|| (channel == HRTIM_CHANNEL_HV);
+}
+
+/**
  * Sets the frequency for the specified channel
  * @param channel Channel for which to set the frequency.
  * @param freq Frequency to set in Hz.
  */
 void hrtim_set_freq(uint8_t channel, uint32_t freq) {
-	HRTIM1->sTimerxRegs[channel].PERxR = (0x98968000 / freq);
+	uint32_t period;
+
+	if (!hrtim_channel_is_valid(channel))
+		return;
+
+	// freq == 0 has no valid period (division by zero); there is no sane
+	// substitute value to invent here, so refuse rather than guess.
+	if (freq == 0)
+		return;
+
+	period = (0x98968000 / freq);
+	// PERxR is a 16-bit register subject to the same HRTIM-imposed limits as
+	// CMP1xR (see hrtim_set_duty() below): a too-low freq makes the quotient
+	// overflow 16 bits and silently truncate to an arbitrary period, and a
+	// too-high freq can undershoot HRTIM's minimum usable period. Clamp to
+	// the same [0x60, 0xFFDF] window hrtim_set_duty() already enforces, so
+	// the timer always ends up at a well-defined, bounded frequency instead
+	// of an arbitrary truncated one - consistent with hrtim_set_duty()'s
+	// existing silent-clamp behaviour.
+	if (period < 0x60)
+		period = 0x60;
+	else if (period > 0xFFDF)
+		period = 0xFFDF;
+
+	HRTIM1->sTimerxRegs[channel].PERxR = period;
 	//HRTIM1->sTimerxRegs[channel].TIMxCR = (HRTIM1->sTimerxRegs[channel].TIMxCR & (~ HRTIM_PRESCALERRATIO_DIV4)) | HRTIM_PRESCALERRATIO_MUL32;
 }
 
@@ -363,6 +402,10 @@ void hrtim_set_freq(uint8_t channel, uint32_t freq) {
 
 void hrtim_set_duty(uint8_t channel, float value) {
 	uint32_t duty;
+
+	if (!hrtim_channel_is_valid(channel))
+		return;
+
 	if (value < 0.0F)
 		value = 0.0F;
 	else if (value > 1.0F)
