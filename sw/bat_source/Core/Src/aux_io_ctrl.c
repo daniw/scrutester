@@ -93,6 +93,14 @@ void aux_io_ctrl_manual_set_io(uint8_t pin, uint8_t value) {
 
 
 void aux_io_ctrl_set_config(statemachine_modes_t mode){
+	/* aux_io_ctrl_mode_config[] only covers the real statemachine modes
+	 * (indices 0..STATEMACHINE_MODE_RESERVED-1). An out-of-range mode must
+	 * not be allowed to index into it and drive the relay/output GPIOs
+	 * from whatever garbage byte follows the table. */
+	if (mode >= STATEMACHINE_MODE_RESERVED) {
+		return;
+	}
+
 	uint8_t cfg = aux_io_ctrl_mode_config[mode];
 
 	HAL_GPIO_WritePin(OUT_SEL_ISO_GPIO_Port, OUT_SEL_ISO_Pin,

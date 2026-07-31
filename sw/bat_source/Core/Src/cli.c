@@ -217,7 +217,7 @@ const char *cmd_arg_str[] = {
 		"eraseFlash [address / \"Full\"] {number of blocks}",
 		"writeFlash [address] [size] [data]",
 		"testFlash",
-		"state [new state]",
+		"state [new state: 0-10]",
 		"setPI [ID 0=Buck,1=Boost,2=Current,3=BoostIoutLimit,4=ChargeCurrent] [P Gain] [I Gain]",
 		"pRTC",
 		"setRTC [year] [month] [day] [hour] [minute] [second] {weekday}",
@@ -1464,12 +1464,18 @@ void cmd_testFlash(void){
 }
 
 void cmd_changeState(void){
-	uint8_t  newstate;
+	long newstate;
 	CLI_CHECK_ARG_CNT(1);
 
 	char *end;
+	// Range-check before narrowing, not after: truncating into a uint8_t
+	// first would fold e.g. 256 back onto 0 (IDLE) and silently accept it.
 	newstate = strtol(arg_locs[1], &end, 10);
-	statemachine_switchfromIdle(newstate);
+	if (newstate < 0 || newstate >= STATEMACHINE_MODE_RESERVED) {
+		printf("Invalid state\r\n");
+		return;
+	}
+	statemachine_switchfromIdle((statemachine_modes_t) newstate);
 }
 
 void cmd_setCtrlGain(void) {
