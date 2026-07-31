@@ -61,19 +61,18 @@
 
 /* adc_trigger value meaning "leave hadc1..4's ExternalTrigConv exactly as
  * whichever mode ran before it left it" -- i.e. adc_configure_mode() does NOT
- * touch the shared fast-loop trigger for this mode. Two modes rely on this,
- * both pre-existing and both deliberately preserved AS-IS by this refactor,
- * not fixed:
- *   - ISOMETER: a known, tracked bug -- its control loop rate ends up
- *     depending on whichever mode ran before it. Deferred to a separate,
- *     bench-validated fix; see adc_configure_mode()'s ISOMETER case.
- *   - RESISTANCE_1mA: same missing-assignment pattern (there is a
- *     commented-out `case STATEMACHINE_MODE_RESISTANCE_1mA:` immediately
- *     above RESISTANCE_1A's in the pre-refactor adc_configure_mode()), also
- *     pre-existing and out of scope here.
- * AMPMETER also resolves to this value, but for AMPMETER it's intentional,
- * not a bug: it's a passive readout of i_out, which hadc1 already samples
- * continuously regardless of mode. */
+ * touch the shared fast-loop trigger for this mode.
+ *
+ * This is only ever correct for modes that drive no control loop: IDLE,
+ * SETTINGS, SHUTDOWN, VOLTMETER and AMPMETER. Those are passive readouts of
+ * channels hadc1..3 sample regardless of trigger source, so which converter
+ * happens to be pacing the conversions does not matter to them.
+ *
+ * Every mode that DOES run a control loop must name its converter's trigger
+ * explicitly, because the loop executes once per conversion and its PI gains
+ * and startup ramp are scaled by an assumed rate. ISOMETER and RESISTANCE_1mA
+ * both used to be ADC_TRIGGER_NONE by omission rather than by intent, which
+ * made their loop rate depend on mode history; both now name a trigger. */
 #define ADC_TRIGGER_NONE 0u
 
 typedef struct {

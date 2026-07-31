@@ -63,26 +63,44 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
     },
 
     /* Auto-starts like RESISTANCE_1A, but no DAC pulse/sense LED. adc_trigger
-     * is ADC_TRIGGER_NONE: pre-existing, preserved bug -- see
-     * ADC_TRIGGER_NONE's doc comment in mode_table.h. */
+     * Triggers off PRIM, same as RESISTANCE_1A: ctrl_main_start_ctrl() puts
+     * both resistance modes on the same buck path with PRIM at
+     * CTRL_PARAM_SW_FREQ_HIGH, and the loop regulates converted.v_out. At
+     * 1 MHz with TRG1's post-scaler of 20 and the halving in
+     * HAL_ADC_ConvCpltCallback(), that is 25 kHz -- exactly CTRL_FREQ, which
+     * is what this mode's PI gains and ramp are scaled by. */
     [STATEMACHINE_MODE_RESISTANCE_1mA] = {
         .ctrl_mode   = CTRL_MODE_RESISTANCE_1mA,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_DISCHARGE,
         .enable_gpio = GPIO_CONV_CTRL_EN,
         .flags       = MODE_F_LED_OUT_ON | MODE_F_AUTOSTART_CTRL,
-        .adc_trigger = ADC_TRIGGER_NONE,
+        .adc_trigger = ADC_TRIGGER_HRTIM_PRIM,
     },
 
     /* Hold-OUT-to-enable via GPIO_HV_CTRL_EN, output_on forced to 0.
-     * adc_trigger is ADC_TRIGGER_NONE: the known, deliberately deferred
-     * missing-trigger bug -- see ADC_TRIGGER_NONE's doc comment in
-     * mode_table.h. Do NOT "fix" this here. */
+     *
+     * Triggers off HV (TRG2 / Timer C), the converter this mode actually
+     * controls. It previously assigned no trigger at all, so hadc1 kept
+     * whichever one the last mode left and the control-loop rate depended on
+     * mode history.
+     *
+     * NOTE, and this is not yet resolved: HV runs at CTRL_PARAM_SW_FREQ_HV
+     * (350 kHz), TRG2's post-scaler in MX_HRTIM1_Init() is 15, and
+     * HAL_ADC_ConvCpltCallback() halves again -- so this loop executes at
+     * about 11.7 kHz, NOT the 25 kHz CTRL_FREQ that
+     * CTRL_PARAM_HV_VOLTAGE_I/CTRL_PARAM_HV_CURRENT_I and the startup ramp
+     * are scaled by. Integral action is therefore roughly 2.1x weaker, and
+     * the ramp roughly 2.1x slower, than those constants suggest. The rate
+     * is now at least deterministic, which is what makes bench tuning
+     * possible; closing the gap (retune the HV gains, or change TRG2's
+     * post-scaler to 7 for an exact 25 kHz) is a tuning decision to take
+     * with the converter in front of you. See ctrl_param.h. */
     [STATEMACHINE_MODE_ISOMETER] = {
         .ctrl_mode   = CTRL_MODE_ISOMETER,
         .aux_io_mask = GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_ISO_EN | GPIO_MASK_DISCHARGE,
         .enable_gpio = GPIO_HV_CTRL_EN,
         .flags       = MODE_F_LED_OUT_ON | MODE_F_OUTPUT_ON_ZERO,
-        .adc_trigger = ADC_TRIGGER_NONE,
+        .adc_trigger = ADC_TRIGGER_HRTIM_HV,
     },
 
     /* Passive readout, no control loop, output_on left untouched (matches

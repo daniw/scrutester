@@ -972,11 +972,10 @@ static statemachine_modes_t adc_injected_mode = STATEMACHINE_IDLE;
 // field -- the part of adc_configure_mode() that used to be four repeated
 // assignment lines per case. ADC_TRIGGER_NONE means "leave hadc1..4 exactly
 // as whichever mode ran before this one left them" (see mode_table.h) --
-// this is how ISOMETER and RESISTANCE_1mA's pre-existing, deliberately
-// preserved missing-trigger bugs (deferred to a separate, bench-validated
-// fix) come through unchanged: their table entries are ADC_TRIGGER_NONE, so
-// this function is a no-op for them, exactly like the pre-refactor switch
-// cases that never assigned the trigger at all.
+// ADC_TRIGGER_NONE means "leave the shared trigger as the previous mode left
+// it", which is correct for the passive/idle modes that do not drive a
+// converter (they read channels hadc1 samples continuously anyway). Every
+// mode that runs a control loop names its converter's trigger explicitly.
 static void adc_apply_shared_trigger(statemachine_modes_t mode) {
 	if (mode >= STATEMACHINE_MODE_RESERVED) {
 		return;
@@ -1056,14 +1055,14 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		HAL_ADC_Init(&hadc4);
 		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
 		break;
-		// STATEMACHINE_MODE_RESISTANCE_1mA is deliberately NOT a case here
-		// (pre-existing, preserved bug, deferred to a separate,
-		// bench-validated fix -- see adc_apply_shared_trigger()'s doc
-		// comment above and mode_table.h's ADC_TRIGGER_NONE comment). It
-		// falls through to `default:` below, getting neither the shared
-		// trigger nor this hadc4 v_out channel config/DMA start, even
-		// though ctrl_main_ctrl() runs its buck voltage loop on
-		// converted.v_out, which hadc4 supplies. Do NOT add a case for it.
+		// Both resistance modes run the same buck voltage loop on
+		// converted.v_out (see ctrl_main_ctrl()), so both need hadc4 pointed
+		// at V_OUT and DMAing. RESISTANCE_1mA used to be a commented-out
+		// case label here, which left it falling through to `default:` with
+		// neither the shared trigger nor this hadc4 setup - so its
+		// regulator's feedback signal was whatever the previous mode had
+		// left in raw.v_out, or zero from boot.
+	case STATEMACHINE_MODE_RESISTANCE_1mA:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 		sConfig.Channel = ADC_CHANNEL_2;
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
@@ -1074,12 +1073,9 @@ void adc_configure_mode(statemachine_modes_t mode) {
 
 
 	case STATEMACHINE_MODE_ISOMETER:
-		// Pre-existing, preserved bug: mode_table[STATEMACHINE_MODE_ISOMETER]
-		// .adc_trigger is ADC_TRIGGER_NONE, so adc_apply_shared_trigger()
-		// above left hadc1..4's shared trigger untouched -- ISOMETER's
-		// control loop rate ends up depending on whichever mode ran before
-		// it. Deferred to a separate, bench-validated fix; do NOT "fix" it
-		// here. See mode_table.h's ADC_TRIGGER_NONE comment.
+		// adc_apply_shared_trigger() above pointed hadc1..4 at HV (TRG2),
+		// the converter this mode drives. See mode_table.c's ISOMETER entry
+		// for the resulting loop rate, which is NOT CTRL_FREQ.
 		sConfig.Channel = ADC_CHANNEL_5;
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
 			Error_Handler();
