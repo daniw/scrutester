@@ -991,10 +991,46 @@ static void adc_apply_shared_trigger(statemachine_modes_t mode) {
 	hadc4.Init.ExternalTrigConv = trigger;
 }
 
+// Common body of the ISOMETER (I_ISO) and CHARGE (I_BAT) injected-group
+// setups in adc_configure_mode() below -- identical in every
+// ADC_InjectionConfTypeDef field except InjectedChannel and
+// ExternalTrigInjecConv, which the two call sites pass in.
+//
+// HAL_ADC_Stop_DMA(&hadc5) at the top of adc_configure_mode() stops BOTH the
+// regular and injected groups on hadc5 and disables the ADC (see
+// ADC_ConversionStop(hadc, ADC_REGULAR_INJECTED_GROUP) + ADC_Disable() inside
+// HAL_ADC_Stop_DMA()). Reconfiguring the injected channel does NOT resume
+// triggering by itself, so the injected group must be re-armed via
+// HAL_ADCEx_InjectedStart_IT() every time either mode is (re-)entered.
+// JADSTART is guaranteed clear at this point (adc_configure_mode() just
+// stopped it), so this cannot return HAL_BUSY.
+static void adc_configure_injected(uint32_t channel, uint32_t trigger) {
+	ADC_InjectionConfTypeDef sConfigInjected = { 0 };
+
+	sConfigInjected.InjectedChannel = channel;
+	sConfigInjected.InjectedRank = ADC_INJECTED_RANK_1;
+	sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+	sConfigInjected.InjectedSingleDiff = ADC_SINGLE_ENDED;
+	sConfigInjected.InjectedOffsetNumber = ADC_OFFSET_NONE;
+	sConfigInjected.InjectedOffset = 0;
+	sConfigInjected.InjectedNbrOfConversion = 1;
+	sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
+	sConfigInjected.AutoInjectedConv = DISABLE;
+	sConfigInjected.QueueInjectedContext = DISABLE;
+	sConfigInjected.ExternalTrigInjecConv = trigger;
+	sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_RISING;
+	sConfigInjected.InjecOversamplingMode = DISABLE;
+	if (HAL_ADCEx_InjectedConfigChannel(&hadc5, &sConfigInjected) != HAL_OK)
+	{
+		Error_Handler();
+	}
+
+	HAL_ADCEx_InjectedStart_IT(&hadc5);
+}
+
 void adc_configure_mode(statemachine_modes_t mode) {
 
 	ADC_ChannelConfTypeDef sConfig = { 0 };
-	ADC_InjectionConfTypeDef sConfigInjected = {0};
 
 	adc_injected_mode = mode;
 
@@ -1044,64 +1080,18 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		// control loop rate ends up depending on whichever mode ran before
 		// it. Deferred to a separate, bench-validated fix; do NOT "fix" it
 		// here. See mode_table.h's ADC_TRIGGER_NONE comment.
-		HAL_ADC_Stop_DMA(&hadc4);
 		sConfig.Channel = ADC_CHANNEL_5;
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
 			Error_Handler();
+		HAL_ADC_Init(&hadc4);
 
-
-		  sConfigInjected.InjectedChannel = ADC_CHANNEL_2;
-		  sConfigInjected.InjectedRank = ADC_INJECTED_RANK_1;
-		  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_2CYCLES_5;
-		  sConfigInjected.InjectedSingleDiff = ADC_SINGLE_ENDED;
-		  sConfigInjected.InjectedOffsetNumber = ADC_OFFSET_NONE;
-		  sConfigInjected.InjectedOffset = 0;
-		  sConfigInjected.InjectedNbrOfConversion = 1;
-		  sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
-		  sConfigInjected.AutoInjectedConv = DISABLE;
-		  sConfigInjected.QueueInjectedContext = DISABLE;
-		  sConfigInjected.ExternalTrigInjecConv = ADC_TRIGGER_HRTIM_HV;
-		  sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_RISING;
-		  sConfigInjected.InjecOversamplingMode = DISABLE;
-		  if (HAL_ADCEx_InjectedConfigChannel(&hadc5, &sConfigInjected) != HAL_OK)
-		  {
-		    Error_Handler();
-		  }
-		  // HAL_ADC_Stop_DMA(&hadc5) above (top of this function) stops BOTH
-		  // the regular and injected groups on hadc5 and disables the ADC
-		  // (see ADC_ConversionStop(hadc, ADC_REGULAR_INJECTED_GROUP) +
-		  // ADC_Disable() inside HAL_ADC_Stop_DMA()). Reconfiguring the
-		  // injected channel here does NOT resume triggering by itself, so
-		  // the injected group must be re-armed every time we (re-)enter
-		  // ISOMETER mode. JADSTART is guaranteed clear at this point (we
-		  // just stopped it above), so this cannot return HAL_BUSY.
-		  HAL_ADCEx_InjectedStart_IT(&hadc5);
+		adc_configure_injected(ADC_CHANNEL_2, ADC_TRIGGER_HRTIM_HV);
 		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_hv, 1);
 
 		break;
 	case STATEMACHINE_MODE_CHARGE:
-		sConfigInjected.InjectedChannel = ADC_CHANNEL_1;
-				  sConfigInjected.InjectedRank = ADC_INJECTED_RANK_1;
-				  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_2CYCLES_5;
-				  sConfigInjected.InjectedSingleDiff = ADC_SINGLE_ENDED;
-				  sConfigInjected.InjectedOffsetNumber = ADC_OFFSET_NONE;
-				  sConfigInjected.InjectedOffset = 0;
-				  sConfigInjected.InjectedNbrOfConversion = 1;
-				  sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
-				  sConfigInjected.AutoInjectedConv = DISABLE;
-				  sConfigInjected.QueueInjectedContext = DISABLE;
-				  sConfigInjected.ExternalTrigInjecConv = ADC_TRIGGER_HRTIM_SEK;
-				  sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_RISING;
-				  sConfigInjected.InjecOversamplingMode = DISABLE;
-				  if (HAL_ADCEx_InjectedConfigChannel(&hadc5, &sConfigInjected) != HAL_OK)
-				  {
-				    Error_Handler();
-				  }
-				  // Same requirement as ISOMETER above: HAL_ADC_Stop_DMA(&hadc5) at
-				  // the top of this function stops the injected group too, so it
-				  // must be re-armed every time we (re-)enter CHARGE mode.
-				  HAL_ADCEx_InjectedStart_IT(&hadc5);
-				  break;
+		adc_configure_injected(ADC_CHANNEL_1, ADC_TRIGGER_HRTIM_SEK);
+		break;
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_VOLTMETER:
 	case STATEMACHINE_MODE_AMPMETER:

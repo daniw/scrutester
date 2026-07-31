@@ -148,29 +148,51 @@ int8_t config_store_read(void)
 }
 
 /**
+ * Writes [src, src+len) to the EEPROM starting at addr, one
+ * EEPROM_PAGE_SIZE page at a time, skipping any page whose EEPROM content
+ * already matches src (a failed read is treated as "does not match", so
+ * that page is written anyway). Returns 0 if every page that needed writing
+ * wrote successfully, otherwise the eeprom_write()/eeprom_read() result of
+ * the last page that failed -- callers accumulate this the same way the
+ * pre-extraction inline loops did: only overwrite their own running result
+ * when this returns non-zero, never reset it back to 0.
+ */
+static int8_t config_store_write_block(uint16_t addr, const uint8_t *src, uint16_t len)
+{
+	int8_t result = 0;
+	uint8_t buffer[EEPROM_PAGE_SIZE];
+
+	for (uint16_t i = 0; i < len; i += EEPROM_PAGE_SIZE)
+	{
+		int8_t r = eeprom_read(addr + i, buffer, EEPROM_PAGE_SIZE);
+		if (r != 0 || memcmp(buffer, src + i, EEPROM_PAGE_SIZE) != 0)
+		{
+			r = eeprom_write(addr + i, (uint8_t *) (src + i), EEPROM_PAGE_SIZE);
+			if (r != 0)
+				result = r;
+		}
+	}
+
+	return result;
+}
+
+/**
  * Persists the calibration block (and its CRC) to the EEPROM,
  * writing only pages whose content actually changed.
  */
 int8_t config_store_store(void)
 {
 	int8_t result = 0;
-	uint8_t buffer[EEPROM_PAGE_SIZE];
+	int8_t r;
 
 	config_store.calibration_crc = config_store_crc32b((uint8_t *) &config_store.calibration, CONFIG_STORE_CALIBRATION_SIZE);
 
-	for (uint16_t i = 0; i < CONFIG_STORE_CALIBRATION_SIZE; i += EEPROM_PAGE_SIZE)
-	{
-		uint8_t *src = ((uint8_t *) &config_store.calibration) + i;
-		int8_t r = eeprom_read(CONFIG_STORE_CALIBRATION_ADDR + i, buffer, EEPROM_PAGE_SIZE);
-		if (r != 0 || memcmp(buffer, src, EEPROM_PAGE_SIZE) != 0)
-		{
-			r = eeprom_write(CONFIG_STORE_CALIBRATION_ADDR + i, src, EEPROM_PAGE_SIZE);
-			if (r != 0)
-				result = r;
-		}
-	}
+	r = config_store_write_block(CONFIG_STORE_CALIBRATION_ADDR,
+			(uint8_t *) &config_store.calibration, CONFIG_STORE_CALIBRATION_SIZE);
+	if (r != 0)
+		result = r;
 
-	int8_t r = eeprom_write(CONFIG_STORE_CALIBRATION_ADDR + CONFIG_STORE_CALIBRATION_SIZE,
+	r = eeprom_write(CONFIG_STORE_CALIBRATION_ADDR + CONFIG_STORE_CALIBRATION_SIZE,
 			(uint8_t *) &config_store.calibration_crc, sizeof(config_store.calibration_crc));
 	if (r != 0)
 		result = r;
@@ -185,29 +207,19 @@ int8_t config_store_store(void)
 int8_t config_store_storeHW(void)
 {
 	int8_t result = 0;
-	uint8_t buffer[EEPROM_PAGE_SIZE];
+	int8_t r;
 
 	config_store.hardware_data_crc = config_store_crc32b((uint8_t *) &config_store.hardware_data, CONFIG_STORE_HARDWARE_DATA_SIZE);
 
-	int8_t r = eeprom_read(CONFIG_STORE_HEADER_ADDR, buffer, EEPROM_PAGE_SIZE);
-	if (r != 0 || memcmp(buffer, &config_store, EEPROM_PAGE_SIZE) != 0)
-	{
-		r = eeprom_write(CONFIG_STORE_HEADER_ADDR, (uint8_t *) &config_store, EEPROM_PAGE_SIZE);
-		if (r != 0)
-			result = r;
-	}
+	r = config_store_write_block(CONFIG_STORE_HEADER_ADDR,
+			(uint8_t *) &config_store, EEPROM_PAGE_SIZE);
+	if (r != 0)
+		result = r;
 
-	for (uint16_t i = 0; i < CONFIG_STORE_HARDWARE_DATA_SIZE; i += EEPROM_PAGE_SIZE)
-	{
-		uint8_t *src = ((uint8_t *) &config_store.hardware_data) + i;
-		r = eeprom_read(CONFIG_STORE_HARDWARE_ADDR + i, buffer, EEPROM_PAGE_SIZE);
-		if (r != 0 || memcmp(buffer, src, EEPROM_PAGE_SIZE) != 0)
-		{
-			r = eeprom_write(CONFIG_STORE_HARDWARE_ADDR + i, src, EEPROM_PAGE_SIZE);
-			if (r != 0)
-				result = r;
-		}
-	}
+	r = config_store_write_block(CONFIG_STORE_HARDWARE_ADDR,
+			(uint8_t *) &config_store.hardware_data, CONFIG_STORE_HARDWARE_DATA_SIZE);
+	if (r != 0)
+		result = r;
 
 	r = eeprom_write(CONFIG_STORE_HARDWARE_ADDR + CONFIG_STORE_HARDWARE_DATA_SIZE,
 			(uint8_t *) &config_store.hardware_data_crc, sizeof(config_store.hardware_data_crc));

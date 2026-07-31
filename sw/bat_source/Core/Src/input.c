@@ -23,9 +23,35 @@ static uint8_t cli_out_held = 0;
 // normal tap. CLI-simulated input never reaches this (returns earlier).
 #define BTN_DEBOUNCE_SAMPLES 2
 
-static uint8_t ok_raw_last = 0, ok_stable_count = 0, ok_debounced = 0;
-static uint8_t esc_raw_last = 0, esc_stable_count = 0, esc_debounced = 0;
-static uint8_t out_raw_last = 0, out_stable_count = 0, out_debounced = 0;
+typedef struct {
+	uint8_t raw_last;
+	uint8_t stable_count;
+	uint8_t debounced;
+} btn_state_t;
+
+static btn_state_t ok_state = { 0, 0, 0 };
+static btn_state_t esc_state = { 0, 0, 0 };
+static btn_state_t out_state = { 0, 0, 0 };
+
+/*
+ * Shared debounce state machine: requires BTN_DEBOUNCE_SAMPLES consecutive
+ * identical raw reads before accepting a transition (see the comment above
+ * BTN_DEBOUNCE_SAMPLES). Each of input_btn_ok/esc/out()'s hardware paths
+ * calls this with its own btn_state_t instance, so the three buttons'
+ * debounce histories stay independent despite sharing this one function.
+ */
+static uint8_t input_debounce(btn_state_t *st, uint8_t raw) {
+	if (raw == st->raw_last) {
+		if (st->stable_count < BTN_DEBOUNCE_SAMPLES)
+			st->stable_count++;
+	} else {
+		st->raw_last = raw;
+		st->stable_count = 1;
+	}
+	if (st->stable_count >= BTN_DEBOUNCE_SAMPLES)
+		st->debounced = raw;
+	return st->debounced;
+}
 
 void input_init(void) {
 	current_source = INPUT_SOURCE_HW;
@@ -67,17 +93,7 @@ uint8_t input_btn_ok(void) {
 		cli_pulse_ok = 0;
 		return pulse;
 	}
-	uint8_t raw = gpio_readBtnOk();
-	if (raw == ok_raw_last) {
-		if (ok_stable_count < BTN_DEBOUNCE_SAMPLES)
-			ok_stable_count++;
-	} else {
-		ok_raw_last = raw;
-		ok_stable_count = 1;
-	}
-	if (ok_stable_count >= BTN_DEBOUNCE_SAMPLES)
-		ok_debounced = raw;
-	return ok_debounced;
+	return input_debounce(&ok_state, gpio_readBtnOk());
 }
 
 uint8_t input_btn_esc(void) {
@@ -86,33 +102,13 @@ uint8_t input_btn_esc(void) {
 		cli_pulse_esc = 0;
 		return pulse;
 	}
-	uint8_t raw = gpio_readBtnEsc();
-	if (raw == esc_raw_last) {
-		if (esc_stable_count < BTN_DEBOUNCE_SAMPLES)
-			esc_stable_count++;
-	} else {
-		esc_raw_last = raw;
-		esc_stable_count = 1;
-	}
-	if (esc_stable_count >= BTN_DEBOUNCE_SAMPLES)
-		esc_debounced = raw;
-	return esc_debounced;
+	return input_debounce(&esc_state, gpio_readBtnEsc());
 }
 
 uint8_t input_btn_out(void) {
 	if (current_source == INPUT_SOURCE_CLI)
 		return cli_out_held;
-	uint8_t raw = gpio_readBtnOut();
-	if (raw == out_raw_last) {
-		if (out_stable_count < BTN_DEBOUNCE_SAMPLES)
-			out_stable_count++;
-	} else {
-		out_raw_last = raw;
-		out_stable_count = 1;
-	}
-	if (out_stable_count >= BTN_DEBOUNCE_SAMPLES)
-		out_debounced = raw;
-	return out_debounced;
+	return input_debounce(&out_state, gpio_readBtnOut());
 }
 
 void input_cli_encoder_step(int8_t direction) {

@@ -301,20 +301,66 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 
 }
 
+/*
+ * Startup ramp shared by every ctrl_main_ctrl_*() control loop below.
+ *
+ * ctrl_main_handle.ramp is a SINGLE field, not one per controller: it is
+ * zeroed once by ctrl_main_start_ctrl() and from then on incremented by
+ * whichever ctrl_main_ctrl_*() function ctrl_main_ctrl()'s switch calls that
+ * tick. Exactly one of those functions runs per control-loop tick, so a
+ * shared counter is correct -- do NOT change this into a per-controller
+ * ramp, and do not call this helper more than once per tick.
+ *
+ * Returns the multiplier just applied to `target` (1.0F once the ramp has
+ * saturated past 1.0F, otherwise the freshly-incremented
+ * ctrl_main_handle.ramp), so a caller that needs to ramp something else in
+ * lockstep with the reference -- currently only
+ * ctrl_main_ctrl_voltage_boost()'s PRIM duty -- can reuse the exact value
+ * instead of re-deriving it from ctrl_main_handle.ramp after the fact.
+ */
+static float ctrl_apply_ramped_ref(PID_controller_t *c, float target) {
+	float multiplier;
+	if (ctrl_main_handle.ramp > 1.0F) {
+		multiplier = 1.0F;
+		c->ref = target;
+		ctrl_main_handle.ramp = 1.1F;
+	} else {
+		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
+		multiplier = ctrl_main_handle.ramp;
+		c->ref = target * multiplier;
+	}
+	return multiplier;
+}
+
+// Hard duty ceiling on the SEK channel (see ctrl_apply_inverted_sek_duty()
+// below). No rationale beyond "hard limit" was recorded when this was
+// originally written inline in ctrl_main_ctrl_charge_current()/
+// ctrl_main_ctrl_charge_voltage(); preserved verbatim as a named constant.
+#define CTRL_MAIN_SEK_DUTY_CEILING 0.5F
+
+/*
+ * Shared tail of CHARGE's CC and CV loops: HRTIM_CHANNEL_SEK is driven
+ * inverted (see comment at each call site), clamped to
+ * CTRL_MAIN_SEK_DUTY_CEILING.
+ *
+ * ctrl_main_handle.duty (the display's telemetry field) is intentionally
+ * assigned the UNCLAMPED value even on the branch where the duty actually
+ * written to HRTIM_CHANNEL_SEK was clamped -- that mismatch is what the
+ * pre-refactor code did and what the display currently shows, so it is kept
+ * as-is here rather than "fixed".
+ */
+static void ctrl_apply_inverted_sek_duty(float action) {
+	if ((CTRL_PARAM_CONST_DUTY_HIGH - action) > CTRL_MAIN_SEK_DUTY_CEILING)
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_MAIN_SEK_DUTY_CEILING);
+	else
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_HIGH - action);
+	ctrl_main_handle.duty = (CTRL_PARAM_CONST_DUTY_HIGH - action) * 1000;
+}
+
 void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
-uint8_t duty;
-	// Startup Ramp
-	if (ctrl_main_handle.ramp > 1.0F) {
-		ctrl_pi_voltage_buck.ref = ctrl_main_handle.voltage_reference_mV / 1000.0F;
-		ctrl_main_handle.ramp = 1.1F;
-	}
-
-	else {
-		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
-		ctrl_pi_voltage_buck.ref = (ctrl_main_handle.voltage_reference_mV / 1000.0F)
-				* ctrl_main_handle.ramp;
-	}
+	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
+			ctrl_main_handle.voltage_reference_mV / 1000.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_buck, voltage_meas_mV / 1000.0F,
 			voltage_meas_accurate_mV / 1000.0F, 0);
@@ -322,27 +368,19 @@ uint8_t duty;
 	// Apply Duty
 	hrtim_set_duty(HRTIM_CHANNEL_PRIM, ctrl_pi_voltage_buck.action);
 	ctrl_main_handle.duty = ctrl_pi_voltage_buck.action*1000;
-	//if(ctrl_pi_voltage.action > 0.24F || ctrl_pi_voltage.action<0.24F)
-	//	printf("%d\r\n", duty);
 }
 
 
 void ctrl_main_ctrl_voltage_boost(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_ext_mA) {
-uint8_t duty;
-	// Startup Ramp
-	if (ctrl_main_handle.ramp > 1.0F) {
-		ctrl_pi_voltage_boost.ref = ctrl_main_handle.voltage_reference_mV / 1000.0F;
-		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH);
-		ctrl_main_handle.ramp = 1.1F;
-	}
-
-	else {
-		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
-		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH*ctrl_main_handle.ramp);
-		ctrl_pi_voltage_boost.ref = (ctrl_main_handle.voltage_reference_mV / 1000.0F)
-				* ctrl_main_handle.ramp;
-	}
+	// Boost also ramps HRTIM_CHANNEL_PRIM's duty in lockstep with the
+	// voltage reference (fixed at CTRL_PARAM_CONST_DUTY_HIGH once the ramp
+	// has saturated, otherwise scaled by the same in-flight ramp
+	// multiplier) -- reuse the multiplier ctrl_apply_ramped_ref() just
+	// applied to the ref rather than re-deriving it.
+	float ramp_multiplier = ctrl_apply_ramped_ref(&ctrl_pi_voltage_boost,
+			ctrl_main_handle.voltage_reference_mV / 1000.0F);
+	hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH * ramp_multiplier);
 
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_boost, voltage_meas_mV / 1000.0F,
 			voltage_meas_accurate_mV / 1000.0F, 0);
@@ -362,17 +400,8 @@ uint8_t duty;
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate) {
 
-	// Startup Ramp
-	if (ctrl_main_handle.ramp > 1.0F) {
-		ctrl_pi_current.ref = ctrl_main_handle.current_reference_mA / 1000.0F;
-		ctrl_main_handle.ramp = 1.1F;
-	}
-
-	else {
-		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
-		ctrl_pi_current.ref = (ctrl_main_handle.current_reference_mA / 1000.0F)
-				* ctrl_main_handle.ramp;
-	}
+	ctrl_apply_ramped_ref(&ctrl_pi_current,
+			ctrl_main_handle.current_reference_mA / 1000.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);
@@ -385,28 +414,14 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate) {
 
-	// Startup Ramp
-	if (ctrl_main_handle.ramp > 1.0F) {
-		ctrl_pi_charge_current.ref = ctrl_main_handle.current_reference_mA / 1000.0F;
-		ctrl_main_handle.ramp = 1.1F;
-	}
-
-	else {
-		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
-		ctrl_pi_charge_current.ref = (ctrl_main_handle.current_reference_mA / 1000.0F)
-				* ctrl_main_handle.ramp;
-	}
+	ctrl_apply_ramped_ref(&ctrl_pi_charge_current,
+			ctrl_main_handle.current_reference_mA / 1000.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);
 
-	// Apply Duty
 	// Apply Duty inverted, as the secondary Duty is inversed
-	if((CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_current.action)> 0.5)
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, 0.5);
-	else
-		hrtim_set_duty(HRTIM_CHANNEL_SEK,CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_current.action);
-	ctrl_main_handle.duty = (CTRL_PARAM_CONST_DUTY_HIGH-ctrl_pi_charge_current.action)*1000;
+	ctrl_apply_inverted_sek_duty(ctrl_pi_charge_current.action);
 
 }
 
@@ -419,48 +434,22 @@ void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
 
-	// Startup Ramp
-	if (ctrl_main_handle.ramp > 1.0F) {
-		ctrl_pi_charge_voltage.ref = ctrl_main_handle.voltage_reference_mV / 1000.0F;
-		ctrl_main_handle.ramp = 1.1F;
-	}
-
-	else {
-		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
-		ctrl_pi_charge_voltage.ref = (ctrl_main_handle.voltage_reference_mV / 1000.0F)
-				* ctrl_main_handle.ramp;
-	}
+	ctrl_apply_ramped_ref(&ctrl_pi_charge_voltage,
+			ctrl_main_handle.voltage_reference_mV / 1000.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_voltage, voltage_meas_mV / 1000.0F,
 			voltage_meas_accurate_mV / 1000.0F, 0);
 
-	// Apply Duty
 	// Apply Duty inverted, as the secondary Duty is inversed
-	if((CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_voltage.action)> 0.5)
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, 0.5);
-	else
-		hrtim_set_duty(HRTIM_CHANNEL_SEK,CTRL_PARAM_CONST_DUTY_HIGH- ctrl_pi_charge_voltage.action);
-	ctrl_main_handle.duty = (CTRL_PARAM_CONST_DUTY_HIGH-ctrl_pi_charge_voltage.action)*1000;
+	ctrl_apply_inverted_sek_duty(ctrl_pi_charge_voltage.action);
 
 }
 
 void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA) {
-	uint8_t duty;
 
-	// Startup Ramp
-	if (ctrl_main_handle.ramp > 1.0F) {
-		ctrl_pi_voltage_hv.ref = ctrl_main_handle.voltage_iso_reference_V;
-
-		ctrl_main_handle.ramp = 1.1F;
-	}
-
-	else {
-		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
-
-		ctrl_pi_voltage_hv.ref = (ctrl_main_handle.voltage_iso_reference_V
-				) * ctrl_main_handle.ramp;
-	}
+	ctrl_apply_ramped_ref(&ctrl_pi_voltage_hv,
+			ctrl_main_handle.voltage_iso_reference_V);
 
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_hv,
 			voltage_meas_mV / 1000.0F, voltage_meas_accurate_mV / 1000.0F, 0);
