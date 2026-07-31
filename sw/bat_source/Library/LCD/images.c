@@ -1,5 +1,6 @@
 #include "images.h"
 
+#ifdef LCD_TEST_DEMO_ENABLED
 
 // For the picture: https://sourceforge.net/projects/lcd-image-converter
 // Image settings: Preset Color R5G6B5, Block size 16, Little-Endian, rest is left with default
@@ -127,4 +128,6 @@ UG_BMP fry = {
   .height=114,
   .bpp=BMP_BPP_16,
 };
+
+#endif /* LCD_TEST_DEMO_ENABLED */
 

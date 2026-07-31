@@ -862,6 +862,10 @@ void LCD_init(void)
 
 #define DEFAULT_FONT FONT_8X12
 
+/* LCD_TEST_DEMO_ENABLED (images.h) gates LCD_Test() itself (below) plus all
+ * the helpers/state that only exist to support it. Off by default to save
+ * flash - see images.h for details. */
+#ifdef LCD_TEST_DEMO_ENABLED
 static uint32_t draw_time=0;
 static void clearTime(void){
   draw_time=HAL_GetTick();
@@ -879,6 +883,7 @@ static void printTime(void){
   UG_FontSetTransparency(t);
   UG_Update();
 }
+#endif /* LCD_TEST_DEMO_ENABLED */
 /**
  * @brief A Simple test function for ST7735
  * @param  none
@@ -891,9 +896,10 @@ static void printTime(void){
 #define DEMO_FLASH_KB 256
 
 // LCD_TEST_WINDOWS (lcd.h) gates the window/button/textbox/progress-bar
-// demo below.
+// demo below; it only matters when the outer LCD_TEST_DEMO_ENABLED demo
+// (images.h) is also on, since that's the only place it's used.
 
-#ifdef LCD_TEST_WINDOWS
+#if defined(LCD_TEST_WINDOWS) && defined(LCD_TEST_DEMO_ENABLED)
 static UG_WINDOW window_1;
 static UG_BUTTON button_1;
 static UG_TEXTBOX textbox_1;
@@ -918,6 +924,9 @@ static void window_1_callback(UG_MESSAGE *msg)
 
 void LCD_Test(void)
 {
+#ifndef LCD_TEST_DEMO_ENABLED
+  printf("LCD_Test: demo not compiled in (define LCD_TEST_DEMO_ENABLED in images.h to re-enable)\r\n");
+#else
 
   int16_t x=40,y=40,rad=20,count=0;
   int8_t xadd=2,yadd=2,dstep=2;
@@ -1204,6 +1213,7 @@ void LCD_Test(void)
   HAL_Delay(1000);
   UG_FillScreen(C_BLACK);
   UG_Update();
+#endif /* LCD_TEST_DEMO_ENABLED */
 }
 
 
