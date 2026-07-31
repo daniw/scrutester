@@ -21,7 +21,7 @@
 #include "tim.h"
 
 /* USER CODE BEGIN 0 */
-
+#include "irq_priority.h"
 /* USER CODE END 0 */
 
 TIM_HandleTypeDef htim2;
@@ -218,8 +218,8 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
     /* TIM2 clock enable */
     __HAL_RCC_TIM2_CLK_ENABLE();
 
-    /* TIM2 interrupt Init */
-    HAL_NVIC_SetPriority(TIM2_IRQn, 0, 0);
+    /* TIM2 interrupt Init -- state machine tick, millisecond-scale. */
+    HAL_NVIC_SetPriority(TIM2_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
     HAL_NVIC_EnableIRQ(TIM2_IRQn);
   /* USER CODE BEGIN TIM2_MspInit 1 */
 
@@ -233,8 +233,12 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
     /* TIM6 clock enable */
     __HAL_RCC_TIM6_CLK_ENABLE();
 
-    /* TIM6 interrupt Init */
-    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 0, 0);
+    /* TIM6 interrupt Init -- DAC square wave for the 1A resistance test.
+     * NOTE: TIM6_DAC_IRQn's priority is also set in dac.c's MX_DAC1_Init()
+     * (duplicate registration, whichever HAL init runs last wins at
+     * runtime) -- both call sites now use IRQ_PRIO_AUX so the outcome no
+     * longer depends on init order. */
+    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
     HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
   /* USER CODE BEGIN TIM6_MspInit 1 */
 

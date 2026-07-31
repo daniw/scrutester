@@ -177,6 +177,24 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	ctrl_main_handle.mode = mode;
 }
 
+/*
+ * The order of the two statements below is load-bearing, as is the fact that
+ * ctrl_main_start_ctrl() assigns ctrl_main_handle.mode last.
+ *
+ * Both functions run in main context from statemachine_step() (TIM2 tick,
+ * IRQ_PRIO_AUX), while ctrl_main_ctrl() runs from the ADC control-loop
+ * interrupt at IRQ_PRIO_CTRL_LOOP -- which is higher, so it can preempt them
+ * part-way through. Clearing mode first here means a preempting control-loop
+ * tick sees CTRL_MODE_OFF and writes no duty, rather than driving a converter
+ * whose PWM is about to be disabled underneath it. Setting mode last in
+ * start_ctrl() is the mirror image: the loop only starts acting once the
+ * frequencies, duties and PID state are fully set up.
+ *
+ * Before the interrupt priorities were split, TIM2 and the ADC DMA interrupt
+ * shared priority 0 and could not preempt each other, so this ordering was
+ * merely tidy. It is now what keeps the two contexts consistent -- do not
+ * reorder either function's tail without re-checking that.
+ */
 void ctrl_main_stop_control(void) {
 	ctrl_main_handle.mode = CTRL_MODE_OFF;
 	hrtim_disable(HRTIM_CHANNEL_ALL);

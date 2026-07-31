@@ -21,6 +21,7 @@
 #include "dac.h"
 
 /* USER CODE BEGIN 0 */
+#include "irq_priority.h"
 static volatile uint8_t sqwave_enabled;
 static volatile uint8_t sqwave_phase;
 static volatile uint32_t sqwave_channel;
@@ -104,8 +105,11 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef* dacHandle)
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    /* DAC1 interrupt Init */
-    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 0, 0);
+    /* DAC1 interrupt Init -- TIM6_DAC_IRQn is also registered in tim.c's
+     * HAL_TIM_Base_MspInit() (duplicate registration for the same vector);
+     * kept consistent here (IRQ_PRIO_AUX) so whichever MspInit runs last
+     * doesn't change the outcome. */
+    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
     HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
   /* USER CODE BEGIN DAC1_MspInit 1 */
 

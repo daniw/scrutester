@@ -1,6 +1,7 @@
 #include <ads131m04.h>
 #include "stdio.h"
 #include "string.h"
+#include "irq_priority.h"
 
 const int32_t adc_offset[4]={
 		0,
@@ -48,7 +49,12 @@ void ADS131M04_init(ADS131M04_handle* handle, SPI_HandleTypeDef* _hspi, GPIO_Typ
 	HAL_Delay(100);
 
     ADS131M04_selftest(handle);
-    HAL_NVIC_SetPriority(EXTI2_IRQn, 3, 0);
+    /* EXTI2_IRQn is the DRDY pin for this external ADC -- part of the
+     * ADS131M04 pipeline tier along with SPI3_IRQn and its DMA channels
+     * (spi.c). This is the actual owner of the setting (it also enables the
+     * IRQ); gpio.c's MX_GPIO_Init() sets the same value earlier for the
+     * same vector so the outcome no longer depends on init order. */
+    HAL_NVIC_SetPriority(EXTI2_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
     HAL_NVIC_EnableIRQ(EXTI2_IRQn);
 }
 

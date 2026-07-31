@@ -22,7 +22,7 @@
 #include "gpio.h"
 
 /* USER CODE BEGIN 0 */
-
+#include "irq_priority.h"
 /* USER CODE END 0 */
 
 /*----------------------------------------------------------------------------*/
@@ -181,7 +181,14 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(BUTTON_OK_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  /* EXTI2_IRQn is the ADS131M04 DRDY pin. This call (CubeMX-generated,
+   * MX_GPIO_Init() runs before ADS131M04_init()) never enables the IRQ
+   * itself -- ads131m04.c's ADS131M04_init() is what calls
+   * HAL_NVIC_EnableIRQ(EXTI2_IRQn), so that is the real owner of this
+   * setting. Kept at the same IRQ_PRIO_EXT_ADC value as ads131m04.c's own
+   * HAL_NVIC_SetPriority(EXTI2_IRQn, ...) call so the two no longer
+   * disagree, regardless of which one happens to run last. */
+  HAL_NVIC_SetPriority(EXTI2_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
 
 }
 
