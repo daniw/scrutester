@@ -9,27 +9,11 @@
 #include "driver_pca9554.h"
 #include "gpio.h"
 #include "statemachine.h"
+#include "mode_table.h"
 
-#define GPIO_MASK_OUT_SEL_ISO   (1 << 0)
-#define GPIO_MASK_OUT_SEL_HV    (1 << 1)
-#define GPIO_MASK_SHUNT_EN      (1 << 2)
-#define GPIO_MASK_SHUNT_ISO_EN  (1 << 3)
-#define GPIO_MASK_DISCHARGE     (1 << 4)
-
-static const uint8_t aux_io_ctrl_mode_config[STATEMACHINE_MODE_RESERVED] = {
-    [STATEMACHINE_IDLE]      = GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_EN,
-    [STATEMACHINE_MODE_60V_OUT]   = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
-    [STATEMACHINE_MODE_10A_OUT]   = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
-    [STATEMACHINE_MODE_RESISTANCE_1A]    = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_DISCHARGE,
-    [STATEMACHINE_MODE_RESISTANCE_1mA]   = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_DISCHARGE,
-    [STATEMACHINE_MODE_ISOMETER]  = GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_ISO_EN | GPIO_MASK_DISCHARGE,
-    [STATEMACHINE_MODE_VOLTMETER] = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
-    [STATEMACHINE_MODE_SETTINGS]  = GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_EN,
-    [STATEMACHINE_MODE_SHUTDOWN]  = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
-    [STATEMACHINE_MODE_CHARGE]    = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
-	[STATEMACHINE_MODE_AMPMETER]  = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE
-};
-
+/* GPIO_MASK_* (which relay/shunt GPIOs a mode drives high) and the per-mode
+ * mask values themselves now live in mode_table[] (mode_table.h/.c) - see
+ * aux_io_ctrl_set_config() below. */
 
 PCA9554_handle hpca_hw_rev;
 
@@ -93,15 +77,15 @@ void aux_io_ctrl_manual_set_io(uint8_t pin, uint8_t value) {
 
 
 void aux_io_ctrl_set_config(statemachine_modes_t mode){
-	/* aux_io_ctrl_mode_config[] only covers the real statemachine modes
-	 * (indices 0..STATEMACHINE_MODE_RESERVED-1). An out-of-range mode must
-	 * not be allowed to index into it and drive the relay/output GPIOs
-	 * from whatever garbage byte follows the table. */
+	/* mode_table[] only covers the real statemachine modes (indices
+	 * 0..STATEMACHINE_MODE_RESERVED-1). An out-of-range mode must not be
+	 * allowed to index into it and drive the relay/output GPIOs from
+	 * whatever garbage follows the table. */
 	if (mode >= STATEMACHINE_MODE_RESERVED) {
 		return;
 	}
 
-	uint8_t cfg = aux_io_ctrl_mode_config[mode];
+	uint8_t cfg = mode_table[mode].aux_io_mask;
 
 	HAL_GPIO_WritePin(OUT_SEL_ISO_GPIO_Port, OUT_SEL_ISO_Pin,
 			cfg & GPIO_MASK_OUT_SEL_ISO);

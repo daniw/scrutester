@@ -24,6 +24,7 @@
 #include "protection.h"
 #include "dac.h"
 #include "config_store.h"
+#include "mode_table.h"
 
 statemachine_t statemachine_handle;
 uint16_t ok_button_pressed;
@@ -37,6 +38,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode);
 void statemachine_switchtoIdle(void);
 static void statemachine_apply_encoder_setpoint(void);
 static void statemachine_step_calibration(void);
+static void statemachine_enter_mode_generic(statemachine_modes_t mode);
 
 /* Settings > Calibration sub-UI state -- 0=channel list, 1=zero step,
  * 2=optional gain step (see display_calibration_enter/update()). */
@@ -344,63 +346,63 @@ void statemachine_step(void) {
 	}
 }
 
+/* Runs the shared, mode_table[]-driven entry sequence used by every real
+ * mode except IDLE (special-cased: redirects to statemachine_switchtoIdle()
+ * instead), SETTINGS (special-cased: sets up its own submenu state) and
+ * AMPMETER's refusal check (handled by the caller *before* this runs - the
+ * rest of AMPMETER's entry, including MODE_F_SEK_FORCE_SHORT below, is
+ * ordinary table-driven behaviour). This is a direct transcription of what
+ * each pre-refactor case in this switch did; see mode_table.h for the
+ * per-flag rationale and mode_table.c for the per-mode data it was built
+ * from. Only ever invoked from case labels naming a real mode, so mode is
+ * always < STATEMACHINE_MODE_RESERVED here -- the check below is pure
+ * defense-in-depth for mode_table[]'s indexing contract, not a reachable
+ * path. */
+static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
+	if (mode >= STATEMACHINE_MODE_RESERVED) {
+		return;
+	}
+	const mode_descriptor_t *d = &mode_table[mode];
+
+	if (d->flags & MODE_F_LED_OUT_ON)
+		ui_ctrl_ledOutOn();
+	if (d->flags & MODE_F_LED_SENSE_ON)
+		ui_ctrl_ledSenseOn();
+
+	statemachine_handle.current_mode = mode;
+	adc_configure_mode(mode);
+
+	// Must run after adc_configure_mode(mode): every pre-refactor case that
+	// auto-starts the control loop configured the ADC first.
+	if (d->flags & MODE_F_AUTOSTART_CTRL) {
+		ctrl_main_start_ctrl(d->ctrl_mode);
+		aux_io_ctrl_manual_set_io(d->enable_gpio, 1);
+	}
+	if (d->flags & MODE_F_DAC_SQWAVE)
+		dac_sqwave_start(DAC_CHANNEL_2, config_store.calibration.i_1a_ref_dac_value);
+
+	if (d->flags & MODE_F_OUTPUT_ON_ZERO)
+		statemachine_handle.output_on = 0;
+	if (d->flags & MODE_F_OUTPUT_ON_ONE)
+		statemachine_handle.output_on = 1;
+
+	if (d->flags & MODE_F_SEK_FORCE_SHORT)
+		hrtim_sek_force_short();
+
+	display_enter_mode(mode);
+}
+
 void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	printf("Switch from Idle to %d\r\n", mode);
 
 	switch (mode) {
-	case STATEMACHINE_MODE_60V_OUT:
-		ui_ctrl_ledOutOn();
-
-		adc_configure_mode(mode);
-		statemachine_handle.current_mode = mode;
-		statemachine_handle.output_on = 0;
-		display_enter_mode(mode);
-		break;
-
-	case STATEMACHINE_MODE_10A_OUT:
-		ui_ctrl_ledOutOn();
-		adc_configure_mode(mode);
-		statemachine_handle.current_mode = mode;
-		statemachine_handle.output_on = 0;
-		display_enter_mode(mode);
-		break;
-
-	case STATEMACHINE_MODE_RESISTANCE_1A:
-		ui_ctrl_ledOutOn();
-		ui_ctrl_ledSenseOn();
-
-		statemachine_handle.current_mode = mode;
-		adc_configure_mode(mode);
-		ctrl_main_start_ctrl(statemachine_mode_to_ctrl_mode(mode));
-		aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
-		dac_sqwave_start(DAC_CHANNEL_2, config_store.calibration.i_1a_ref_dac_value);
-		display_enter_mode(mode);
-		break;
-
-	case STATEMACHINE_MODE_RESISTANCE_1mA:
-		ui_ctrl_ledOutOn();
-
-		statemachine_handle.current_mode = mode;
-		adc_configure_mode(mode);
-		ctrl_main_start_ctrl(statemachine_mode_to_ctrl_mode(mode));
-		aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
-		display_enter_mode(mode);
-		break;
-
-	case STATEMACHINE_MODE_ISOMETER:
-		ui_ctrl_ledOutOn();
-		adc_configure_mode(mode);
-		statemachine_handle.current_mode = mode;
-		statemachine_handle.output_on = 0;
-		display_enter_mode(mode);
-		break;
-
-	case STATEMACHINE_MODE_VOLTMETER:
-		ui_ctrl_ledOutOn();
-
-		statemachine_handle.current_mode = mode;
-		adc_configure_mode(mode);
-		display_enter_mode(mode);
+	case STATEMACHINE_IDLE:
+		// mode 0 (== STATEMACHINE_IDLE) is never actually reached in
+		// practice - it isn't a selectable menu entry - but redirects to
+		// statemachine_switchtoIdle() instead of the generic sequence,
+		// matching the pre-refactor switch's "case 0: ...; break;". Still
+		// falls through to the shared tail below, same as before.
+		statemachine_switchtoIdle();
 		break;
 
 	case STATEMACHINE_MODE_AMPMETER:
@@ -411,25 +413,20 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		if (adc_data.converted.v_term >= 500) { // mV
 			return;
 		}
-		ui_ctrl_ledOutOn();
-		statemachine_handle.current_mode = mode;
-		adc_configure_mode(mode);
-		hrtim_sek_force_short();
-		display_enter_mode(mode);
+		statemachine_enter_mode_generic(mode);
 		break;
 
+	case STATEMACHINE_MODE_60V_OUT:
+	case STATEMACHINE_MODE_10A_OUT:
+	case STATEMACHINE_MODE_RESISTANCE_1A:
+	case STATEMACHINE_MODE_RESISTANCE_1mA:
+	case STATEMACHINE_MODE_ISOMETER:
+	case STATEMACHINE_MODE_VOLTMETER:
 	case STATEMACHINE_MODE_CHARGE:
-		// Interlock (refuse if a fault is already latched) lives in the
-		// auto-detect check in statemachine_step()'s IDLE case, since entry
-		// here *is* the auto-detect firing - starts immediately, like
-		// RESISTANCE_1A/1mA, since charging isn't a "hold a button" action.
-		ui_ctrl_ledOutOn();
-		statemachine_handle.current_mode = mode;
-		statemachine_handle.output_on = 1;
-		adc_configure_mode(mode);
-		ctrl_main_start_ctrl(statemachine_mode_to_ctrl_mode(mode));
-		aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
-		display_enter_mode(mode);
+		// CHARGE's interlock (refuse if a fault is already latched) lives in
+		// the auto-detect check in statemachine_step()'s IDLE case, since
+		// entry here *is* the auto-detect firing.
+		statemachine_enter_mode_generic(mode);
 		break;
 
 	case STATEMACHINE_MODE_SETTINGS:
@@ -439,10 +436,12 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		display_show_settings_list(statemachine_handle.current_menu_index);
 		break;
 
-	case 0:
-		statemachine_switchtoIdle();
-		break;
 	default:
+		// Covers STATEMACHINE_MODE_SHUTDOWN/STATEMACHINE_MODE_RESERVED and
+		// any out-of-range value - matches the pre-refactor switch's
+		// default: no-op (SHUTDOWN is never entered through here in
+		// practice; statemachine_step()'s ESC handling assigns
+		// current_mode directly instead).
 		break;
 	}
 	aux_io_ctrl_set_config(mode);

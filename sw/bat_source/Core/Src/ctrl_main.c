@@ -14,6 +14,7 @@
 #include "aux_io_ctrl.h"
 #include "config_store.h"
 #include "bq76905.h"
+#include "mode_table.h"
 
 extern BQ76905_handle bms;
 
@@ -90,33 +91,23 @@ void ctrl_main_init(void) {
 }
 
 /**
- * Maps a statemachine_modes_t to its ctrl_mode_t counterpart. The two enums
- * are positionally identical only up through ISOMETER and diverge after
- * that (STATEMACHINE_MODE_VOLTMETER=6 vs CTRL_MODE_CHARGE=6) - callers must
- * go through this instead of passing statemachine_handle.current_mode
- * directly to ctrl_main_start_ctrl(). Modes with no ctrl_mode_t counterpart
+ * Maps a statemachine_modes_t to its ctrl_mode_t counterpart, via a
+ * mode_table[] lookup - see mode_table.h/.c. The two enums are positionally
+ * identical only up through ISOMETER and diverge after that
+ * (STATEMACHINE_MODE_VOLTMETER=6 vs CTRL_MODE_CHARGE=6) - callers must go
+ * through this instead of passing statemachine_handle.current_mode directly
+ * to ctrl_main_start_ctrl(). Modes with no ctrl_mode_t counterpart
  * (AMPMETER, VOLTMETER, SETTINGS, SHUTDOWN, IDLE) correctly map to
  * CTRL_MODE_OFF, since none of them drive the control loop.
  * @param mode statemachine mode to translate.
- * @return the matching ctrl_mode_t, or CTRL_MODE_OFF if none applies.
+ * @return the matching ctrl_mode_t, or CTRL_MODE_OFF if none applies (also
+ *   the out-of-range/mode >= STATEMACHINE_MODE_RESERVED fallback).
  */
 ctrl_mode_t statemachine_mode_to_ctrl_mode(statemachine_modes_t mode) {
-	switch (mode) {
-	case STATEMACHINE_MODE_60V_OUT:
-		return CTRL_MODE_60V;
-	case STATEMACHINE_MODE_10A_OUT:
-		return CTRL_MODE_10A;
-	case STATEMACHINE_MODE_RESISTANCE_1A:
-		return CTRL_MODE_RESISTANCE_1A;
-	case STATEMACHINE_MODE_RESISTANCE_1mA:
-		return CTRL_MODE_RESISTANCE_1mA;
-	case STATEMACHINE_MODE_ISOMETER:
-		return CTRL_MODE_ISOMETER;
-	case STATEMACHINE_MODE_CHARGE:
-		return CTRL_MODE_CHARGE;
-	default:
+	if (mode >= STATEMACHINE_MODE_RESERVED) {
 		return CTRL_MODE_OFF;
 	}
+	return mode_table[mode].ctrl_mode;
 }
 
 void ctrl_main_start_ctrl(ctrl_mode_t mode) {

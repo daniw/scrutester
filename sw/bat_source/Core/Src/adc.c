@@ -25,6 +25,7 @@
 #include "aux_io_ctrl.h"
 #include "config_store.h"
 #include "dac.h"
+#include "mode_table.h"
 
 extern ADC_MEAS_DATA adc_data;
 
@@ -967,6 +968,29 @@ void adc_start(void){
 // the conversion result belongs to.
 static statemachine_modes_t adc_injected_mode = STATEMACHINE_IDLE;
 
+// Applies mode_table[mode].adc_trigger to the shared hadc1..4 ExternalTrigConv
+// field -- the part of adc_configure_mode() that used to be four repeated
+// assignment lines per case. ADC_TRIGGER_NONE means "leave hadc1..4 exactly
+// as whichever mode ran before this one left them" (see mode_table.h) --
+// this is how ISOMETER and RESISTANCE_1mA's pre-existing, deliberately
+// preserved missing-trigger bugs (deferred to a separate, bench-validated
+// fix) come through unchanged: their table entries are ADC_TRIGGER_NONE, so
+// this function is a no-op for them, exactly like the pre-refactor switch
+// cases that never assigned the trigger at all.
+static void adc_apply_shared_trigger(statemachine_modes_t mode) {
+	if (mode >= STATEMACHINE_MODE_RESERVED) {
+		return;
+	}
+	uint32_t trigger = mode_table[mode].adc_trigger;
+	if (trigger == ADC_TRIGGER_NONE) {
+		return;
+	}
+	hadc1.Init.ExternalTrigConv = trigger;
+	hadc2.Init.ExternalTrigConv = trigger;
+	hadc3.Init.ExternalTrigConv = trigger;
+	hadc4.Init.ExternalTrigConv = trigger;
+}
+
 void adc_configure_mode(statemachine_modes_t mode) {
 
 	ADC_ChannelConfTypeDef sConfig = { 0 };
@@ -980,6 +1004,7 @@ void adc_configure_mode(statemachine_modes_t mode) {
 	HAL_ADC_Stop_DMA(&hadc4);
 	HAL_ADC_Stop_DMA(&hadc5);
 
+	adc_apply_shared_trigger(mode);
 
 	sConfig.Rank = ADC_REGULAR_RANK_1;
 	sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
@@ -989,24 +1014,21 @@ void adc_configure_mode(statemachine_modes_t mode) {
 
 	switch (mode) {
 	case STATEMACHINE_MODE_60V_OUT:
-		hadc1.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
-		hadc2.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
-		hadc3.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
-		hadc4.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
-
 		sConfig.Channel = ADC_CHANNEL_2;
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
 			Error_Handler();
 		HAL_ADC_Init(&hadc4);
 		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
 		break;
-		//case STATEMACHINE_MODE_RESISTANCE_1mA:
+		// STATEMACHINE_MODE_RESISTANCE_1mA is deliberately NOT a case here
+		// (pre-existing, preserved bug, deferred to a separate,
+		// bench-validated fix -- see adc_apply_shared_trigger()'s doc
+		// comment above and mode_table.h's ADC_TRIGGER_NONE comment). It
+		// falls through to `default:` below, getting neither the shared
+		// trigger nor this hadc4 v_out channel config/DMA start, even
+		// though ctrl_main_ctrl() runs its buck voltage loop on
+		// converted.v_out, which hadc4 supplies. Do NOT add a case for it.
 	case STATEMACHINE_MODE_RESISTANCE_1A:
-		hadc1.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
-		hadc2.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
-		hadc3.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
-		hadc4.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
-
 		sConfig.Channel = ADC_CHANNEL_2;
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
 			Error_Handler();
@@ -1016,6 +1038,12 @@ void adc_configure_mode(statemachine_modes_t mode) {
 
 
 	case STATEMACHINE_MODE_ISOMETER:
+		// Pre-existing, preserved bug: mode_table[STATEMACHINE_MODE_ISOMETER]
+		// .adc_trigger is ADC_TRIGGER_NONE, so adc_apply_shared_trigger()
+		// above left hadc1..4's shared trigger untouched -- ISOMETER's
+		// control loop rate ends up depending on whichever mode ran before
+		// it. Deferred to a separate, bench-validated fix; do NOT "fix" it
+		// here. See mode_table.h's ADC_TRIGGER_NONE comment.
 		HAL_ADC_Stop_DMA(&hadc4);
 		sConfig.Channel = ADC_CHANNEL_5;
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
@@ -1052,10 +1080,6 @@ void adc_configure_mode(statemachine_modes_t mode) {
 
 		break;
 	case STATEMACHINE_MODE_CHARGE:
-		hadc1.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
-		hadc2.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
-		hadc3.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
-		hadc4.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_SEK;
 		sConfigInjected.InjectedChannel = ADC_CHANNEL_1;
 				  sConfigInjected.InjectedRank = ADC_INJECTED_RANK_1;
 				  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_2CYCLES_5;
@@ -1079,10 +1103,6 @@ void adc_configure_mode(statemachine_modes_t mode) {
 				  HAL_ADCEx_InjectedStart_IT(&hadc5);
 				  break;
 	case STATEMACHINE_MODE_10A_OUT:
-		hadc1.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
-		hadc2.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
-		hadc3.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
-		hadc4.Init.ExternalTrigConv     = ADC_TRIGGER_HRTIM_PRIM;
 	case STATEMACHINE_MODE_VOLTMETER:
 	case STATEMACHINE_MODE_AMPMETER:
 	case STATEMACHINE_MODE_SETTINGS:
