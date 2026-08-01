@@ -35,6 +35,14 @@ extern ctrl_main_t ctrl_main_handle;
 extern ADC_MEAS_DATA adc_data;
 extern BQ76905_handle bms;
 
+/* Remembers protection_get_error_mask() while a protection fault is forcing
+ * the converter off, so that if CHARGE is ultimately left because of it (see
+ * the protection_forced_output_off recovery branch in statemachine_step()),
+ * the debug print below can still report which source(s) caused it -- by
+ * the time the fault actually clears and the mode transition happens, the
+ * live mask has already gone back to 0. */
+static uint16_t charge_protection_exit_mask;
+
 void statemachine_switchfromIdle(statemachine_modes_t mode);
 void statemachine_switchtoIdle(void);
 static void statemachine_apply_encoder_setpoint(void);
@@ -198,9 +206,20 @@ void statemachine_step(void) {
 			}
 			statemachine_handle.output_on = 0;
 			statemachine_handle.protection_forced_output_off = 1;
+			charge_protection_exit_mask = protection_get_error_mask();
 		} else if (statemachine_handle.protection_forced_output_off) {
 			statemachine_handle.protection_forced_output_off = 0;
 			if (statemachine_handle.current_mode == STATEMACHINE_MODE_CHARGE) {
+				static const protection_source_t PROTECTION_SOURCES[] = {
+						PROTECTION_SRC_TEMP_SEC, PROTECTION_SRC_TEMP_TRAFO,
+						PROTECTION_SRC_TEMP_CURRENT, PROTECTION_SRC_TEMP_PRIM,
+						PROTECTION_SRC_OVP, PROTECTION_SRC_OCP };
+				printf("CHARGE exit: protection cleared, was forced off by:");
+				for (unsigned i = 0; i < sizeof(PROTECTION_SOURCES) / sizeof(PROTECTION_SOURCES[0]); i++) {
+					if (charge_protection_exit_mask & PROTECTION_SOURCES[i])
+						printf(" %s", protection_source_name(PROTECTION_SOURCES[i]));
+				}
+				printf(" (mask=0x%04X)\r\n", charge_protection_exit_mask);
 				statemachine_switchtoIdle();
 			}
 		}
@@ -286,6 +305,23 @@ void statemachine_step(void) {
 					&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA)
 				|| bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB
 				|| adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV) {
+			if (bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
+					&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA) {
+				printf("CHARGE exit: end voltage reached and current tapered off "
+						"(stack=%umV >= end=%dmV, i_out=%ldmA <= taper=%dmA)\r\n",
+						bms.VoltageRegisters.StackVoltage, CTRL_PARAM_CHARGE_END_VOLTAGE_mV,
+						-adc_data.converted.i_out_ext_mA, CTRL_PARAM_CHARGE_TAPER_CURRENT_mA);
+			}
+			if (bms.SafetyRegisters.safetyStatusA) {
+				printf("CHARGE exit: BMS safetyStatusA=0x%02X\r\n", bms.SafetyRegisters.safetyStatusA);
+			}
+			if (bms.SafetyRegisters.safetyStatusB) {
+				printf("CHARGE exit: BMS safetyStatusB=0x%02X\r\n", bms.SafetyRegisters.safetyStatusB);
+			}
+			if (adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV) {
+				printf("CHARGE exit: supply voltage dropped (v_term_ext_mv=%ldmV < stop=%dmV)\r\n",
+						adc_data.converted.v_term_ext_mv, CTRL_PARAM_CHARGE_STOP_VIN_mV);
+			}
 			BQ76905_resetChargeAccumulator(&bms);
 			bms.Accumulator.accumulatedCharge = 0;
 			bms.charge_percentage = 100;
@@ -331,6 +367,9 @@ void statemachine_step(void) {
 		break;
 	}
 	if (esc_button_pressed == 1) {
+		if (statemachine_handle.current_mode == STATEMACHINE_MODE_CHARGE) {
+			printf("CHARGE exit: ESC pressed by user\r\n");
+		}
 		statemachine_switchtoIdle();
 	}
 
