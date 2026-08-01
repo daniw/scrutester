@@ -27,6 +27,18 @@ struct event_queue event_queue;
 
 uint8_t event_overflow;
 
+/*
+ * EVENT_SM_STEP is a periodic supervisory tick (TIM2, every
+ * STATEMACHINE_STEP_PERIOD_mS) that is fine to skip but not to pile up:
+ * if the consumer falls behind, TIM2 keeps posting a new one every period
+ * regardless, and being a plain FIFO with no per-type priority, those
+ * pile up and crowd out I2C/EEPROM/BMS events instead. This flag caps
+ * EVENT_SM_STEP at one pending entry in the queue at a time; see
+ * event_Add()/event_Get(). Volatile: set from ISR context (producer),
+ * cleared from main-loop context (consumer).
+ */
+volatile uint8_t event_sm_step_pending;
+
 /**
  * Initializes the event queue and the event timer.
  * @return the initialization error code and 0 when there was no error
@@ -36,6 +48,7 @@ int event_Init(void)
 	queue_Init(event_queue);
 
 	event_overflow = 0;
+	event_sm_step_pending = 0;
 	return 0;
 }
 
@@ -77,20 +90,31 @@ void event_Add(EVENTS e, void* callback, void* argument)
 	primask = __get_PRIMASK();
 	__disable_irq();
 
-	oldhead = event_queue.head;
-	newhead = (oldhead + 1) % EVENT_QUEUE_SIZE;
-	if (newhead == event_queue.tail)
+	if (e == EVENT_SM_STEP && event_sm_step_pending)
 	{
-		overflowed = (event_overflow == 0);
-		event_overflow = 1;
+		/* Coalesced: an EVENT_SM_STEP is already queued, so this tick is
+		 * intentionally dropped rather than piling up (see the flag's
+		 * declaration comment above). Not an overflow. */
 	}
 	else
 	{
-		event_overflow = 0;
-		event_queue.queue[oldhead].event = e;
-		event_queue.queue[oldhead].callback = callback;
-		event_queue.queue[oldhead].argument = argument;
-		event_queue.head = newhead;
+		oldhead = event_queue.head;
+		newhead = (oldhead + 1) % EVENT_QUEUE_SIZE;
+		if (newhead == event_queue.tail)
+		{
+			overflowed = (event_overflow == 0);
+			event_overflow = 1;
+		}
+		else
+		{
+			event_overflow = 0;
+			event_queue.queue[oldhead].event = e;
+			event_queue.queue[oldhead].callback = callback;
+			event_queue.queue[oldhead].argument = argument;
+			event_queue.head = newhead;
+			if (e == EVENT_SM_STEP)
+				event_sm_step_pending = 1;
+		}
 	}
 
 	__set_PRIMASK(primask);
@@ -123,6 +147,8 @@ EVENT_STRUCT event_Get(void)
 		e.callback = queue_Get(event_queue).callback;
 		e.argument = queue_Get(event_queue).argument;
 		queue_Pop(event_queue, EVENT_QUEUE_SIZE);
+		if (e.event == EVENT_SM_STEP)
+			event_sm_step_pending = 0;
 	}
 	return e;
 }
