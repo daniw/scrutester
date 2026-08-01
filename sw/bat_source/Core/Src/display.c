@@ -415,6 +415,18 @@ static void update_charge(uint8_t output_active) {
 			(unsigned) (elapsed_s / 3600), (unsigned) ((elapsed_s / 60) % 60),
 			(unsigned) (elapsed_s % 60));
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
+
+	snprintf(text, sizeof(text), "Cells %u.%03u %u.%03u %u.%03u %u.%03u V",
+			bms.CellVoltageRegisters.CellVoltages[0] / 1000,
+			bms.CellVoltageRegisters.CellVoltages[0] % 1000,
+			bms.CellVoltageRegisters.CellVoltages[1] / 1000,
+			bms.CellVoltageRegisters.CellVoltages[1] % 1000,
+			bms.CellVoltageRegisters.CellVoltages[2] / 1000,
+			bms.CellVoltageRegisters.CellVoltages[2] % 1000,
+			bms.CellVoltageRegisters.CellVoltages[3] / 1000,
+			bms.CellVoltageRegisters.CellVoltages[3] % 1000);
+	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, C_WHITE_63, C_BLACK);
+
 	int32_t debug_value = ctrl_main_handle.duty;
 	snprintf(text, sizeof(text), "%3d.%03d", (int) (debug_value / 1000),
 			(int) ((debug_value < 0 ?
