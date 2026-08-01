@@ -51,20 +51,6 @@
 #define CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_LOW CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW
 
 
-/* The HV/ISOMETER loop does NOT execute at CTRL_FREQ, unlike every other
- * loop here. It is paced by HRTIM TRG2 off Timer C at CTRL_PARAM_SW_FREQ_HV
- * (350 kHz), post-scaled by 15 in MX_HRTIM1_Init() and halved again in
- * HAL_ADC_ConvCpltCallback() -- about 11.7 kHz, not 25 kHz.
- *
- * The two I gains below are still written as x/CTRL_FREQ, so their real
- * integral action is roughly 2.1x weaker than the constant reads, and the
- * startup ramp is roughly 2.1x slower. That is deliberate for now: the rate
- * was previously nondeterministic (it inherited whichever trigger the last
- * mode set), so making it fixed had to come before tuning against it. When
- * the HV loop is tuned on the bench, close the gap either by retuning these
- * against the real rate or by changing TRG2's post-scaler from 15 to 7,
- * which lands the loop on 25 kHz exactly. Note the post-scaler lives in
- * CubeMX-generated code and would be reverted by regenerating the .ioc. */
 #define CTRL_PARAM_HV_VOLTAGE_P 0.001F
 #define CTRL_PARAM_HV_VOLTAGE_I (0.1F/CTRL_FREQ)
 #define CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH 0.2F
@@ -83,7 +69,7 @@
 #define CTRL_PARAM_1A_REF_DAC_VALUE 2048
 
 #define CTRL_PARAM_CHARGE_CURRENT_mA 1000
-#define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3550*4)
+#define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3500*4)
 
 // Rated pack capacity, in mA-seconds to match the BQ76905 PASSQ
 // accumulator's units (4.5Ah LiFePO4 = 4500mAh * 3600s/h). Stored
@@ -96,7 +82,7 @@
 // this (in addition to reaching CTRL_PARAM_CHARGE_END_VOLTAGE_mV) - roughly
 // C/20 for the 4.5Ah pack. Placeholder needing bench tuning, like the other
 // charge params.
-#define CTRL_PARAM_CHARGE_TAPER_CURRENT_mA 225
+#define CTRL_PARAM_CHARGE_TAPER_CURRENT_mA 100
 
 // Plausibility window for bms.VoltageRegisters.StackVoltage before it is
 // trusted to gate the CC->CV transition. The BMS is read asynchronously over

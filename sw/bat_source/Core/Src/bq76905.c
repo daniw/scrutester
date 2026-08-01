@@ -75,7 +75,7 @@ void BQ76905_init(BQ76905_handle* handle, uint8_t i2c_address){
 	  printf("SafetyRegisters.safetyAlertB         = 0x%02X\r\n", handle->SafetyRegisters.safetyAlertB);
 	  printf("SafetyRegisters.safetyStatusB        = 0x%02X\r\n", handle->SafetyRegisters.safetyStatusB);
 	  printf("\n");
-	if((handle->CellVoltageRegisters.BatteryStatus & 0x80) || (handle->CellVoltageRegisters.BatteryStatus == 0x0)){
+	if((handle->CellVoltageRegisters.BatteryStatus & 0x80) || (handle->CellVoltageRegisters.BatteryStatus == 0x0) ||  BQ76905_FORCE_CONFIG){
 		BQ76905_resetDevice(handle);
 		BQ76905_configure(handle);
 	}else if (handle->CellVoltageRegisters.BatteryStatus & 0x8000){

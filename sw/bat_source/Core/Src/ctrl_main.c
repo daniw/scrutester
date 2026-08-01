@@ -164,7 +164,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	default:
 		break;
 	}
-	ctrl_main_handle.ramp = 0.0F;
+	ctrl_main_handle.ramp = 0.2F;
 	ctrl_main_handle.mode = mode;
 }
 
@@ -225,31 +225,6 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 				meas->i_iso_ext_uA);
 		break;
 	case CTRL_MODE_CHARGE:
-		/* CC/CV: hold charge current until the end voltage is reached, then
-		 * latch into CV and hold that voltage (statemachine.c decides when
-		 * the cycle is actually done, once current has also tapered off).
-		 * One-way latch so a small voltage sag once CV is holding doesn't
-		 * bounce the loop back into CC. Both phases drive HRTIM_CHANNEL_SEK
-		 * (set up in ctrl_main_start_ctrl()), unlike ctrl_main_ctrl_voltage_buck()
-		 * which drives HRTIM_CHANNEL_PRIM. */
-		/* Latch on the BMS stack voltage, not on meas->v_in. Both used to be
-		 * compared against CTRL_PARAM_CHARGE_END_VOLTAGE_mV -- this latch
-		 * against v_in, and statemachine.c's end-of-cycle test against the
-		 * BMS -- so one threshold was being evaluated from two different
-		 * sensors. v_in is the internal ADC3 channel, and the BMS reading is
-		 * the accurate one, so they could reach the threshold at different
-		 * real pack voltages and CV could engage earlier or later than the
-		 * cycle-end logic assumed. The BMS value is already in scope here:
-		 * ctrl_main_ctrl_charge_voltage() below takes it as its accurate
-		 * I-term input.
-		 *
-		 * Only ~1Hz fresh, which is ample for a one-shot, one-way latch,
-		 * and it is range-checked first: an unpolled or failed read comes
-		 * back as 0, which would sit below the threshold forever and leave
-		 * the charger in constant current with nothing to end it. If the
-		 * reading is not plausible the phase simply does not advance this
-		 * tick, so CC continues under its own current limit until a good
-		 * reading arrives. */
 		uint16_t stack_mV = bms.VoltageRegisters.StackVoltage;
 		uint8_t stack_valid = (stack_mV >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV)
 				&& (stack_mV <= CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV);
@@ -257,10 +232,6 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 		if (!ctrl_main_handle.charge_cv_phase && stack_valid
 				&& stack_mV >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
 			ctrl_main_handle.charge_cv_phase = 1;
-			// Bumpless transfer: seed the CV loop's integrator from the CC
-			// loop's last output duty, so the switchover doesn't jerk the
-			// duty cycle - same preload trick ctrl_main_start_ctrl() uses
-			// for smooth turn-on.
 			ctrl_pi_charge_voltage.prev_I_action = ctrl_pi_charge_current.action;
 		}
 
@@ -340,14 +311,14 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
  * ctrl_main_ctrl_voltage_boost()'s PRIM duty -- can reuse the exact value
  * instead of re-deriving it from ctrl_main_handle.ramp after the fact.
  */
-static float ctrl_apply_ramped_ref(PID_controller_t *c, float target) {
+static float ctrl_apply_ramped_ref(PID_controller_t *c, float target, float div) {
 	float multiplier;
 	if (ctrl_main_handle.ramp > 1.0F) {
 		multiplier = 1.0F;
 		c->ref = target;
 		ctrl_main_handle.ramp = 1.1F;
 	} else {
-		ctrl_main_handle.ramp += (10.0F / CTRL_FREQ);
+		ctrl_main_handle.ramp += (div / CTRL_FREQ);
 		multiplier = ctrl_main_handle.ramp;
 		c->ref = target * multiplier;
 	}
@@ -382,7 +353,7 @@ static void ctrl_apply_inverted_sek_duty(float action) {
 void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
-			ctrl_main_handle.voltage_reference_mV / 1000.0F);
+			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_buck, voltage_meas_mV / 1000.0F,
 			voltage_meas_accurate_mV / 1000.0F, 0);
@@ -401,7 +372,7 @@ void ctrl_main_ctrl_voltage_boost(uint32_t voltage_meas_mV,
 	// multiplier) -- reuse the multiplier ctrl_apply_ramped_ref() just
 	// applied to the ref rather than re-deriving it.
 	float ramp_multiplier = ctrl_apply_ramped_ref(&ctrl_pi_voltage_boost,
-			ctrl_main_handle.voltage_reference_mV / 1000.0F);
+			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
 	hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH * ramp_multiplier);
 
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_boost, voltage_meas_mV / 1000.0F,
@@ -423,7 +394,7 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_current,
-			ctrl_main_handle.current_reference_mA / 1000.0F);
+			ctrl_main_handle.current_reference_mA / 1000.0F, 10.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);
@@ -437,7 +408,7 @@ void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_charge_current,
-			ctrl_main_handle.current_reference_mA / 1000.0F);
+			ctrl_main_handle.current_reference_mA / 1000.0F, 0.5F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);
@@ -457,7 +428,7 @@ void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_charge_voltage,
-			ctrl_main_handle.voltage_reference_mV / 1000.0F);
+			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_voltage, voltage_meas_mV / 1000.0F,
 			voltage_meas_accurate_mV / 1000.0F, 0);
@@ -471,7 +442,7 @@ void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_hv,
-			ctrl_main_handle.voltage_iso_reference_V);
+			ctrl_main_handle.voltage_iso_reference_V, 10.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_hv,
 			voltage_meas_mV / 1000.0F, voltage_meas_accurate_mV / 1000.0F, 0);
