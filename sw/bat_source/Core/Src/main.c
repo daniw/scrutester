@@ -240,6 +240,8 @@ int main(void)
 				e.callback(e.argument);
 			break;
 		case EVENT_IIC_ERROR:
+			if(e.callback != 0)
+				e.callback(e.argument);
 			break;
 		case EVENT_EEPROM_READ:
 			break;
