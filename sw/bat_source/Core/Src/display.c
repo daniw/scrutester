@@ -547,7 +547,8 @@ void display_show_settings_list(uint8_t submenu_index) {
 void display_enter_settings_detail(uint8_t submenu_index) {
 	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
 	draw_status_bar(SETTINGS_ITEMS[submenu_index], C_SILVER);
-	draw_footer("ESC: Back", 0);
+	draw_footer("ESC: Back",
+			submenu_index == STATEMACHINE_SETTINGS_MODE_BMS ? "OK: Balance" : 0);
 
 	if (submenu_index == STATEMACHINE_SETTINGS_MODE_ABOUT) {
 		snprintf(text, sizeof(text), "BatSource Firmware");
@@ -576,12 +577,20 @@ static void update_settings_bms(void) {
 					| bms.SafetyRegisters.safetyStatusB);
 	LCD_PutStr(16, STATUS_H + 24, text, FONT_TINY, C_WHITE, C_BLACK);
 
-	snprintf(text, sizeof(text), "Cell = %u %u %u %u mV",
-			bms.CellVoltageRegisters.CellVoltages[0],
-			bms.CellVoltageRegisters.CellVoltages[1],
-			bms.CellVoltageRegisters.CellVoltages[2],
-			bms.CellVoltageRegisters.CellVoltages[3]);
-	LCD_PutStr(16, STATUS_H + 40, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 40, "Cell = ", FONT_TINY, C_WHITE, C_BLACK);
+	{
+		/* Fixed-width segment per cell, colored orange while that cell's
+		 * bleed FET is commanded on (balancing_get_active_mask()) -- same
+		 * convention as the charge screen's cell-voltage line, needed
+		 * because this LCD has no local framebuffer (see file header). */
+		uint8_t balancing_mask = balancing_get_active_mask();
+		for (int i = 0; i < 4; i++) {
+			UG_COLOR color = (balancing_mask & (1u << i)) ? C_ORANGE : C_WHITE;
+			snprintf(text, sizeof(text), "%4u", bms.CellVoltageRegisters.CellVoltages[i]);
+			LCD_PutStr(72 + i * 40, STATUS_H + 40, text, FONT_TINY, color, C_BLACK);
+		}
+	}
+	LCD_PutStr(232, STATUS_H + 40, " mV", FONT_TINY, C_WHITE, C_BLACK);
 
 	snprintf(text, sizeof(text), "Current = %d mA    ", bms.CurrentRegisters.CC2Current);
 	LCD_PutStr(16, STATUS_H + 56, text, FONT_TINY, C_WHITE, C_BLACK);
@@ -593,6 +602,13 @@ static void update_settings_bms(void) {
 	snprintf(text, sizeof(text), "Passed T = %u s    ",
 			(unsigned) (bms.Accumulator.passedTime / 4));
 	LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, C_WHITE, C_BLACK);
+
+	if (balancing_is_manual_override_active())
+		snprintf(text, sizeof(text), "Balancing: ON  (mask=0x%X)   ",
+				balancing_get_active_mask());
+	else
+		snprintf(text, sizeof(text), "Balancing: OFF               ");
+	LCD_PutStr(16, STATUS_H + 104, text, FONT_TINY, C_WHITE, C_BLACK);
 }
 
 static void update_settings_display(void) {

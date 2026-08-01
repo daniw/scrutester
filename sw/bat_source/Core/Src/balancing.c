@@ -33,12 +33,13 @@ extern ctrl_main_t ctrl_main_handle;
 #define BALANCING_STOP_THRESHOLD_mV  20
 
 static uint8_t balancing_active_mask;
+static uint8_t balancing_manual_override;
 
 void balancing_update(void) {
 	uint8_t target_mask = 0;
 
-	if (ctrl_main_handle.mode == CTRL_MODE_CHARGE
-			&& ctrl_main_handle.charge_cv_phase) {
+	if ((ctrl_main_handle.mode == CTRL_MODE_CHARGE
+			&& ctrl_main_handle.charge_cv_phase) || balancing_manual_override) {
 		uint16_t min_mV = bms.CellVoltageRegisters.CellVoltages[0];
 		for (int i = 1; i < BALANCING_ACTIVE_CELL_COUNT; i++) {
 			if (bms.CellVoltageRegisters.CellVoltages[i] < min_mV)
@@ -67,4 +68,16 @@ void balancing_update(void) {
 
 uint8_t balancing_get_active_mask(void) {
 	return balancing_active_mask;
+}
+
+void balancing_toggle_manual_override(void) {
+	balancing_manual_override = !balancing_manual_override;
+}
+
+void balancing_clear_manual_override(void) {
+	balancing_manual_override = 0;
+}
+
+uint8_t balancing_is_manual_override_active(void) {
+	return balancing_manual_override;
 }

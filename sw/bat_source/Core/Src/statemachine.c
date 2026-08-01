@@ -355,7 +355,14 @@ void statemachine_step(void) {
 			return;
 		} else {
 			display_update_settings_detail(statemachine_handle.settings_mode);
+			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
+					&& ok_button_pressed == 1) {
+				balancing_toggle_manual_override();
+			}
 			if (esc_button_pressed == 1) {
+				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {
+					balancing_clear_manual_override();
+				}
 				statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
 				display_show_settings_list(statemachine_handle.current_menu_index);
 				return;

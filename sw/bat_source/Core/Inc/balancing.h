@@ -27,4 +27,19 @@ void balancing_update(void);
  *  display to poll every redraw. */
 uint8_t balancing_get_active_mask(void);
 
+/** Manual/diagnostic override (BMS Diagnostics settings screen, OK button).
+ *  While active, balancing_update() runs the same imbalance-selection
+ *  algorithm it uses during CV-phase charging, independent of
+ *  CTRL_MODE_CHARGE/charge_cv_phase. */
+void balancing_toggle_manual_override(void);
+
+/** Forces the manual override off -- called on leaving the BMS Diagnostics
+ *  screen, so it can never be left running unattended. Distinct from
+ *  balancing_toggle_manual_override() so the caller doesn't have to know
+ *  or check the current state first. */
+void balancing_clear_manual_override(void);
+
+/** Whether the manual override is currently active, for the display. */
+uint8_t balancing_is_manual_override_active(void);
+
 #endif /* INC_BALANCING_H_ */
