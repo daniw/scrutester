@@ -947,10 +947,10 @@ void cmd_printADC() {
 		printf(" 		v_bat          (ADC5     ) : %u \t: %u mV\r\n", adc_data.raw.v_bat        , adc_data.converted.v_bat       );
 		printf(" 		v_ref_int      (ADC5     ) : %u \t: %u mV\r\n", adc_data.raw.v_ref_int    , adc_data.converted.v_ref_int   );
 
-		printf("  Ext V_Term : %li : %li mV\r\n", ext_adc.channelData[0], adc_data.converted.v_term_ext_mv);
-		printf("  Ext I_Out  : %li : %li mA\r\n", ext_adc.channelData[1], adc_data.converted.i_out_ext_mA );
-		printf("  Ext V_Sns  : %li : %li uV\r\n", ext_adc.channelData[2], adc_data.converted.v_sens_ext_uv);
-		printf("  Ext I_Iso  : %li : %li uA\r\n", ext_adc.channelData[3], adc_data.converted.i_iso_ext_uA );
+		printf("  Ext V_Term : %li : %li mV\r\n", adc_data.ext_adc_data[0], adc_data.converted.v_term_ext_mv);
+		printf("  Ext I_Out  : %li : %li mA\r\n", adc_data.ext_adc_data[1], adc_data.converted.i_out_ext_mA );
+		printf("  Ext V_Sns  : %li : %li uV\r\n", adc_data.ext_adc_data[2], adc_data.converted.v_sens_ext_uv);
+		printf("  Ext I_Iso  : %li : %li uA\r\n", adc_data.ext_adc_data[3], adc_data.converted.i_iso_ext_uA );
 	}
 }
 
