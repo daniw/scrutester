@@ -560,6 +560,8 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 		LCD_PutStr(16, STATUS_H + 70, text, FONT_TINY, C_WHITE_63, C_BLACK);
 		snprintf(text, sizeof(text), "FW version: %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
 		LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		snprintf(text, sizeof(text), "Designed by daniw & ahorat");
+		LCD_PutStr(16, STATUS_H + 106, text, FONT_TINY, C_WHITE_63, C_BLACK);
 	}
 }
 
@@ -735,13 +737,6 @@ void display_calibration_enter(calibration_channel_t ch, uint8_t ui_state) {
 		draw_footer("ESC: Skip", "OK: Set gain");
 		break;
 	case 3:
-		// One-shot failure message for a rejected gain (see
-		// statemachine_step_calibration()'s case 2): occupies the same
-		// STATUS_H+8/+28 lines as case 2's static instructions above, so
-		// it is left alone by display_calibration_update()'s ui_state 2,
-		// which never draws above STATUS_H+52 -- stays up until the user
-		// retries (redraws these lines again, either via this case or
-		// case 2) or backs out (case 0, which clears the whole frame).
 		snprintf(text, sizeof(text), "Calibration: %s", calibration_channel_name(ch));
 		draw_status_bar(text, C_SILVER);
 		LCD_PutStr(16, STATUS_H + 8, "Gain calibration failed!", FONT_SMALL,
@@ -763,13 +758,13 @@ void display_calibration_update(calibration_channel_t ch, uint8_t ui_state,
 			int16_t y = STATUS_H + 8 + i * 20;
 			uint8_t selected = (i == ch);
 
-			snprintf(text, sizeof(text), "%-6s (%s)                ",
+			snprintf(text, sizeof(text), " %-6s (%s)                ",
 					calibration_channel_name((calibration_channel_t) i),
 					calibration_channel_unit((calibration_channel_t) i));
-			LCD_PutStr(selected ? 26 : 16, y, text, FONT_TINY, C_WHITE,
+			LCD_PutStr(selected ? 14 : 6, y, text, FONT_TINY, C_WHITE,
 			C_BLACK);
 			if (selected)
-				LCD_PutStr(6, y, ">", FONT_TINY, C_WHITE, C_BLACK);
+				LCD_PutStr(6, y, "> ", FONT_TINY, C_WHITE, C_BLACK);
 		}
 		break;
 	case 1:
