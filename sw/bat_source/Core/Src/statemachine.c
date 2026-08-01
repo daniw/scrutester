@@ -22,6 +22,7 @@
 #include "ctrl_param.h"
 #include "calibration.h"
 #include "protection.h"
+#include "balancing.h"
 #include "dac.h"
 #include "config_store.h"
 #include "mode_table.h"
@@ -194,6 +195,11 @@ void statemachine_step(void) {
 	adc_snapshot_converted();
 	adc_convert_data();
 	protection_update(statemachine_handle.current_mode);
+
+	// Unconditional every tick (not just while STATEMACHINE_MODE_CHARGE is
+	// active) -- see balancing.c: this guarantees the balancing mask gets
+	// written back to 0 on the tick after charging stops for any reason.
+	balancing_update();
 	ui_ctrl_step();
 
 	// Handle Buttons press

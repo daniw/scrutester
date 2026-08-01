@@ -18,6 +18,7 @@
 #include "ctrl_param.h"
 #include "adc.h"
 #include "bq76905.h"
+#include "balancing.h"
 #include "aux_io_ctrl.h"
 #include "ui_ctrl.h"
 #include "icon_store.h"
@@ -395,6 +396,7 @@ static void enter_charge(void) {
 	draw_footer("ESC: Back", "OK: Start/Stop");
 	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "V", FONT_SMALL, C_WHITE,
 	C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 36, "Cells", FONT_TINY, C_WHITE_63, C_BLACK);
 }
 
 static void update_charge(uint8_t output_active) {
@@ -416,22 +418,25 @@ static void update_charge(uint8_t output_active) {
 			(unsigned) (elapsed_s % 60));
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
 
-	snprintf(text, sizeof(text), "Cells %u.%03u %u.%03u %u.%03u %u.%03u V",
-			bms.CellVoltageRegisters.CellVoltages[0] / 1000,
-			bms.CellVoltageRegisters.CellVoltages[0] % 1000,
-			bms.CellVoltageRegisters.CellVoltages[1] / 1000,
-			bms.CellVoltageRegisters.CellVoltages[1] % 1000,
-			bms.CellVoltageRegisters.CellVoltages[2] / 1000,
-			bms.CellVoltageRegisters.CellVoltages[2] % 1000,
-			bms.CellVoltageRegisters.CellVoltages[3] / 1000,
-			bms.CellVoltageRegisters.CellVoltages[3] % 1000);
-	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	/* One fixed-width segment per cell so each can be colored independently
+	 * (balancing_get_active_mask() -- attention color while that cell's
+	 * bleed FET is commanded on, dim white otherwise) without leaving
+	 * stale pixels from a differently-colored previous draw. Fixed x
+	 * offsets, evenly spaced after the static "Cells" label drawn once in
+	 * enter_charge(). */
+	static const int16_t CELL_SEGMENT_X[4] = { 64, 124, 184, 244 };
+	uint8_t balancing_mask = balancing_get_active_mask();
+	for (int i = 0; i < 4; i++) {
+		UG_COLOR color = (balancing_mask & (1u << i)) ? C_ORANGE : C_WHITE_63;
+		snprintf(text, sizeof(text), "%u.%03uV",
+				bms.CellVoltageRegisters.CellVoltages[i] / 1000,
+				bms.CellVoltageRegisters.CellVoltages[i] % 1000);
+		LCD_PutStr(CELL_SEGMENT_X[i], SECOND_Y + 36, text, FONT_TINY, color, C_BLACK);
+	}
 
-	int32_t debug_value = ctrl_main_handle.duty;
-	snprintf(text, sizeof(text), "%3d.%03d", (int) (debug_value / 1000),
-			(int) ((debug_value < 0 ?
-					-debug_value : debug_value) % 1000));
-	LCD_PutStr(16, SECOND_Y + 54, text, FONT_SMALL, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "Phase: %s",
+			ctrl_main_handle.charge_cv_phase ? "CV" : "CC");
+	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, C_WHITE, C_BLACK);
 
 }
 
