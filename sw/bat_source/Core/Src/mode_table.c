@@ -58,7 +58,8 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_DISCHARGE,
         .enable_gpio = GPIO_CONV_CTRL_EN,
         .flags       = MODE_F_LED_OUT_ON | MODE_F_LED_SENSE_ON
-                     | MODE_F_AUTOSTART_CTRL | MODE_F_DAC_SQWAVE,
+                     | MODE_F_AUTOSTART_CTRL | MODE_F_DAC_SQWAVE
+					 | MODE_F_OUTPUT_ON_ONE,
         .adc_trigger = ADC_TRIGGER_HRTIM_PRIM,
     },
 
@@ -73,7 +74,7 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .ctrl_mode   = CTRL_MODE_RESISTANCE_1mA,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_DISCHARGE,
         .enable_gpio = GPIO_CONV_CTRL_EN,
-        .flags       = MODE_F_LED_OUT_ON | MODE_F_AUTOSTART_CTRL,
+        .flags       = MODE_F_LED_OUT_ON | MODE_F_AUTOSTART_CTRL | MODE_F_OUTPUT_ON_ONE,
         .adc_trigger = ADC_TRIGGER_HRTIM_PRIM,
     },
 
