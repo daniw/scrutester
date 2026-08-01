@@ -1097,9 +1097,6 @@ void adc_configure_mode(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_RESERVED:
 	case STATEMACHINE_IDLE:
 	default:
-		/* Ampmeter is a passive readout of i_out, which hadc1 already
-		 * samples continuously below regardless of mode -- nothing extra
-		 * to configure here. */
 		break;
 	}
 
