@@ -9,6 +9,9 @@
 bat_source/Debug
 bat_source/Release
 
+# Kept locally, never committed (see project conventions)
+README.md
+
 DisplayTest/Debug
 DisplayTest/Release
 DisplayTest/Drivers

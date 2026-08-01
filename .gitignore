@@ -166,3 +166,7 @@ __pycache__
 # Simulation Data
 *.mat
 
+# Generated icon-store seed binary (output of
+# doc/icons/improved_icons/scripts/flash_icon_seed.py / export_firmware.py)
+doc/icons/improved_icons/scripts/icon_seed.bin
+
