@@ -523,6 +523,8 @@ static const char *const SETTINGS_ITEMS[STATEMACHINE_SETTINGS_MODE_LENGTH] = {
 		[STATEMACHINE_SETTINGS_MODE_BMS] = "BMS Diagnostics",
 		[STATEMACHINE_SETTINGS_MODE_DISPLAY] = "Display Brightness",
 		[STATEMACHINE_SETTINGS_MODE_CALIBRATION] = "Calibration",
+		[STATEMACHINE_SETTINGS_MODE_ADC1] = "ADC Readings 1",
+		[STATEMACHINE_SETTINGS_MODE_ADC2] = "ADC Readings 2",
 		[STATEMACHINE_SETTINGS_MODE_ABOUT] = "About", };
 
 void display_show_settings_list(uint8_t submenu_index) {
@@ -600,6 +602,70 @@ static void update_settings_display(void) {
 	LCD_PutStr(16, STATUS_H + 40, text, FONT_SMALL, C_WHITE, C_BLACK);
 }
 
+static void update_settings_adc1(void) {
+	static uint8_t downsample = 0;
+	if(downsample++<10)
+		return;
+	downsample = 0;
+	adc_convert_data();
+	snprintf(text, sizeof(text),"v_in       : %8u : %7ld mV", adc_data.raw.v_in   , adc_data.converted.v_in  );
+	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"v_out      : %8u : %7ld mV", adc_data.raw.v_out  , adc_data.converted.v_out );
+	LCD_PutStr(16, STATUS_H + 23, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"v_term     : %8u : %7ld mV", adc_data.raw.v_term , adc_data.converted.v_term);
+	LCD_PutStr(16, STATUS_H + 38, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"v_hv       : %8u : %7ld mV", adc_data.raw.v_hv   , adc_data.converted.v_hv  );
+	LCD_PutStr(16, STATUS_H + 53, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"i_bat      : %8u : %7d mA",  adc_data.raw.i_bat  , adc_data.converted.i_bat );
+	LCD_PutStr(16, STATUS_H + 68, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"i_out      : %8u : %7d mA",  adc_data.raw.i_out  , adc_data.converted.i_out );
+	LCD_PutStr(16, STATUS_H + 83, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"i_iso      : %8u : %7d mA",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
+	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, C_WHITE, C_BLACK);
+
+	snprintf(text, sizeof(text),"Ext V_Term : %8li : %7li mV", adc_data.ext_adc_data[0], adc_data.converted.v_term_ext_mv);
+	LCD_PutStr(16, STATUS_H + 128, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"Ext I_Out  : %8li : %7li mA", adc_data.ext_adc_data[1], adc_data.converted.i_out_ext_mA );
+	LCD_PutStr(16, STATUS_H + 143, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"Ext V_Sns  : %8li : %7li uV", adc_data.ext_adc_data[2], adc_data.converted.v_sens_ext_uv);
+	LCD_PutStr(16, STATUS_H + 158, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text),"Ext I_Iso  : %8li : %7li uA", adc_data.ext_adc_data[3], adc_data.converted.i_iso_ext_uA );
+	LCD_PutStr(16, STATUS_H + 173, text, FONT_TINY, C_WHITE, C_BLACK);
+}
+
+static void update_settings_adc2(void) {
+	static uint8_t downsample = 0;
+	if(downsample++<10)
+		return;
+	downsample = 0;
+	adc_convert_data();
+	snprintf(text, sizeof(text), "v_3v3         : %8u : %7u mV",			adc_data.raw.v_3v3, adc_data.converted.v_3v3);
+	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "temp_sec      : %8u : %7i \260C",			adc_data.raw.temp_sec, adc_data.converted.temp_sec);
+	LCD_PutStr(16, STATUS_H + 23, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "v_3v3a        : %8u : %7u mV",			adc_data.raw.v_3v3a, adc_data.converted.v_3v3a);
+	LCD_PutStr(16, STATUS_H + 38, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "temp_inductor : %8u : %7i \260C",			adc_data.raw.temp_trafo, adc_data.converted.temp_trafo);
+	LCD_PutStr(16, STATUS_H + 53, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "temp_current  : %8u : %7i \260C",			adc_data.raw.temp_current, adc_data.converted.temp_current);
+	LCD_PutStr(16, STATUS_H + 68, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "temp_prim     : %8u : %7i \260C",			adc_data.raw.temp_prim, adc_data.converted.temp_prim);
+	LCD_PutStr(16, STATUS_H + 83, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "v_15v         : %8u : %7u mV",			adc_data.raw.v_15v, adc_data.converted.v_15v);
+	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "v_vcc         : %8u : %7u mV",			adc_data.raw.v_vcc, adc_data.converted.v_vcc);
+	LCD_PutStr(16, STATUS_H + 113, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "v_5v          : %8u : %7u mV",			adc_data.raw.v_5v, adc_data.converted.v_5v);
+	LCD_PutStr(16, STATUS_H + 128, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "int_temp      : %8u : %7i \260C",			adc_data.raw.int_temp, adc_data.converted.int_temp);
+	LCD_PutStr(16, STATUS_H + 143, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "v_bat         : %8u : %7u mV",			adc_data.raw.v_bat, adc_data.converted.v_bat);
+	LCD_PutStr(16, STATUS_H + 158, text, FONT_TINY, C_WHITE, C_BLACK);
+	snprintf(text, sizeof(text), "v_ref_int     : %8u : %7u mV",			adc_data.raw.v_ref_int, adc_data.converted.v_ref_int);
+	LCD_PutStr(16, STATUS_H + 173, text, FONT_TINY, C_WHITE, C_BLACK);
+
+}
+
 void display_update_settings_detail(uint8_t submenu_index) {
 	switch (submenu_index) {
 	case STATEMACHINE_SETTINGS_MODE_BMS:
@@ -607,6 +673,12 @@ void display_update_settings_detail(uint8_t submenu_index) {
 		break;
 	case STATEMACHINE_SETTINGS_MODE_DISPLAY:
 		update_settings_display();
+		break;
+	case STATEMACHINE_SETTINGS_MODE_ADC1:
+		update_settings_adc1();
+		break;
+	case STATEMACHINE_SETTINGS_MODE_ADC2:
+		update_settings_adc2();
 		break;
 	default:
 		break;
