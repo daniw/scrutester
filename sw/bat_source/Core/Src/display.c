@@ -614,7 +614,7 @@ static void update_settings_bms(void) {
 }
 
 static void update_settings_display(void) {
-	snprintf(text, sizeof(text), "Ambient light: %u clux    ",
+	snprintf(text, sizeof(text), "Ambient: %6u clux  ",
 			(unsigned) ui_ctrl_readBrightness());
 	LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, C_WHITE, C_BLACK);
 	snprintf(text, sizeof(text), "Display brightness: %u%%    ",

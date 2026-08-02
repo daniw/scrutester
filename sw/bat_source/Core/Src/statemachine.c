@@ -365,6 +365,7 @@ void statemachine_step(void) {
 				}
 				statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
 				display_show_settings_list(statemachine_handle.current_menu_index);
+				input_encoder_reset(statemachine_handle.settings_mode-STATEMACHINE_SETTINGS_MODE_BMS);
 				return;
 			}
 		}
@@ -485,7 +486,7 @@ void statemachine_switchtoIdle(void) {
 	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
 	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
 	dac_sqwave_stop(); // no-op unless RESISTANCE_1A left the DAC square wave running
-	input_encoder_reset(64);
+	input_encoder_reset(63+statemachine_handle.current_mode);
 	statemachine_handle.current_mode = STATEMACHINE_IDLE;
 	statemachine_handle.current_menu_index = 0xFF; /* force a redraw on the next tick */
 	ui_ctrl_ledOutOff();
