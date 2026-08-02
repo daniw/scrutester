@@ -24,7 +24,6 @@
 #include "irq_priority.h"
 static volatile uint8_t sqwave_enabled;
 static volatile uint8_t sqwave_phase;
-static volatile uint32_t sqwave_channel;
 static volatile uint16_t sqwave_high_value;
 /* USER CODE END 0 */
 
@@ -177,7 +176,6 @@ void dac_setValue1ARef(uint16_t value)
   */
 void dac_sqwave_start(uint32_t dac_channel, uint16_t high_value_12bit)
 {
-	sqwave_channel = dac_channel;
 	sqwave_high_value = high_value_12bit;
 	sqwave_phase = 0;
 	sqwave_enabled = 1;
@@ -192,7 +190,7 @@ void dac_sqwave_stop(void)
 	// Reset the channel to 0 so it isn't left mid-toggle at the high value
 	// when stopped - 0 is the same idle state the channel had before this
 	// feature existed.
-	HAL_DAC_SetValue(&hdac1, sqwave_channel, DAC_ALIGN_12B_R, 0);
+	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 0);
 }
 
 /**
@@ -207,7 +205,7 @@ void dac_sqwave_tick(void)
 		return;
 	}
 	sqwave_phase = !sqwave_phase;
-	HAL_DAC_SetValue(&hdac1, sqwave_channel, DAC_ALIGN_12B_R, sqwave_phase ? sqwave_high_value : 0);
+	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, sqwave_phase ? sqwave_high_value : 0);
 }
 
 /**
