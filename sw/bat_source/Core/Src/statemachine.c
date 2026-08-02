@@ -487,6 +487,7 @@ void statemachine_switchtoIdle(void) {
 	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
 	dac_sqwave_stop(); // no-op unless RESISTANCE_1A left the DAC square wave running
 	input_encoder_reset(63+statemachine_handle.current_mode);
+	adc_configure_mode(STATEMACHINE_IDLE);
 	statemachine_handle.current_mode = STATEMACHINE_IDLE;
 	statemachine_handle.current_menu_index = 0xFF; /* force a redraw on the next tick */
 	ui_ctrl_ledOutOff();

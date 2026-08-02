@@ -1049,20 +1049,8 @@ void adc_configure_mode(statemachine_modes_t mode) {
 	sConfig.Offset = 0;
 
 	switch (mode) {
+	case STATEMACHINE_IDLE:
 	case STATEMACHINE_MODE_60V_OUT:
-		sConfig.Channel = ADC_CHANNEL_2;
-		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
-			Error_Handler();
-		HAL_ADC_Init(&hadc4);
-		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
-		break;
-		// Both resistance modes run the same buck voltage loop on
-		// converted.v_out (see ctrl_main_ctrl()), so both need hadc4 pointed
-		// at V_OUT and DMAing. RESISTANCE_1mA used to be a commented-out
-		// case label here, which left it falling through to `default:` with
-		// neither the shared trigger nor this hadc4 setup - so its
-		// regulator's feedback signal was whatever the previous mode had
-		// left in raw.v_out, or zero from boot.
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 		sConfig.Channel = ADC_CHANNEL_2;
@@ -1071,8 +1059,6 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		HAL_ADC_Init(&hadc4);
 		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
 		break;
-
-
 	case STATEMACHINE_MODE_ISOMETER:
 		// adc_apply_shared_trigger() above pointed hadc1..4 at HV (TRG2),
 		// the converter this mode drives. See mode_table.c's ISOMETER entry
@@ -1095,7 +1081,6 @@ void adc_configure_mode(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_SETTINGS:
 	case STATEMACHINE_MODE_SHUTDOWN:
 	case STATEMACHINE_MODE_RESERVED:
-	case STATEMACHINE_IDLE:
 	default:
 		break;
 	}

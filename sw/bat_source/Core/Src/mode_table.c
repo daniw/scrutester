@@ -27,7 +27,7 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .aux_io_mask = GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_EN,
         .enable_gpio = 0,
         .flags       = 0,
-        .adc_trigger = ADC_TRIGGER_NONE,
+        .adc_trigger = ADC_TRIGGER_HRTIM_PRIM,
     },
 
     /* Hold-OUT-to-enable: ctrl_main_start_ctrl()/GPIO_CONV_CTRL_EN are
