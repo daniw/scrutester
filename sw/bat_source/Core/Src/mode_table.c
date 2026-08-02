@@ -161,7 +161,7 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
     [STATEMACHINE_MODE_AMPMETER] = {
         .ctrl_mode   = CTRL_MODE_OFF,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
-        .enable_gpio = 0,
+        .enable_gpio = GPIO_CONV_CTRL_EN,
         .flags       = MODE_F_LED_OUT_ON | MODE_F_SEK_FORCE_SHORT,
         .adc_trigger = ADC_TRIGGER_NONE,
     },

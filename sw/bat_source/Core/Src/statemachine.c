@@ -422,8 +422,10 @@ static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
 	if (d->flags & MODE_F_OUTPUT_ON_ONE)
 		statemachine_handle.output_on = 1;
 
-	if (d->flags & MODE_F_SEK_FORCE_SHORT)
+	if (d->flags & MODE_F_SEK_FORCE_SHORT) {
 		hrtim_sek_force_short();
+		aux_io_ctrl_manual_set_io(d->enable_gpio, 1);
+	}
 
 	display_enter_mode(mode);
 }
@@ -480,6 +482,7 @@ void statemachine_switchtoIdle(void) {
 	printf("Switch to Idle\r\n");
 	aux_io_ctrl_set_config(STATEMACHINE_IDLE);
 	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
 	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
 	dac_sqwave_stop(); // no-op unless RESISTANCE_1A left the DAC square wave running
 	input_encoder_reset(64);
