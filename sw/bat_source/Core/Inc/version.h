@@ -8,7 +8,7 @@
 #ifndef INC_VERSION_H_
 #define INC_VERSION_H_
 
-#define FW_VERSION_MAJOR 1
-#define FW_VERSION_MINOR 0
+#define FW_VERSION_MAJOR 0
+#define FW_VERSION_MINOR 1
 
 #endif /* INC_VERSION_H_ */
