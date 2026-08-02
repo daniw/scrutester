@@ -445,6 +445,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		// return (not break) so the shared tail below doesn't reconfigure
 		// the relays for a mode we just refused to actually enter.
 		if (adc_data.converted.v_term >= 500) { // mV
+			printf("Unable to switch to %d, voltage present at terminals, returning to Idle\r\n", mode);
 			return;
 		}
         /* fall through */
