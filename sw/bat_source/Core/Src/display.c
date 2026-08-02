@@ -344,13 +344,15 @@ static void enter_isometer(void) {
 		return;
 
 	draw_status_bar("Isolation Test", entry->accent);
-	draw_output_border(entry->accent, 1);
+	draw_output_border(entry->accent, 0);
 	draw_footer("ESC: Back", "Encoder: test V");
 	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "Mohm", FONT_SMALL, C_WHITE,
 	C_BLACK);
 }
 
-static void update_isometer(void) {
+static void update_isometer(uint8_t output_active) {
+	const menu_entry_t *entry = menu_entry_for_mode(STATEMACHINE_MODE_ISOMETER);
+	draw_output_border(entry->accent, output_active);
 	update_status_bar();
 
 	snprintf(text, sizeof(text), "Test Voltage: %4u V   ",
@@ -498,7 +500,7 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 		update_resistance(mode);
 		break;
 	case STATEMACHINE_MODE_ISOMETER:
-		update_isometer();
+		update_isometer(output_active);
 		break;
 	case STATEMACHINE_MODE_VOLTMETER:
 		update_passive_readout(adc_data.converted.v_term_ext_mv_filt / 10);
