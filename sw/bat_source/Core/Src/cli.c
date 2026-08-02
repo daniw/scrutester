@@ -425,11 +425,11 @@ static void cli_control_process_byte(char c) {
 	}
 	if (cli_control_esc_state == 2) {
 		switch (c) {
-		case 'A': /* Up */
+		case 'B': /* Down */
 		case 'C': /* Right */
 			input_cli_encoder_step(+1);
 			break;
-		case 'B': /* Down */
+		case 'A': /* Up */
 		case 'D': /* Left */
 			input_cli_encoder_step(-1);
 			break;
