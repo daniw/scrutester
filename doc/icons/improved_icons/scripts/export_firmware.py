@@ -29,8 +29,8 @@ ORDER = [
     ('isolation', 'isolation'),
     ('voltmeter', 'voltmeter'),
     ('ampmeter', 'ampmeter'),
-    ('charge', 'charge'),
     ('settings', 'settings'),
+    ('charge', 'charge'),
 ]
 SIZES = [64, 96]
 
