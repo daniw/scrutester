@@ -66,7 +66,7 @@
 // 12 bit DAC code for the "high" half of the RESISTANCE_1A test-current
 // reference square wave. Placeholder mid-scale value only - needs real
 // bench tuning against the actual 1A current source hardware.
-#define CTRL_PARAM_1A_REF_DAC_VALUE 2048
+#define CTRL_PARAM_1A_REF_DAC_VALUE 3820
 
 #define CTRL_PARAM_CHARGE_CURRENT_mA 1000
 #define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3500*4)

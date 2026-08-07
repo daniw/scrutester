@@ -22,6 +22,7 @@
 
 /* USER CODE BEGIN 0 */
 #include "irq_priority.h"
+static volatile uint32_t sqwave_channel;
 static volatile uint8_t sqwave_enabled;
 static volatile uint8_t sqwave_phase;
 static volatile uint16_t sqwave_high_value;
@@ -174,8 +175,27 @@ void dac_setValue1ARef(uint16_t value)
   * @param dac_channel DAC_CHANNEL_1 or DAC_CHANNEL_2
   * @param high_value_12bit 12 bit value for the "high" half of the wave
   */
+void dac_sqwave_init(uint32_t dac_channel, uint16_t high_value_12bit)
+{
+	sqwave_channel = dac_channel;
+	sqwave_high_value = high_value_12bit;
+	sqwave_phase = 0;
+	sqwave_enabled = 0;
+	// Reset the channel to 0 so it isn't left mid-toggle at the high value
+	// when stopped - 0 is the same idle state the channel had before this
+	// feature existed.
+	HAL_DAC_SetValue(&hdac1, sqwave_channel, DAC_ALIGN_12B_R, 0);
+}
+
+/**
+  * Starts a 1Hz/50% duty square wave on the given DAC channel, toggling
+  * between 0 and high_value_12bit once per dac_sqwave_tick() call.
+  * @param dac_channel DAC_CHANNEL_1 or DAC_CHANNEL_2
+  * @param high_value_12bit 12 bit value for the "high" half of the wave
+  */
 void dac_sqwave_start(uint32_t dac_channel, uint16_t high_value_12bit)
 {
+	sqwave_channel = dac_channel;
 	sqwave_high_value = high_value_12bit;
 	sqwave_phase = 0;
 	sqwave_enabled = 1;
@@ -190,7 +210,7 @@ void dac_sqwave_stop(void)
 	// Reset the channel to 0 so it isn't left mid-toggle at the high value
 	// when stopped - 0 is the same idle state the channel had before this
 	// feature existed.
-	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 0);
+	HAL_DAC_SetValue(&hdac1, sqwave_channel, DAC_ALIGN_12B_R, 0);
 }
 
 /**
@@ -205,7 +225,7 @@ void dac_sqwave_tick(void)
 		return;
 	}
 	sqwave_phase = !sqwave_phase;
-	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, sqwave_phase ? sqwave_high_value : 0);
+	HAL_DAC_SetValue(&hdac1, sqwave_channel, DAC_ALIGN_12B_R, sqwave_phase ? sqwave_high_value : 0);
 }
 
 /**

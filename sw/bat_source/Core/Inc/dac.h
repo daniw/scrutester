@@ -56,6 +56,14 @@ void dac_setValue1ARef(uint16_t value);
 
 /**
   * Starts a 1Hz/50% duty square wave on the given DAC channel, toggling
+  * between 0 and high_value_12bit once per dac_sqwave_tick() call.
+  * @param dac_channel DAC_CHANNEL_1 or DAC_CHANNEL_2
+  * @param high_value_12bit 12 bit value for the "high" half of the wave
+  */
+void dac_sqwave_init(uint32_t dac_channel, uint16_t high_value_12bit);
+
+/**
+  * Starts a 1Hz/50% duty square wave on the given DAC channel, toggling
   * between 0 and high_value_12bit once per dac_sqwave_tick() call. Meant to
   * be ticked from the TIM6 500ms period-elapsed interrupt (two ticks = one
   * full on/off cycle = 1 second).

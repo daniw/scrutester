@@ -156,6 +156,7 @@ int main(void)
    * DAC test setup
    */
   dac_setValueRef2(2048);
+  dac_sqwave_init(DAC_CHANNEL_2, config_store.calibration.i_1a_ref_dac_value);
 
   /*
    * CLI Setup
