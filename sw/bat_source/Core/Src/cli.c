@@ -1557,6 +1557,7 @@ void cmd_set1ARef(void) {
 	CLI_CHECK_ARG_CNT(1);
 	char *end;
 	config_store.calibration.i_1a_ref_dac_value = strtoul(arg_locs[1], &end, 10);
+	config_store_store();
 }
 
 void cmd_printRTC(void){
