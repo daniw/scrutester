@@ -113,9 +113,9 @@ uint8_t input_btn_out(void) {
 
 void input_cli_encoder_step(int8_t direction) {
 	if (direction > 0)
-		cli_encoder_count = (cli_encoder_count + 2) & 0x7F;
+		cli_encoder_count = (cli_encoder_count + 1) & 0x7F;
 	else
-		cli_encoder_count = (cli_encoder_count - 2) & 0x7F;
+		cli_encoder_count = (cli_encoder_count - 1) & 0x7F;
 }
 
 void input_cli_pulse_ok(void) {
