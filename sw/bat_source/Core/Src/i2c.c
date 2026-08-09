@@ -295,14 +295,14 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* i2cHandle)
 
     __HAL_LINKDMA(i2cHandle,hdmatx,hdma_i2c4_tx);
 
-    /* I2C4 interrupt Init -- non-time-critical (EEPROM/aux I/O), same tier
-     * as its DMA channels. */
-    HAL_NVIC_SetPriority(I2C4_EV_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+    /* I2C4 interrupt Init */
+    HAL_NVIC_SetPriority(I2C4_EV_IRQn, 8, 0);
     HAL_NVIC_EnableIRQ(I2C4_EV_IRQn);
-    HAL_NVIC_SetPriority(I2C4_ER_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+    HAL_NVIC_SetPriority(I2C4_ER_IRQn, 8, 0);
     HAL_NVIC_EnableIRQ(I2C4_ER_IRQn);
   /* USER CODE BEGIN I2C4_MspInit 1 */
-
+  HAL_NVIC_SetPriority(I2C4_EV_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+  HAL_NVIC_SetPriority(I2C4_ER_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
   /* USER CODE END I2C4_MspInit 1 */
   }
 }

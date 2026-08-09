@@ -60,6 +60,7 @@
  * Numeric values are spaced (0, 4, 8) rather than packed (0, 1, 2) to leave
  * headroom for inserting an intermediate tier later without renumbering
  * everything else.
+ *
  ******************************************************************************
  */
 #ifndef __IRQ_PRIORITY_H__
@@ -85,39 +86,6 @@ extern "C" {
  * Every HAL_NVIC_SetPriority() call in this project must therefore pass 0
  * for the subpriority argument. */
 #define IRQ_SUBPRIO_NONE     0U
-
-/*
- * KEEP IN SYNC WITH bat_source.ioc.
- *
- * The HAL_NVIC_SetPriority() calls that use these macros sit in CubeMX
- * GENERATED regions of dma.c, spi.c, i2c.c, tim.c, dac.c and gpio.c -- not
- * inside USER CODE blocks, because that is simply where CubeMX emits them.
- * Regenerating from the .ioc rewrites those lines wholesale.
- *
- * The .ioc's NVIC.<IRQn>=...\:<preempt>\:<sub>\:... entries therefore carry
- * the same values, so a regen reproduces this policy instead of silently
- * flattening every interrupt back to priority 0 -- which is what this whole
- * scheme exists to fix, and which would be invisible in a diff of the
- * generated files if the .ioc disagreed. If you change a tier here, change
- * the matching .ioc entries in the same commit.
- *
- * Two consequences of that split worth knowing:
- *
- *  - The #include of this header in each of those files IS inside a
- *    USER CODE block, so it survives a regen even though the calls using it
- *    do not. After a regen the generated files will reference undefined
- *    macros rather than compile cleanly with the wrong values, which fails
- *    loudly. That is deliberate.
- *
- *  - TIM6_DAC_IRQn is registered twice, from HAL_TIM_Base_MspInit() in tim.c
- *    and HAL_DAC_MspInit() in dac.c, so whichever runs last wins. Both use
- *    IRQ_PRIO_AUX, so the outcome no longer depends on init order. The
- *    comments saying so live in generated regions and will not survive a
- *    regen; this note will. The same applies to EXTI2_IRQn, set in gpio.c's
- *    MX_GPIO_Init() and again in ads131m04.c's ADS131M04_init() -- the latter
- *    is a user file and is the real owner, since it also enables the
- *    interrupt. Both use IRQ_PRIO_EXT_ADC.
- */
 
 #ifdef __cplusplus
 }

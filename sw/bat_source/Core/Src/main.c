@@ -137,7 +137,10 @@ int main(void)
   MX_RTC_Init();
   MX_TIM2_Init();
   MX_TIM6_Init();
-  /* USER CODE BEGIN 2 */
+
+  dma_irq_priority_override();
+  gpio_irq_priority_override();
+
   /*
    * Init the event and error queues. Must run before timer_init()/
    * timer_start(), since the timer interrupt is the first thing that can

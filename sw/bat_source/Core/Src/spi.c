@@ -159,12 +159,11 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* spiHandle)
 
     __HAL_LINKDMA(spiHandle,hdmatx,hdma_spi3_tx);
 
-    /* SPI3 interrupt Init -- ADS131M04 external-ADC pipeline, same tier as
-     * its DMA channels and the DRDY EXTI2 line (ads131m04.c). */
-    HAL_NVIC_SetPriority(SPI3_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
+    /* SPI3 interrupt Init */
+    HAL_NVIC_SetPriority(SPI3_IRQn, 4, 0);
     HAL_NVIC_EnableIRQ(SPI3_IRQn);
   /* USER CODE BEGIN SPI3_MspInit 1 */
-
+  HAL_NVIC_SetPriority(SPI3_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
   /* USER CODE END SPI3_MspInit 1 */
   }
   else if(spiHandle->Instance==SPI4)
@@ -206,11 +205,11 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* spiHandle)
 
     __HAL_LINKDMA(spiHandle,hdmatx,hdma_spi4_tx);
 
-    /* SPI4 interrupt Init -- LCD, non-time-critical. */
-    HAL_NVIC_SetPriority(SPI4_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+    /* SPI4 interrupt Init */
+    HAL_NVIC_SetPriority(SPI4_IRQn, 8, 0);
     HAL_NVIC_EnableIRQ(SPI4_IRQn);
   /* USER CODE BEGIN SPI4_MspInit 1 */
-
+  HAL_NVIC_SetPriority(SPI4_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
   /* USER CODE END SPI4_MspInit 1 */
   }
 }

@@ -41,7 +41,7 @@ extern "C" {
 void MX_DMA_Init(void);
 
 /* USER CODE BEGIN Prototypes */
-
+void dma_irq_priority_override(void);
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus
