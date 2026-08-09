@@ -7,6 +7,7 @@
 
 #include "w25n01gv.h"
 #include "stdio.h"
+#include <string.h>
 
 uint8_t buffer[W25N01GV_PAGE_SIZE];
 
@@ -93,6 +94,9 @@ w25n01gv_status_t w25n01gv_read(w25n01gv_handle *hw25n01gv, uint8_t *data, uint3
 		if (status == W25N01GV_OK) {
 			status = w25n01gv_wait_busy(hw25n01gv);
 		}
+		if (status == W25N01GV_OK && hw25n01gv->reg_status.fields.ecc_status == 2) {
+			status = W25N01GV_ECC_UNCORRECTABLE;
+		}
 		if (status == W25N01GV_OK) {
 			status = w25n01gv_read_data(hw25n01gv, data, column_addr, size_preread);
 		}
@@ -116,6 +120,9 @@ w25n01gv_status_t w25n01gv_read(w25n01gv_handle *hw25n01gv, uint8_t *data, uint3
 		}
 		if (status == W25N01GV_OK) {
 			status = w25n01gv_wait_busy(hw25n01gv);
+		}
+		if (status == W25N01GV_OK && hw25n01gv->reg_status.fields.ecc_status == 2) {
+			status = W25N01GV_ECC_UNCORRECTABLE;
 		}
 		if (status == W25N01GV_OK) {
 			status = w25n01gv_read_data(hw25n01gv, data, column_addr, size);
@@ -394,6 +401,33 @@ w25n01gv_status_t w25n01gv_write(w25n01gv_handle *hw25n01gv, uint8_t *data, uint
 		status = w25n01gv_wait_busy(hw25n01gv);
 	}
 	return status;
+}
+
+/*
+ * Verify data previously written to flash memory by reading it back and
+ * comparing it against the expected data.
+ * @param hw25n01gv W25N01GV handle to the device
+ * @param data pointer to the expected data
+ * @param address address
+ * @param size size of data to be verified
+ */
+w25n01gv_status_t w25n01gv_verify(w25n01gv_handle *hw25n01gv, uint8_t *data, uint32_t address, uint32_t size) {
+	w25n01gv_status_t status;
+	uint32_t chunk;
+	while (size > 0) {
+		chunk = (size > W25N01GV_PAGE_SIZE) ? W25N01GV_PAGE_SIZE : size;
+		status = w25n01gv_read(hw25n01gv, buffer, address, chunk);
+		if (status != W25N01GV_OK) {
+			return status; // propagates W25N01GV_ECC_UNCORRECTABLE etc. as-is
+		}
+		if (memcmp(buffer, data, chunk) != 0) {
+			return W25N01GV_VERIFY_FAILED;
+		}
+		address += chunk;
+		data += chunk;
+		size -= chunk;
+	}
+	return W25N01GV_OK;
 }
 
 /*
