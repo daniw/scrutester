@@ -369,7 +369,7 @@ static void update_isometer(uint8_t output_active) {
 		int32_t r_megaohm_x10 =
 				(int32_t) adc_data.converted.v_term_ext_mv / 1
 						/ adc_data.converted.i_iso_ext_uA;
-		snprintf(text, sizeof(text), "%3d.%01d", (int) (r_megaohm_x10 / 1000),
+		snprintf(text, sizeof(text), "%3d.%03d", (int) (r_megaohm_x10 / 1000),
 				(int) (r_megaohm_x10 % 1000));
 	} else {
 		snprintf(text, sizeof(text), " OVER  ");
