@@ -363,13 +363,16 @@ static void update_isometer(uint8_t output_active) {
 	if (adc_data.converted.i_iso_ext_uA > 0) {
 		/* R[Mohm] = V / I[uA] (since Mohm = V/uA algebraically); keep one
 		 * decimal digit of precision via a x10 fixed-point intermediate. */
+//		int32_t r_megaohm_x10 =
+//				(int32_t) adc_data.converted.v_term_ext_mv / 100
+//						/ adc_data.converted.i_iso_ext_uA;
 		int32_t r_megaohm_x10 =
-				(int32_t) adc_data.converted.v_term_ext_mv / 100
+				(int32_t) adc_data.converted.v_term_ext_mv / 1
 						/ adc_data.converted.i_iso_ext_uA;
-		snprintf(text, sizeof(text), "%3d.%01d", (int) (r_megaohm_x10 / 10),
-				(int) (r_megaohm_x10 % 10));
+		snprintf(text, sizeof(text), "%3d.%01d", (int) (r_megaohm_x10 / 1000),
+				(int) (r_megaohm_x10 % 1000));
 	} else {
-		snprintf(text, sizeof(text), " OVER");
+		snprintf(text, sizeof(text), " OVER  ");
 	}
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
 
