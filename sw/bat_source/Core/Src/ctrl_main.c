@@ -453,7 +453,7 @@ void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 
 	float duty_limited = ctrl_pi_voltage_hv.action;
 	if (ctrl_pi_hv_iout_limit.action < duty_limited)
-		duty_limited = ctrl_pi_hv_iout_limit.action;
+		//duty_limited = ctrl_pi_hv_iout_limit.action;
 
 	// Apply Duty
 	hrtim_set_duty(HRTIM_CHANNEL_HV, duty_limited);
