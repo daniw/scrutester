@@ -902,7 +902,7 @@ void cmd_printBMS(void){
 	  printf("CurrentRegisters.RawCurrent          = 0x%04X%04X\r\n",  (uint16_t)(bms.CurrentRegisters.RawCurrent>>16),(uint16_t)(bms.CurrentRegisters.RawCurrent));
 	  printf("CurrentRegisters.CC2Current          = %d mA\r\n",       bms.CurrentRegisters.CC2Current);
 	  printf("CurrentRegisters.CC1Current          = %d mA\r\n",       bms.CurrentRegisters.CC1Current);
-	  printf("Passed Charge                        = %lld mAs\r\n",    (long long) bms.Accumulator.accumulatedCharge);
+	  printf("Passed Charge                        = %lld mAs\r\n",    (long long) bms.Accumulator.accumulatedCharge / 4);
 	  printf("Passed Time                          = %ld s\r\n",       bms.Accumulator.passedTime/4);
 	  printf("\n");
 	  printf("SystemCtrl.AlarmStatus               = 0x%04X\r\n", bms.SystemCtrl.AlarmStatus);

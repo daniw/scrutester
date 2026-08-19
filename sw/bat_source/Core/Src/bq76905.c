@@ -153,7 +153,7 @@ static void BQ76905_updateChargePercentage(BQ76905_handle* handle) {
 	if (handle->battery_capacity_mAs == 0)
 		return;
 
-	int64_t pct = 100 + (handle->Accumulator.accumulatedCharge * 100)
+	int64_t pct = 100 + (handle->Accumulator.accumulatedCharge / 4 * 100)
 			/ (int64_t) handle->battery_capacity_mAs;
 	if (pct < 0)
 		pct = 0;

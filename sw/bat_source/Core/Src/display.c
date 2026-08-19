@@ -604,7 +604,7 @@ static void update_settings_bms(void) {
 	LCD_PutStr(16, STATUS_H + 56, text, FONT_TINY, C_WHITE, C_BLACK);
 
 	snprintf(text, sizeof(text), "Passed Q = %d mAs    ",
-			(int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF));
+			(int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4);
 	LCD_PutStr(16, STATUS_H + 72, text, FONT_TINY, C_WHITE, C_BLACK);
 
 	snprintf(text, sizeof(text), "Passed T = %u s    ",
