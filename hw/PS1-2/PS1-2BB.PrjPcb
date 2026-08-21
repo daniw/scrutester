@@ -135,7 +135,7 @@ GenerateClassCluster=0
 DocumentUniqueId=
 
 [Document6]
-DocumentPath=PS1-2BA.Annotation
+DocumentPath=PS1-2BB.Annotation
 AnnotationEnabled=1
 AnnotateStartValue=1
 AnnotationIndexControlEnabled=0
@@ -419,35 +419,35 @@ DocumentPath=Manufacturing\Design Rule Check - PS1-2B-BASIS.html
 DItemRevisionGUID=
 
 [Parameter1]
-Name=Author
+Name=Schema_Designer
 Value=ahorat / daniw
 
 [Parameter2]
-Name=Index_Main
-Value=B
-
-[Parameter3]
-Name=Index_Sub
-Value=A
-
-[Parameter4]
-Name=Layout_Designer
-Value=daniw
-
-[Parameter5]
-Name=PCB_NAME
-Value=PS1-2
-
-[Parameter6]
-Name=Project
-Value=Battery Source - User Interface
-
-[Parameter7]
 Name=Project_URL
 Value=https://github.com/daniw/bat_source
 
+[Parameter3]
+Name=Project
+Value=Battery Source - User Interface
+
+[Parameter4]
+Name=PCB_NAME
+Value=PS1-2
+
+[Parameter5]
+Name=Layout_Designer
+Value=daniw
+
+[Parameter6]
+Name=Index_Sub
+Value=B
+
+[Parameter7]
+Name=Index_Main
+Value=B
+
 [Parameter8]
-Name=Schema_Designer
+Name=Author
 Value=ahorat / daniw
 
 [Configuration1]
@@ -949,6 +949,11 @@ OutputName12=Export STEP
 OutputDocumentPath12=
 OutputVariantName12=
 OutputDefault12=0
+OutputType13=AnsysEDB
+OutputName13=Ansys EDB
+OutputDocumentPath13=
+OutputVariantName13=
+OutputDefault13=0
 
 [OutputGroup10]
 Name=PostProcess Outputs
@@ -1123,6 +1128,16 @@ Type158=1
 Type159=1
 Type160=1
 Type161=1
+Type162=1
+Type163=1
+Type164=1
+Type165=1
+Type166=1
+Type167=1
+Type168=1
+Type169=1
+Type170=1
+Type171=1
 
 [Difference Levels]
 Type1=1
@@ -1213,6 +1228,13 @@ Type85=1
 Type86=1
 Type87=1
 Type88=1
+Type89=1
+Type90=1
+Type91=1
+Type92=1
+Type93=1
+Type94=1
+Type95=1
 
 [Electrical Rules Check]
 Type1=1
