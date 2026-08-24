@@ -27,6 +27,7 @@ PID_controller_t ctrl_pi_charge_current;
 PID_controller_t ctrl_pi_charge_voltage;
 PID_controller_t ctrl_pi_voltage_hv;
 PID_controller_t ctrl_pi_hv_iout_limit;
+uint32_t cli_cnt = 0;
 
 const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
@@ -235,12 +236,35 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 			ctrl_pi_charge_voltage.prev_I_action = ctrl_pi_charge_current.action;
 		}
 
-		if (!ctrl_main_handle.charge_cv_phase)
+		uint16_t cell_max = 0;
+		if (!ctrl_main_handle.charge_cv_phase) {
 			ctrl_main_ctrl_charge_current(-meas->i_out,
 					-meas->i_out_ext_mA);
-		else
+		}
+		else {
+//			ctrl_main_ctrl_charge_voltage(meas->v_in,
+//					bms.VoltageRegisters.StackVoltage);
+			for (uint8_t i = 0; i <= 4; i++) {
+				if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
+					cell_max = bms.CellVoltageRegisters.CellVoltages[i];
+				}
+			}
 			ctrl_main_ctrl_charge_voltage(meas->v_in,
-					bms.VoltageRegisters.StackVoltage);
+					4 * cell_max);
+//			ctrl_main_ctrl_current(current_meas_mA, current_meas_accurate)
+		}
+		if (cli_cnt >= 2500) {
+			if (!ctrl_main_handle.charge_cv_phase) {
+				printf("Charging: CC, I_OUT: %5d, I_OUT_ext_mA: %5ld\r\n", -meas->i_out, -meas->i_out_ext_mA);
+			}
+			else {
+				printf("Charging: CV, I_OUT: %5d, I_OUT_ext_mA: %5ld, V_IN: %5ld, StackVoltage: %5d, max(cell) = %4d\r\n", -meas->i_out, -meas->i_out_ext_mA, meas->v_in, bms.VoltageRegisters.StackVoltage, cell_max);
+			}
+			cli_cnt = 0;
+		}
+		else {
+			cli_cnt++;
+		}
 		break;
 
 	case CTRL_MODE_OFF:
@@ -322,6 +346,31 @@ static float ctrl_apply_ramped_ref(PID_controller_t *c, float target, float div)
 		multiplier = ctrl_main_handle.ramp;
 		c->ref = target * multiplier;
 	}
+	return multiplier;
+}
+
+/*
+ * Startup step shared by every ctrl_main_ctrl_*() control loop below.
+ *
+ * ctrl_main_handle.ramp is a SINGLE field, not one per controller: it is
+ * zeroed once by ctrl_main_start_ctrl() and from then on incremented by
+ * whichever ctrl_main_ctrl_*() function ctrl_main_ctrl()'s switch calls that
+ * tick. Exactly one of those functions runs per control-loop tick, so a
+ * shared counter is correct -- do NOT change this into a per-controller
+ * ramp, and do not call this helper more than once per tick.
+ *
+ * Returns the multiplier just applied to `target` (1.0F once the ramp has
+ * saturated past 1.0F, otherwise the freshly-incremented
+ * ctrl_main_handle.ramp), so a caller that needs to ramp something else in
+ * lockstep with the reference -- currently only
+ * ctrl_main_ctrl_voltage_boost()'s PRIM duty -- can reuse the exact value
+ * instead of re-deriving it from ctrl_main_handle.ramp after the fact.
+ */
+static float ctrl_apply_stepped_ref(PID_controller_t *c, float target) {
+	float multiplier;
+	multiplier = 1.0F;
+	c->ref = target;
+	ctrl_main_handle.ramp = 1.1F;
 	return multiplier;
 }
 
@@ -427,8 +476,8 @@ void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
 
-	ctrl_apply_ramped_ref(&ctrl_pi_charge_voltage,
-			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
+	ctrl_apply_stepped_ref(&ctrl_pi_charge_voltage,
+			ctrl_main_handle.voltage_reference_mV / 1000.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_voltage, voltage_meas_mV / 1000.0F,
 			voltage_meas_accurate_mV / 1000.0F, 0);

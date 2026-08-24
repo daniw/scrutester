@@ -301,8 +301,19 @@ void statemachine_step(void) {
 	case STATEMACHINE_MODE_CHARGE:
 		display_update_mode(statemachine_handle.current_mode,
 				statemachine_handle.output_on);
+		uint16_t cell_min = 3650;
+		uint16_t cell_max = 0;
+		for (uint8_t i = 0; i <= 4; i++) {
+			if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
+				cell_max = bms.CellVoltageRegisters.CellVoltages[i];
+			}
+			if (bms.CellVoltageRegisters.CellVoltages[i] < cell_min) {
+				cell_min = bms.CellVoltageRegisters.CellVoltages[i];
+			}
+		}
 		if ((bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
-					&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA)
+					&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA
+					&& (cell_max - cell_min <= 50))
 				|| bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB
 				|| adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV) {
 			if (bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
