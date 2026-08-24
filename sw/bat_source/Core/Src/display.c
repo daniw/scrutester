@@ -598,13 +598,16 @@ static void update_settings_bms(void) {
 			LCD_PutStr(72 + i * 40, STATUS_H + 40, text, FONT_TINY, color, C_BLACK);
 		}
 	}
-	LCD_PutStr(232, STATUS_H + 40, " mV", FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(232, STATUS_H + 40, "mV", FONT_TINY, C_WHITE, C_BLACK);
 
-	snprintf(text, sizeof(text), "Current = %d mA    ", bms.CurrentRegisters.CC2Current);
+	snprintf(text, sizeof(text), "Current  = %d mA    ", bms.CurrentRegisters.CC2Current);
 	LCD_PutStr(16, STATUS_H + 56, text, FONT_TINY, C_WHITE, C_BLACK);
 
-	snprintf(text, sizeof(text), "Passed Q = %d mAs    ",
-			(int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4);
+//	snprintf(text, sizeof(text), "Passed Q = %d mAs    ",
+//			(int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4);
+	snprintf(text, sizeof(text), "Passed Q = %d.%03d Ah    ",
+			((((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF))>=0?1:-1) * abs((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4) / 3600000),
+			(abs((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4) / 3600 % 1000));
 	LCD_PutStr(16, STATUS_H + 72, text, FONT_TINY, C_WHITE, C_BLACK);
 
 	snprintf(text, sizeof(text), "Passed T = %u s    ",
