@@ -357,6 +357,21 @@
 
 \FloatBarrier
 
+\subsubsection{Modifications PS1-1BC $\to$ BD}
+
+\begin{ModTable}
+
+\ModItemDone
+{Insufficient current for isolation resistance measurement}
+{The current limiter for the isolation resistance measurement is set to a value of \qty{1}{\milli\ampere}. The lowest allowed isolation resistance is \qty{500}{\ohm\per\volt}, which results in a current of \qty{2}{\milli\ampere}. }
+{Change R74 to \qty{3.6}{\kilo\ohm} or add \qty{5.6}{\kilo\ohm} in parallel. }
+{daniw}
+{2026-08-29}
+
+\end{ModTable}
+
+\FloatBarrier
+
 \subsubsection{Modifications PS1-1BA $\to$ CA}
 
 \begin{ModTable}
@@ -477,6 +492,13 @@
 {High voltage converter relay coil polarity}
 {The relay K2 does not operate due to incorrect polarity of the coil. }
 {The polarity of the coil of K2 must be switched. }
+{}
+{}
+
+\ModItemOpen
+{Insufficient current for isolation resistance measurement}
+{The current limiter for the isolation resistance measurement is set to a value of \qty{1}{\milli\ampere}. The lowest allowed isolation resistance is \qty{500}{\ohm\per\volt}, which results in a current of \qty{2}{\milli\ampere}. }
+{Change R74 to \qty{3.6}{\kilo\ohm}. }
 {}
 {}
 
