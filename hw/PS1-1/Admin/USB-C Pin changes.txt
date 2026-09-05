@@ -1,0 +1,31 @@
+Additional pins for USB type C connection
+=========================================
+
+* USB Data
+* CC pins
+* DB (dead battery) implemented by external protection -> UCPD1_DBCC* signals not needed
+* FRS (fast role swap) not supported -> UCPD1_FRST* pins not needed
+
+New pins
+========
+
+USB_DP -> ADC.CLK (PA12, TIM16_CH1)
+USB_DM -> CONV_CRTL_PRIM_H (PA11, HRTIM1_CHB2)
+
+UCPD1_CC1 -> Encoder.B (PB6, TIM4_CH1)
+UCPD1_CC2 -> Free
+
+Resolution of pinout collisions
+===============================
+
+ENCODER.B => Encoder connected through I2C, pin no longer needed
+
+ADC.CLK => TIM16_CH1 also available on free pins PB4 and PE0
+
+CONV_CTRL_PRIM_H => Change CONV_CTRL_PRIM from CHB to CHA
+-> collides with I_ISO and BMS_CTRL.I_BAT
+
+I_ISO -> move to ADC3_IN2/4
+
+BMS_CTRL.I_BAT -> move to ADC2_IN5 (OCP_N, fast ADC channel)
+Move OCP_N to PF2
