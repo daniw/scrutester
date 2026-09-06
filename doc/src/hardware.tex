@@ -310,8 +310,8 @@ A gate driver 1EDN7512B is used to drive the switching \ac{MOSFET}. The gate dri
     \label{fig_hv_conv}
 \end{figure}
 
-The transformer is custom-made and includes one primary winding, three secondary windings and a PCB with rectification, dc-link capacitors and dicharge resistors. 
-The transformer is based on a RM5 coil former with two chambers \todo{check teminlology} and ferrite core set. The primary winding is wound on the lower half of the coil former and has 8 turns \todo{Check transformer terminology (coil, winding, turn, $\ldots$)} of enameled \todo{Check spelling} wire with a diameter of \qty{0.5}{\milli\meter}. 
+The transformer is custom-made and includes one primary winding, three secondary windings and a PCB with rectification, dc-link capacitors and discharge resistors. 
+The transformer is based on a RM5 coil former with two chambers \todo{check teminlology} and ferrite core set. The primary winding is wound on the lower half of the coil former and has 8 turns \todo{Check transformer terminology (coil, winding, turn, $\ldots$)} of enameled \todo{Check spelling} wire with a diameter of \qty{0.5}{\milli\meter}. The secondary windings have 80 turns each of enameled wire and are connected to the transformer PCB PS1-100, which includes a rectifier diode with a blocking voltage of \qty{1}{\kilo\volt}, a \qty{33}{\nano\farad} capacitor and a discharge resistor with a total resistance of \qty{30}{\mega\ohm} for each secondary winding. The capacitors are connected in series, which allows the use of diodes with a blocking voltage equal to the output voltage. 
 The three dc link capacitors are connected in series. 
 \begin{figure}[h!]
     \centering
@@ -319,6 +319,25 @@ The three dc link capacitors are connected in series.
     \caption{High voltage converter - flyback transformer \acs{PCB}}
     \label{fig_hv_convtrafo_pcb}
 \end{figure}
+
+The output current is limited by a \ac{MOSFET} in linear operation for user safety. The minimum required output current can be determined from the \ac{FSG} rules. \cite[EV 1.2.1]{FSG:Rules_2026} The rules state a minimum isolation resistance of \qty{500}{\ohm\per\volt}, which results in a current of \qty{2}{\milli\ampere}. 
+
+\begin{align}
+R_{Lim} \leq \dfrac{V_{Z_{min}} - V_{GS_{th_{max}}}}{I_{Lim}}
+    = \dfrac{\qty{12.35}{\volt} - \qty{5.0}{\volt}}{\qty{2}{\milli\ampere}}
+    = \qty{3.675}{\kilo\ohm}
+    \to \qty{3.6}{\kilo\ohm}
+\end{align}
+\begin{align}
+I_{Lim_{min}} = \dfrac{V_{Z_{min}} - V_{GS_{th_{max}}}}{R_{Lim_{max}}}
+    = \dfrac{\qty{12.35}{\volt} - \qty{5.0}{\volt}}{1.01 \cdot \qty{3.6}{\kilo\ohm}}
+    = \qty{2.021}{\milli\ampere}
+\end{align}
+\begin{align}
+I_{Lim_{max}} = \dfrac{V_{Z_{max}} - V_{GS_{th_{min}}}}{R_{Lim_{min}}}
+    = \dfrac{\qty{13.65}{\volt} - \qty{2.5}{\volt}}{0.99 \cdot \qty{3.6}{\kilo\ohm}}
+    = \qty{3.129}{\milli\ampere}
+\end{align}
 
 \begin{figure}[h!]
     \centering
