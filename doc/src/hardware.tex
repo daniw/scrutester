@@ -351,12 +351,59 @@ I_{Lim_{max}} = \dfrac{V_{Z_{max}} - V_{GS_{th_{min}}}}{R_{Lim_{min}}}
 \subsection{Overvoltage protection}
 \label{sec_ovp}
 
+The low voltage converter is protected by a crowbar, implemented with a thyristor (D14) which is triggered by a zener diode (D13). 
+\todo[inline]{Calculation of trigger voltage, tested: \qty{79.8}{\volt}}
+
 \begin{figure}[h!]
     \centering
     \includegraphics[page=7, scale=\schscale, trim=71 330 770 310, clip]{\schfilemain}
     \caption{Overvoltage protection - crowbar}
     \label{fig_overvoltage_prot_crowbar}
 \end{figure}
+
+The current in the crowbar is measured by the shunt resistor R92. The signal is amplified by 100 with a difference amplifier implemented with U8. 
+\begin{align}
+G = \dfrac{R85 // R90}{R88}
+    = \dfrac{R95}{R94}
+    = \dfrac{\qty{100}{\kilo\ohm}}{\qty{1}{\kilo\ohm}}
+    = 100
+\end{align}
+
+The comparator U9 is setup as latch with a trigger value of: 
+\begin{align}
+V_{th} 
+    = \dfrac{V_{+3V3\_A} \cdot \dfrac{1}{\dfrac{1}{R96} + \dfrac{1}{R86 + R91 + R93}}}{R84 + \dfrac{1}{\dfrac{1}{R96} + \dfrac{1}{R86 + R91 + R93}}} 
+    + \dfrac{\left(V_{+3V3\_A} - V_{f_{D16}}\right) \cdot \dfrac{1}{\dfrac{1}{R84} + \dfrac{1}{R96}}}{R86 + R91 + R93 + \dfrac{1}{\dfrac{1}{R84} + \dfrac{1}{R96}}}
+\end{align}
+\begin{align}
+V_{th} 
+    = \dfrac{V_{+3V3\_A} \cdot \dfrac{1}{\dfrac{1}{\qty{10}{\kilo\ohm}} + \dfrac{1}{\qty{10}{\kilo\ohm} + \qty{100}{\kilo\ohm} + \qty{2}{\kilo\ohm}}}}{\qty{6.8}{\kilo\ohm} + \dfrac{1}{\dfrac{1}{\qty{10}{\kilo\ohm}} + \dfrac{1}{\qty{10}{\kilo\ohm} + \qty{100}{\kilo\ohm} + \qty{2}{\kilo\ohm}}}} 
+    + \dfrac{\left(V_{+3V3\_A} - V_{f_{D16}}\right) \cdot \dfrac{1}{\dfrac{1}{\qty{6.8}{\kilo\ohm}} + \dfrac{1}{\qty{10}{\kilo\ohm}}}}{\qty{10}{\kilo\ohm} + \qty{100}{\kilo\ohm} + \qty{2}{\kilo\ohm} + \dfrac{1}{\dfrac{1}{\qty{6.8}{\kilo\ohm}} + \dfrac{1}{\qty{10}{\kilo\ohm}}}}
+\end{align}
+\begin{align}
+V_{th} = \qty{1.9882}{\volt}
+\end{align}
+\begin{align}
+I_{th} = \dfrac{V_{th} - \frac{V_{+3V3\_A}}{2}}{R_{shunt} \cdot G}
+    = \dfrac{\qty{1.9882}{\volt} - \frac{\qty{3.3}{\volt}}{2}}{\qty{5}{\milli\ohm} \cdot 100}
+    = \qty{0.6764}{\ampere}
+\end{align}
+\todo[inline]{Consider recalculating threshold for new trigger value of \qty{1}{\ampere}}
+\begin{align}
+V_{th} 
+    = \dfrac{V_{+3V3\_A} \cdot \dfrac{1}{\dfrac{1}{\qty{10}{\kilo\ohm}} + \dfrac{1}{\qty{10}{\kilo\ohm} + \qty{100}{\kilo\ohm} + \qty{2}{\kilo\ohm}}}}{\qty{5.1}{\kilo\ohm} + \dfrac{1}{\dfrac{1}{\qty{10}{\kilo\ohm}} + \dfrac{1}{\qty{10}{\kilo\ohm} + \qty{100}{\kilo\ohm} + \qty{2}{\kilo\ohm}}}} 
+    + \dfrac{\left(V_{+3V3\_A} - V_{f_{D16}}\right) \cdot \dfrac{1}{\dfrac{1}{\qty{5.1}{\kilo\ohm}} + \dfrac{1}{\qty{10}{\kilo\ohm}}}}{\qty{10}{\kilo\ohm} + \qty{100}{\kilo\ohm} + \qty{2}{\kilo\ohm} + \dfrac{1}{\dfrac{1}{\qty{5.1}{\kilo\ohm}} + \dfrac{1}{\qty{10}{\kilo\ohm}}}}
+\end{align}
+\begin{align}
+V_{th} = \qty{2.1990}{\volt}
+\end{align}
+\begin{align}
+I_{th} = \dfrac{V_{th} - \frac{V_{+3V3\_A}}{2}}{R_{shunt} \cdot G}
+    = \dfrac{\qty{2.1990}{\volt} - \frac{\qty{3.3}{\volt}}{2}}{\qty{5}{\milli\ohm} \cdot 100}
+    = \qty{1.0981}{\ampere}
+\end{align}
+
+The output of the comparator is latched with R93, which pulls the reference lower than \qty{0}{\ampere}. The latch can be reset by the signal \verb!OVP_RESET!, which activates Q25, which pulls the reference above \qty{0}{\ampere} with R82. At startup, C51 activates Q25 to ensure, that the latch is reset at startup. The red \ac{LED} D12 indicates an activeated latch. The output of the latch blocks the primary half bridge of the low voltage converter and is also read by the microcontroller, which can activate both \ac{MOSFET} of the secondary half bridge (See \secref{sec_lv_converter}), to reduce the power dissipation of the thyristor. 
 
 \begin{figure}[h!]
     \centering
