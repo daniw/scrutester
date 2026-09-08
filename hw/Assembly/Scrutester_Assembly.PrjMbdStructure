@@ -1,0 +1,28 @@
+Record=DiagramHierarchy|SourceDocument=Bat_Source_Assembly.MbsDoc|Kind=Multi-board Schematic Module|Designator=Mainboard|Source=..\PS1-1\PS1-1BA.PrjPcb
+Record=SubProject|SourceDocument=Bat_Source_Assembly.MbsDoc|ProjectPath=..\PS1-1\PS1-1BA.PrjPcb
+Record=DiagramHierarchy|SourceDocument=Bat_Source_Assembly.MbsDoc|Kind=Multi-board Schematic Module|Designator=UI|Source=..\PS1-2\PS1-2BA.PrjPcb
+Record=SubProject|SourceDocument=Bat_Source_Assembly.MbsDoc|ProjectPath=..\PS1-2\PS1-2BA.PrjPcb
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
+Record=DiagramHierarchy
+Record=SubProject
