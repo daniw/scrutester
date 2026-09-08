@@ -5,36 +5,36 @@ all: build count copy
 build: 
 	mkdir -p obj
 	mkdir -p obj/src
-	if [ -e obj/bat_source.aux ];\
+	if [ -e obj/scrutester.aux ];\
 	then\
-		cp obj/bat_source.aux obj/bat_source_old.aux;\
+		cp obj/scrutester.aux obj/scrutester_old.aux;\
 	fi
-	pdflatex -jobname bat_source -output-directory obj bat_source.tex
-	cd obj && bibtex bat_source.aux
+	pdflatex -jobname scrutester -output-directory obj Scrutester.tex
+	cd obj && bibtex scrutester.aux
 	latex_count=5 ; \
-	while ! cmp -s obj/bat_source.aux obj/bat_source_old.aux && [ $$latex_count -gt 0 ] ;\
+	while ! cmp -s obj/scrutester.aux obj/scrutester_old.aux && [ $$latex_count -gt 0 ] ;\
 	do \
 		echo "Rerunning latex....." ;\
-		cp obj/bat_source.aux obj/bat_source_old.aux;\
-		pdflatex -jobname bat_source -output-directory obj bat_source.tex ;\
+		cp obj/scrutester.aux obj/scrutester_old.aux;\
+		pdflatex -jobname scrutester -output-directory obj Scrutester.tex ;\
 		latex_count=`expr $$latex_count - 1` ;\
 	done
 
 vim: 
 	mkdir -p obj
 	mkdir -p obj/src
-	if [ -e obj/bat_source.aux ];\
+	if [ -e obj/scrutester.aux ];\
 	then\
-		cp obj/bat_source.aux obj/bat_source_old.aux;\
+		cp obj/scrutester.aux obj/scrutester_old.aux;\
 	fi
-	pdflatex -jobname bat_source -output-directory obj -halt-on-error bat_source.tex
-	cd obj && bibtex bat_source.aux
+	pdflatex -jobname scrutester -output-directory obj -halt-on-error Scrutester.tex
+	cd obj && bibtex scrutester.aux
 	latex_count=5 ; \
-	while ! cmp -s obj/bat_source.aux obj/bat_source_old.aux && [ $$latex_count -gt 0 ] ;\
+	while ! cmp -s obj/scrutester.aux obj/scrutester_old.aux && [ $$latex_count -gt 0 ] ;\
 	do \
 		echo "Rerunning latex....." ;\
-		cp obj/bat_source.aux obj/bat_source_old.aux;\
-		pdflatex -jobname bat_source -output-directory obj -halt-on-error bat_source.tex ;\
+		cp obj/scrutester.aux obj/scrutester_old.aux;\
+		pdflatex -jobname scrutester -output-directory obj -halt-on-error Scrutester.tex ;\
 		latex_count=`expr $$latex_count - 1` ;\
 	done
 
@@ -43,7 +43,7 @@ count:
 	@echo Counting words in abstract:
 	@wc src/abstract_de.tex src/abstract_en.tex | grep abstract
 copy: 
-	cp obj/bat_source.pdf obj/bat_source_cp.pdf
+	cp obj/scrutester.pdf obj/scrutester_cp.pdf
 
 clean:
 	rm -f obj/*.aux

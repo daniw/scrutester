@@ -175,10 +175,10 @@
         %\usetikztiminglibrary{advnodes}
     \usepackage{placeins}       % For \FloatBarrier
     \newcommand{\schscale}{0.8}   % Scale for Schematics
-    \newcommand{\schfilemain}{appendix/PS1-1BA_Schematic_2026-03-05.PDF}    % Schematics file main PCB
-    \newcommand{\schfileui}{appendix/PS1-2BA_Schematic_2026-03-05.PDF}      % Schematics file user interface
-    \newcommand{\schfileprog}{appendix/PS1-3AA_Schematic_2025-06-30.PDF}    % Schematics file programming adapter
-    \newcommand{\schfiletrafo}{appendix/PS1-100AA_Schematic_2026-03-03.PDF}    % Schematics file transformer PCB
+    \newcommand{\schfilemain}{appendix/ST1-1BD_Schematic_2026-09-08.PDF}    % Schematics file main PCB
+    \newcommand{\schfileui}{appendix/ST1-2BB_Schematic_2026-09-08.PDF}      % Schematics file user interface
+    \newcommand{\schfileprog}{appendix/ST1-3AA_Schematic_2026-09-08.PDF}    % Schematics file programming adapter
+    \newcommand{\schfiletrafo}{appendix/ST1-100AA_Schematic_2026-09-08.PDF}    % Schematics file transformer PCB
     % Dotted box
     \usepackage{dashbox}
     \newcommand\dashedph[1][H]{\setlength{\fboxsep}{0pt}\setlength{\dashlength}{2.2pt}\setlength{\dashdash}{1.1pt} \dbox{\phantom{#1}}}
@@ -520,7 +520,7 @@
     \makeatletter       % @ Teil des Befehls
     \@ifclassloaded{minutes}{
         \usepackage{lastpage}
-        \fancyhead[L]{Bat Source}               % Kopfeile links
+        \fancyhead[L]{ScruTester}               % Kopfeile links
         \fancyhead[C]{Meeting minutes \\ \@date}  % zentrierte Kopfzeile
         \fancyhead[R]{\@author}                          % Kopfzeile rechts
         \fancyfoot[L]{}                       % Fusszeile links
@@ -530,7 +530,7 @@
         \renewcommand{\footrulewidth}{0.4pt}        % untere Trennlinie
     }{
         \@ifclassloaded{article}{
-            \fancyhead[LO]{Bat Source}              % Kopfeile links
+            \fancyhead[LO]{ScruTester}              % Kopfeile links
             \fancyhead[CO]{Technical Documentation}  % zentrierte Kopfzeile
             \fancyhead[RO]{}                          % Kopfzeile rechts
             \fancyhead[LE]{}               % Kopfeile links
@@ -556,7 +556,7 @@
     % Kopf- und Fusszeile für Letter
     \makeatletter       % @ Teil des Befehls
     \@ifclassloaded{letter}{
-        \fancyhead[LO]{Bat Source}              % Kopfeile links
+        \fancyhead[LO]{ScruTester}              % Kopfeile links
         \fancyhead[CO]{Commissioning protocol}  % zentrierte Kopfzeile
         \fancyhead[RO]{\includegraphics[width=0.5cm]{../img/LogoWHE.pdf}} % Kopfzeile rechts
         \fancyhead[LE]{}               % Kopfeile links
