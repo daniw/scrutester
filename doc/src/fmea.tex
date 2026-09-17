@@ -1,0 +1,168 @@
+\section{Failure Mode and Effects Analysis (\acs{FMEA})}
+\label{sec:fmea}
+
+This section is a living catalogue of identified failure modes, their
+effects and the mitigation currently in place -- hardware, firmware, or
+both. It is expected to be revised continuously as the design changes: a
+row is updated in place once its mitigation changes, and closed items are
+kept (marked minor) rather than deleted, so the table also documents what
+has already been addressed. Current scope is electrical and firmware
+failure modes; mechanical/enclosure failure modes (ingress, mounting,
+connector wear, \ldots) are not yet covered and should be added as a
+separate subsection once that design matures.
+
+Each failure mode is tagged HW, FW or HW+FW to show
+which layer(s) it originates in or is mitigated by. Row colour is the
+severity:
+
+\begin{itemize}
+    \item \colorbox{lred}{\phantom{xx}} \textbf{Critical} -- risk of injury (electric shock, fire, cell venting), of a safety requirement (\autoref{sec:fmea} cross-references \secref{sec_ovp} etc.) failing silently, or of hardware damage that a user could not reasonably anticipate.
+    \item \colorbox{orange!30}{\phantom{xx}} \textbf{Moderate} -- functional or measurement degradation, false readings, or loss of availability, with no direct safety exposure because another layer still backs it up.
+    \item \colorbox{lgreen}{\phantom{xx}} \textbf{Minor} -- cosmetic/nuisance impact, or a previously higher-severity item that has since been mitigated and is kept here as a closed record.
+\end{itemize}
+
+\FloatBarrier
+
+\subsection{Battery and \acs{BMS}}
+
+\begin{table}[h!]
+    \begin{FMEATable}
+    \FMEAItemMinor
+        {[HW+FW, closed] Cell overvoltage during charge}
+        {A cell exceeds its safe upper voltage limit, e.g.\ through a runaway charge-voltage control loop or a charger fault.}
+        {Accelerated cell degradation; risk of thermal event in extreme cases.}
+        {\ac{BMS} (BQ76905) autonomously enforces per-cell overvoltage protection (own comparators/FET driver, independent of the host microcontroller) opening the charge \ac{FET}; firmware additionally checks BMS cell/stack voltage each tick and exits CHARGE (\texttt{statemachine.c}), see \ReqRef{R:BMS}.}
+    \FMEAItemMinor
+        {[HW+FW] Pack overcurrent / short circuit}
+        {External short across the battery or charging port, or an internal fault driving excess charge/discharge current, see \ReqRef{R:Short}, \ReqRef{R:Overcurrent}.}
+        {Cell/wiring damage, fire risk if unmitigated.}
+        {\ac{BMS} two-tier discharge-overcurrent, short-circuit-discharge and charge-overcurrent protection, fully autonomous of the host firmware and of an unresponsive microcontroller (\autoref{tab:fmea_mcu_hang}).}
+    \FMEAItemCritical
+        {[HW+FW] Cell over-/under-temperature}
+        {Charging or discharging outside the safe cell temperature window.}
+        {Accelerated ageing; safety risk at the extremes.}
+        {\ac{BMS} autonomous over-/under-temperature charge and discharge protection thresholds, independent of host firmware, see \ReqRef{R:BMS}. This feature is not tested currently.}
+    \FMEAItemModerate
+        {[FW] Loss of \acs{I2C} communication to \acs{BMS}}
+        {I2C4 bus errors/NACKs (known marginal 2.4\,V level-shifter output, see architecture.md \#3) stop host reads of the \ac{BMS}.}
+        {Firmware loses SoC/voltage/current visibility and cannot react to thresholds it reads from the \ac{BMS} (e.g.\ CHARGE exit); display shows stale values.}
+        {Queued as \texttt{ERROR\_IIC\_*} (\texttt{error.c}), visible on the \ac{CLI} only -- not persisted or shown on-screen (\texttt{error\_Write()} is an unimplemented stub). \ac{BMS}-internal protection keeps acting as the safety backstop regardless.}
+    \end{FMEATable}
+    \caption{FMEA -- Battery and BMS}
+\end{table}
+
+\FloatBarrier
+
+\subsection{Charging}
+
+\begin{table}[h!]
+    \begin{FMEATable}
+    \FMEAItemCritical
+        {[FW] Untuned PI gains cause control-loop instability}
+        {All eight PI loops (\texttt{ctrl\_pid\_table[]} in \texttt{ctrl\_main.c}), including the charge-current/voltage and high-voltage flyback loops, still run placeholder gains -- no bench tuning has been performed.}
+        {Overshoot or oscillation of the regulated voltage/current beyond the commanded set-point, potentially exceeding component or cell ratings transiently.}
+        {Hardware backstops only at present: \acs{BMS} autonomous protection, \acs{OVP} crowbar (\secref{sec_ovp}). Treat every first activation of a loop that has not yet been bench-tuned as bring-up, not validated behaviour.}
+    \FMEAItemModerate
+        {[FW] CV-tail regulation target can diverge from the latch/termination sensor}
+        {The CC$\to$CV latch and cycle termination both key off the \ac{BMS} StackVoltage against the same threshold (consistent). Once in CV, though, the loop itself regulates towards $4 \times$ the highest individual cell voltage rather than StackVoltage, to protect the most-charged cell under imbalance.}
+        {Under significant cell imbalance, the quantity being latched/terminated on (real StackVoltage) and the quantity the CV loop drives towards (extrapolated $4\times$max-cell) can disagree -- untested at the time of writing.}
+        {Termination additionally requires the cell-voltage spread to be $\leq$\qty{50}{\milli\volt}, which should catch most of this in practice, but the underlying two-target tension is unresolved. Open item -- watch during bench validation with an intentionally imbalanced pack.}
+    \FMEAItemMinor
+        {[FW, closed] Coulomb counter / passed-charge unit error}
+        {Passed-charge integration used the wrong unit (0.25 userAsec), skewing reported \acs{SoC}/passed charge.}
+        {Displayed \ac{SoC}/charge state could mislead the operator about battery status.}
+        {Fixed in firmware (commits \texttt{1eb7f9b}, \texttt{1f3783b}). Kept here, marked closed, as the working example of how this table tracks a resolved finding rather than deleting it.}
+    \end{FMEATable}
+    \caption{FMEA -- Charging}
+\end{table}
+
+\FloatBarrier
+
+\subsection{Power conversion}
+
+\begin{table}[h!]
+    \begin{FMEATable}
+    \FMEAItemMinor
+        {[HW, closed] Primary half-bridge shoot-through}
+        {Simultaneous conduction of the high-side/low-side \acs{GaN} switches on the primary buck-boost bridge.}
+        {Very high current spike; potential destruction of the LMG2100R044 half-bridges.}
+        {Hardware dead-time insertion configured on \ac{HRTIM} Timer B (PRIM) and Timer E (SEK), independent of firmware control-loop behaviour. Note: the secondary half-bridge is deliberately driven into shoot-through by firmware for AMPMETER/crowbar operation -- by design, not a fault, see \secref{sec_lv_converter}.}
+    \FMEAItemCritical
+        {[HW+FW] Output overvoltage}
+        {A runaway control loop (see charging-table entry above) drives \texttt{v\_out}/\texttt{v\_hv} above the safe limit.}
+        {Damage to downstream circuitry, or an unexpectedly high voltage on user-accessible output terminals.}
+        {\ac{OVP} crowbar shorts the converter secondary once the output exceeds threshold, latching until an explicit \texttt{OVP\_RESET} (\secref{sec_ovp}); \texttt{protection.c} independently polls \texttt{OVP\_N} every tick and forces the output off regardless of mode.}
+    \FMEAItemModerate
+        {[HW+FW] Output overcurrent coverage differs by mode -- needs review}
+        {\texttt{protection.c} only evaluates \texttt{OCP\_N} while ISOMETER is active (``it trips spuriously in other modes'', per the code comment); the \texttt{OCP\_N} circuit is the high-voltage flyback's current limiter (\secref{sec_ocp}, \autoref{fig_hv_conv_i_lim}), not a general converter latch. A separate analog limiter exists on the primary/output current path (\autoref{fig_i_ctrl_feedforward}) but its fault behaviour is not yet written up in \secref{sec_i_ctrl}.}
+        {In 60V\_OUT/10A\_OUT/RESISTANCE modes, output overcurrent is caught by the untuned \texttt{BoostIoutLimit} software loop and, ultimately, by \ac{BMS} pack-level protection -- not by a dedicated fast local latch as in ISOMETER.}
+        {\ac{BMS} pack overcurrent-discharge protection remains the backstop.}
+    \end{FMEATable}
+    \caption{FMEA -- Power conversion}
+\end{table}
+
+\FloatBarrier
+
+\subsection{Isolation measurement (high voltage)}
+
+\begin{table}[h!]
+    \begin{FMEATable}
+    \FMEAItemCritical
+        {[HW] Isolation current channel offset masks real leakage}
+        {A \qty{129}{\micro\ampere} offset on the \texttt{I\_ISO} channel (op-amp input leakage, architecture.md \#5).}
+        {Can make the measured insulation resistance appear better than reality, undermining \ReqRef{R:Iso_voltage} exactly when the test should catch a real fault -- a false-safe measurement error.}
+        {\texttt{I\_ISO} is one of \texttt{calibration.c}'s six per-unit calibratable channels (\texttt{zeroCal}/\texttt{gainCal}); a unit that has not been zero-calibrated still carries the full offset.}
+    \FMEAItemCritical
+        {[HW] Operator contact with high-voltage output during isolation test}
+        {ISOMETER energises the output terminals up to \qty{500}{\volt} for the resistance test.}
+        {Electric shock.}
+        {Shrouded \qty{4}{\milli\meter} safety jacks (\ReqRef{R:Output}); \texttt{OUT\_SEL\_HV} output routing is only active in ISOMETER (\texttt{mode\_table.c}); colour-changing screen border while ISOMETER is active as an operator-facing indicator (commit \texttt{1ac3eeb}); \ac{GDT}s on the output terminals (\secref{sec_terminal}).}
+    \FMEAItemCritical
+        {[FW] High-voltage flyback loop instability on first bring-up}
+        {The HVVoltage/HVCurrent PI loops share the untuned-gains issue above; they previously defaulted to zero gain (silently disabling ISOMETER) and now run real but unverified gains.}
+        {Overshoot beyond the \qty{500}{\volt} rating of downstream components at the point where the consequences are worst.}
+        {\ac{OVP} crowbar and \ac{GDT}s as hardware backstops (\secref{sec_ovp}, \secref{sec_terminal}); treat the first ISOMETER activation after any gain change as a supervised bench test.}
+    \end{FMEATable}
+    \caption{FMEA -- Isolation measurement}
+\end{table}
+
+\FloatBarrier
+
+\subsection{Thermal}
+
+\begin{table}[h!]
+    \begin{FMEATable}
+    \FMEAItemModerate
+        {[FW] Power-stage over-temperature}
+        {4 external \ac{NTC}s (secondary, transformer, current-sense, primary) monitored by \texttt{protection.c}.}
+        {Component degradation/failure if reached and not acted on.}
+        {\texttt{protection.c} classifies OK/WARNING/ERROR per channel with hysteresis every tick; ERROR forces the output off from \texttt{statemachine\_step()} regardless of mode.}
+    \end{FMEATable}
+    \caption{FMEA -- Thermal}
+\end{table}
+
+\FloatBarrier
+
+\subsection{Firmware / system-level}
+\label{tab:fmea_mcu_hang}
+
+\begin{table}[h!]
+    \begin{FMEATable}
+    \FMEAItemCritical
+        {[FW] No microcontroller watchdog}
+        {\texttt{HAL\_IWDG\_MODULE\_ENABLED} and \texttt{HAL\_WWDG\_MODULE\_ENABLED} are both disabled (\texttt{stm32g4xx\_hal\_conf.h}); nothing resets the microcontroller if the main loop hangs.}
+        {If firmware hangs while a converter output is enabled, the output stays in whatever state it was in until a hardware-level protection (\ac{OVP}, \ac{BMS}) intervenes or the device is unplugged -- there is no firmware-level fail-safe of its own.}
+        {None in firmware today; the \ac{BMS}'s autonomous protection and the \ac{OVP} crowbar/dead-time hardware stay active even with an unresponsive microcontroller, so the pack- and converter-level physical protections are the actual backstop. \textbf{Recommendation}: enable the microcontroller's independent watchdog timer (IWDG).}
+    \FMEAItemModerate
+        {[FW] EEPROM calibration/config corruption}
+        {The header, \texttt{hardware\_data} and \texttt{calibration} blocks each carry a CRC32 (\texttt{config\_store.c}).}
+        {On mismatch, \texttt{config\_store\_init()} silently falls back to default (uncalibrated / placeholder-PID) values for that block; the device keeps operating with degraded measurement accuracy and no on-screen indication -- only a \ac{CLI} \texttt{printf}.}
+        {CRC32-per-block check with default fallback prevents operating on garbage data. \textbf{Recommendation}: surface a UI-visible indicator when a block has been defaulted.}
+    \FMEAItemMinor
+        {[FW] Event / \acs{I2C} queue overflow}
+        {The 64-entry event queue and the \ac{I2C} transaction queue are fixed-size and drop new entries when full rather than blocking.}
+        {A dropped \texttt{EVENT\_SM\_STEP} delays the next state-machine tick by one 20\,ms period (self-correcting); a dropped \ac{I2C} transaction delays that read to the next cycle.}
+        {Queued as \texttt{ERROR\_EVENT\_OVF}/\texttt{ERROR\_IIC\_OVF} (\texttt{error.c}), \ac{CLI}-visible only, not persisted (\texttt{error\_Write()} stub). Sustained overflow would indicate a starvation bug worth investigating, not a one-off.}
+    \end{FMEATable}
+    \caption{FMEA -- Firmware / system-level}
+\end{table}

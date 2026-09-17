@@ -174,18 +174,45 @@ fields, its defaults and its duty saturation limits. `ctrl_main_init()`,
 | `CTRL_PARAM_SW_FREQ_LOW` | 50 000 Hz |
 | `CTRL_PARAM_SW_FREQ_HV` | 350 000 Hz |
 | `CTRL_PARAM_CHARGE_CURRENT_mA` | 1000 mA |
-| `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` | 14 200 mV (3550 mV × 4) |
-| `CTRL_PARAM_CHARGE_TAPER_CURRENT_mA` | 225 mA |
+| `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` | 14 000 mV (3500 mV × 4) |
+| `CTRL_PARAM_CHARGE_TAPER_CURRENT_mA` | 100 mA |
+| `CTRL_PARAM_CHARGE_RESTART_MARGIN_mV` | 300 mV |
+| `CTRL_PARAM_STACK_VOLTAGE_MIN/MAX_VALID_mV` | 8000 / 20 000 mV |
 
 > **Note**: PID gains remain initial/placeholder values. No tuning has been
 > performed — see Known Issues.
 
 ### Charging (CC/CV)
-Auto-entered from IDLE when the terminal voltage is 15–24 V, no BMS fault is
-latched, and the pack is below the end voltage minus a restart margin. Runs
-constant-current until the end voltage, then latches (one-way) into a
-constant-voltage tail. The cycle completes once the pack is at the end voltage
-**and** current has tapered below `CTRL_PARAM_CHARGE_TAPER_CURRENT_mA`.
+Auto-entered from IDLE when the external terminal voltage
+(`v_term_ext_mv`) is 15–24 V, no BMS safety fault (`safetyStatusA`/`B`) is
+latched, and the BMS `StackVoltage` is below the end voltage minus the
+restart margin. Runs constant-current (ramped reference) until the
+constant-voltage latch fires, then stays in the CV tail for the rest of the
+cycle (one-way latch, cleared only when CHARGE is re-entered).
+
+The CC→CV latch and the cycle-termination check both key off the same
+sensor, the BMS `StackVoltage`, against `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` —
+the latch additionally requires `StackVoltage` to be within a sanity range
+(`CTRL_PARAM_STACK_VOLTAGE_MIN/MAX_VALID_mV`) before it fires, guarding
+against latching on a bad BMS reading. This corrects an earlier version of
+this document, which claimed the latch tested the internal `v_in` instead;
+current code shows no such path.
+
+Once in the CV tail, the voltage PI loop (`ctrl_main_ctrl_charge_voltage()`)
+runs a deliberate fast/slow sensor blend: its P-term uses the fast internal
+ADC (`v_in`), its I-term uses an accurate but slow (~1 Hz) reading that, as
+of the most recent charging rework, is `4 × highest individual cell voltage`
+rather than `StackVoltage` — regulating to protect the most-charged cell
+from overshoot under cell imbalance, with a stepped (not ramped) reference.
+**Residual concern**: the latch/termination logic still gates on real
+`StackVoltage`, while the CV loop itself now regulates towards an
+*extrapolated* `4 × max-cell` target — under significant cell imbalance
+these two quantities diverge, which is untested. The cycle terminates once
+`StackVoltage` ≥ end voltage, output current has tapered below
+`CTRL_PARAM_CHARGE_TAPER_CURRENT_mA`, **and** the cell-voltage spread
+(`max(cell) - min(cell)`) is ≤ 50 mV — or immediately on a BMS safety fault
+or on the supply dropping below `CTRL_PARAM_CHARGE_STOP_VIN_mV`. Live ADC
+values are printed on the CLI throughout charging for bench visibility.
 
 ---
 
@@ -407,16 +434,14 @@ stub. The queue is guarded against ISR / main-context races.
 
 | # | Area | Issue |
 |---|------|-------|
-| 1 | Power-on | Inrush current (~26 A) triggers BMS overcurrent at startup — precharge circuit needs redesign |
+| 1 | Power-on | Inrush current (~26 A) triggers BMS overcurrent at startup — precharge circuit needs redesign. Operational workaround in the meantime: holding the startup button during power-on slows the BMS's own FET switching, reducing inrush to ~0.7 A (see `modifications.tex`). |
 | 2 | GaN drivers | Bootstrap capacitor discharge limits maximum converter on-time at low duty cycles |
 | 3 | I2C | Level shifter outputs 2.4 V instead of 3.3 V — marginal for some slaves |
 | 4 | Current meas. | ~100 mA noise floor on instrumentation amp output |
 | 5 | Isolation meas. | 129 µA offset on isolation current channel (op-amp input leakage) |
 | 6 | Voltage ref | Reference rail requires output load capacitor for stability |
 | 7 | PID tuning | **All PID gains are placeholder values; no tuning has been performed.** This matters more than it used to: the HV loops previously defaulted to zero gain, which silently disabled ISOMETER. They now default to real (untuned) values, so ISOMETER will actually drive the flyback. Treat the first run as a bench bring-up. |
-| 8 | ISOMETER ADC | `adc_configure_mode()` does not assign the shared hadc1..4 trigger for ISOMETER, so its control-loop rate inherits whatever mode ran before it — while `CTRL_FREQ`-scaled gains assume 25 kHz. Deferred pending bench validation. |
-| 9 | Ohmmeter ADC | `RESISTANCE_1mA`'s case label in `adc_configure_mode()` is commented out, so it gets no ADC trigger **and** no hadc4 configure/start — yet its buck loop regulates on `converted.v_out`, which hadc4 supplies. Deferred pending bench validation. |
-| 10 | Charge thresholds | The CC→CV latch tests the internal, uncalibrated `v_in`, while cycle termination tests the BMS `StackVoltage`. Same threshold, two different sensors. |
-| 11 | Calibration UI | The Settings > Calibration screen re-runs `adc_configure_mode()` and blocking delays every tick, and does not restore the previous mode's ADC routing on exit. |
-| 12 | Data logging | QSPI flash driver exists and holds the icon store, but logging is not wired into the application |
-| 13 | Error log | `error_Write()` is an unimplemented stub, so queued errors are discarded |
+| 8 | ISOMETER ADC | Fixed (`e5bde9a`): ISOMETER now names its trigger explicitly (`ADC_TRIGGER_HRTIM_HV`, see `mode_table.c`), so the loop rate no longer depends on mode history. **Residual issue**: that trigger's actual rate is ~11.7 kHz (350 kHz ÷ 15 post-scaler ÷ 2 decimation), not the 25 kHz `CTRL_FREQ` that `CTRL_PARAM_HV_VOLTAGE_I`/`CTRL_PARAM_HV_CURRENT_I` and the startup ramp are scaled by — integral action is therefore ~2.1× weaker and the ramp ~2.1× slower than those constants suggest. The rate is now at least deterministic, which is what makes bench tuning possible; closing the gap (retune the HV gains, or change TRG2's post-scaler to 7 for an exact 25 kHz) is a tuning decision to make with the converter in front of you. |
+| 9 | Charge thresholds | The CC→CV latch and cycle termination both key off the BMS `StackVoltage` against `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` (consistent — this corrects an earlier version of this table, which claimed the latch tested `v_in`). The CV tail's own PI loop, however, now regulates towards `4 × highest cell voltage` rather than `StackVoltage` (see §3, Charging). Under significant cell imbalance, the quantity being latched/terminated on (real `StackVoltage`) and the quantity the CV loop is driving towards (extrapolated `4 × max-cell`) can diverge — untested. Termination also now requires the cell-voltage spread to be ≤ 50 mV, which should catch most of this in practice, but the two-sensor tension itself is unresolved. |
+| 10 | Data logging | QSPI flash driver exists and holds the icon store, but logging is not wired into the application |
+| 11 | Error log | `error_Write()` is an unimplemented stub, so queued errors are discarded |
