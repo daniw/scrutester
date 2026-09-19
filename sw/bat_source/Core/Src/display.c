@@ -138,7 +138,7 @@ void display_show_idle(uint8_t menu_index) {
 	int16_t cy = STATUS_H + (FOOTER_Y - STATUS_H) / 2 - 10;
 
 	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
-	draw_status_bar("BatSource", C_SILVER);
+	draw_status_bar("ScruTester", C_SILVER);
 	draw_footer("ESC: Shutdown", "OK: Select");
 
 	draw_menu_icon(prev_idx, prev, LCD_WIDTH / 2 - 110, cy, C_DIM_GRAY, 0);
@@ -557,7 +557,7 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 			submenu_index == STATEMACHINE_SETTINGS_MODE_BMS ? "OK: Balance" : 0);
 
 	if (submenu_index == STATEMACHINE_SETTINGS_MODE_ABOUT) {
-		snprintf(text, sizeof(text), "BatSource Firmware");
+		snprintf(text, sizeof(text), "ScruTester Firmware");
 		LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, C_WHITE, C_BLACK);
 		snprintf(text, sizeof(text), "Serial number: %04d", config_store.hardware_data.serial_number);
 		LCD_PutStr(16, STATUS_H + 34, text, FONT_TINY, C_WHITE_63, C_BLACK);
@@ -571,6 +571,10 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 		LCD_PutStr(16, STATUS_H + 106, text, FONT_TINY, C_WHITE_63, C_BLACK);
 		snprintf(text, sizeof(text), "Designed by daniw & ahorat");
 		LCD_PutStr(16, STATUS_H + 124, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		snprintf(text, sizeof(text), "Repository: ");
+		LCD_PutStr(16, STATUS_H + 142, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		snprintf(text, sizeof(text), "    github.com/daniw/scrutester");
+		LCD_PutStr(16, STATUS_H + 160, text, FONT_TINY, C_WHITE_63, C_BLACK);
 	}
 }
 
