@@ -450,10 +450,6 @@ static void update_charge(uint8_t output_active) {
 /* Public API: mode dispatch                                              */
 /* ---------------------------------------------------------------------- */
 
-void display_init(void) {
-	UG_FillScreen(C_BLACK);
-}
-
 void display_enter_mode(statemachine_modes_t mode) {
 	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
 

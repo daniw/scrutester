@@ -52,6 +52,7 @@
 #include "icon_store.h"
 #include "ads131m04.h"
 #include "protection.h"
+#include "splash.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -119,6 +120,9 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+
+  gpio_turnOn();
+
   MX_DMA_Init();
   MX_HRTIM1_Init();
   MX_QUADSPI1_Init();
@@ -141,12 +145,10 @@ int main(void)
   dma_irq_priority_override();
   gpio_irq_priority_override();
 
-  /*
-   * Init the event and error queues. Must run before timer_init()/
-   * timer_start(), since the timer interrupt is the first thing that can
-   * post an event via event_Add(), and before anything that can call
-   * error_Add() (e.g. i2c_Add() below).
-   */
+
+  LCD_init();
+  splash_show();
+
   event_Init();
   error_Init();
 
@@ -214,10 +216,6 @@ int main(void)
     printf("Flash initialisation failed!\r\n");
   }
   icon_store_init(); // safe even if flash init failed above -- just reports unavailable
-
-  gpio_turnOn();
-
-  LCD_init();
 
   protection_init();
   ctrl_main_init();

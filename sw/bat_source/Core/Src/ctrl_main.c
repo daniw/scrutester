@@ -301,7 +301,7 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 		break;
 	case CTRL_MODE_ISOMETER:
 		ctrl_main_handle.voltage_iso_reference_V =
-				ctrl_main_iso_values[reference_poti_count & 0x3];
+				ctrl_main_iso_values[reference_poti_count];
 		break;
 	case CTRL_MODE_CHARGE:
 		ctrl_main_handle.current_reference_mA = CTRL_PARAM_CHARGE_CURRENT_mA;

@@ -129,3 +129,32 @@ void input_cli_pulse_esc(void) {
 void input_cli_toggle_out(void) {
 	cli_out_held = !cli_out_held;
 }
+
+void input_encoder_clamp_reset(input_encoder_clamp_t *clamp, int32_t value) {
+	clamp->position = value;
+	clamp->prev_raw = input_encoder_read();
+}
+
+int32_t input_encoder_read_clamped(input_encoder_clamp_t *clamp, int32_t min, int32_t max) {
+	uint16_t raw = input_encoder_read();
+	int32_t delta = (int32_t) raw - (int32_t) clamp->prev_raw;
+
+	// The raw count wraps at 0/127 (TIM4's ARR=127, or the CLI backend's own
+	// & 0x7F). Re-interpret any delta bigger than half that range as having
+	// gone the short way around the wrap instead -- e.g. 127 -> 1 is really
+	// a step of +2, not +126. A real detent step within one 20 ms tick never
+	// gets close to 64 counts, so this is never ambiguous in practice.
+	if (delta > 64)
+		delta -= 128;
+	else if (delta < -64)
+		delta += 128;
+
+	clamp->position += delta;
+	if (clamp->position < min)
+		clamp->position = min;
+	else if (clamp->position > max)
+		clamp->position = max;
+	clamp->prev_raw = raw;
+
+	return clamp->position;
+}

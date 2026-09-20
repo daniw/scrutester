@@ -366,7 +366,8 @@ its own if the supply is still present.
 | `display.c` | Screen layout and rendering (calls µGUI) |
 | `menu.c` | Menu tree: order, names, accent colours, procedural icons |
 | `icon_store.c` | Menu icon bitmaps in QSPI flash, with procedural fallback |
-| `input.c` | Encoder/button abstraction with debounce; HW or CLI-simulated |
+| `input.c` | Encoder/button abstraction with debounce; HW or CLI-simulated; clamped (non-wrapping) encoder read for live setpoints |
+| `splash.c` | Boot splash (logo, title, credit) drawn from fill primitives — no bitmap in flash |
 | `ui_ctrl.c` | Status LEDs and ambient-adaptive backlight |
 | `opt3004.c` | Ambient light sensor |
 | `lp581x.c` | LP5816/LP5817 LED driver |
@@ -422,9 +423,10 @@ stub. The queue is guarded against ISR / main-context races.
 
 ## 9. UI & Display
 
-- **Display**: 240×320 TFT LCD, driven via µGUI + custom LCD driver (`Library/LCD/`)
+- **Display**: 240×320 TFT LCD, used in landscape (`LCD_ROTATION 3`, so `LCD_WIDTH` = 320, `LCD_HEIGHT` = 240), driven via µGUI + custom LCD driver (`Library/LCD/`)
+- **Boot splash**: `splash_show()` runs right after `LCD_init()` and is replaced by the first `display_show_idle()` (`display_init()` no longer wipes the screen, so the splash stays until the menu is drawn). The logo is drawn from 6 rectangles and 4 parallelograms (`splash.c`, ~0.6 KB) rather than stored as a bitmap (~23 KB at this size). `LCD_init()` + `splash_show()` run early in `main()` — right after the peripheral init and IRQ-priority overrides, before `ui_ctrl_init()` switches the backlight on — so the splash covers the BMS/ADC/EEPROM/flash init that follows. `gpio_turnOn()` (the `ON_REQ` power latch) moved to directly after `MX_GPIO_Init()` for the same reason: `LCD_init()` takes ~250 ms.
 - **Backlight**: LP5816 LED driver, brightness faded toward an OPT3004-derived target
-- **Controls**: Rotary encoder (quadrature) + 3 pushbuttons (ESC, OUT, OK), debounced in `input.c`
+- **Controls**: Rotary encoder (quadrature) + 3 pushbuttons (ESC, OUT, OK), debounced in `input.c`. The encoder's hardware counter wraps at 0/127; live setpoints (60V_OUT / 10A_OUT references, ISOMETER test-voltage index) read it through `input_encoder_read_clamped()` so turning past either end holds the value instead of jumping to the other end. Menu/list navigation keeps the wrapping raw count on purpose.
 - **Icons**: bitmaps from QSPI flash when available, procedural vector glyphs otherwise
 - **Display boards**: Isolated supply from a forward converter on PS1-1BA; PS1-2BA carries the display, encoder, and LED driver ICs
 

@@ -82,20 +82,17 @@ void statemachine_init(void) {
 
 	input_init();
 	input_encoder_reset(62);
-	display_init();
 
 	timer_add(STATEMACHINE_STEP_PERIOD_mS, TIMER_TYPE_TICK, EVENT_SM_STEP, 0);
 	statemachine_switchtoIdle();
 }
 
-/* Feeds the live encoder value into ctrl_main's poti_reference and
- * immediately recomputes the derived reference (voltage/current/iso target)
- * for whichever mode is currently showing -- this runs every tick regardless
- * of whether OUT is held, so the reference is already correct and ready the
- * moment the controller actually starts, not just eventually once the ADC
- * ISR happens to catch up. */
+static input_encoder_clamp_t encoder_setpoint_clamp;
+
 static void statemachine_apply_encoder_setpoint(void) {
-	ctrl_main_handle.poti_reference = input_encoder_read();
+	int32_t max = (statemachine_handle.current_mode == STATEMACHINE_MODE_ISOMETER) ? 3 : 127;
+	ctrl_main_handle.poti_reference = (uint16_t) input_encoder_read_clamped(
+			&encoder_setpoint_clamp, 0, max);
 	ctrl_main_apply_reference(statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode),
 			ctrl_main_handle.poti_reference);
 }
@@ -494,6 +491,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	}
 	aux_io_ctrl_set_config(mode);
 	input_encoder_reset(0);
+	input_encoder_clamp_reset(&encoder_setpoint_clamp, 0);
 
 }
 
