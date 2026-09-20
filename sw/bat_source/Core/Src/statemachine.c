@@ -460,12 +460,12 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_ISOMETER:
 	case STATEMACHINE_MODE_VOLTMETER:
 		// Disable isometer and voltmeter on device #0006, due to welded relay.
-		if (config_store.hardware_data.serial_number == 6) {
+		/*if (config_store.hardware_data.serial_number == 6) {
 			if (mode == STATEMACHINE_MODE_ISOMETER || mode == STATEMACHINE_MODE_VOLTMETER) {
 				printf("Unable to switch to %d due to welded relay, returning to Idle\r\n", mode);
 				return;
 			}
-		}
+		}*/
         /* fall through */
 	case STATEMACHINE_MODE_60V_OUT:
 	case STATEMACHINE_MODE_10A_OUT:
