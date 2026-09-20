@@ -368,6 +368,7 @@ its own if the supply is still present.
 | `icon_store.c` | Menu icon bitmaps in QSPI flash, with procedural fallback |
 | `input.c` | Encoder/button abstraction with debounce; HW or CLI-simulated; clamped (non-wrapping) encoder read for live setpoints |
 | `splash.c` | Boot splash (logo, title, credit) drawn from fill primitives — no bitmap in flash |
+| `tetris.c` | Hidden game (Settings > About, hold OK). Self-contained: uses only `input.h` and the LCD |
 | `ui_ctrl.c` | Status LEDs and ambient-adaptive backlight |
 | `opt3004.c` | Ambient light sensor |
 | `lp581x.c` | LP5816/LP5817 LED driver |
@@ -428,6 +429,20 @@ stub. The queue is guarded against ISR / main-context races.
 - **Backlight**: LP5816 LED driver, brightness faded toward an OPT3004-derived target
 - **Controls**: Rotary encoder (quadrature) + 3 pushbuttons (ESC, OUT, OK), debounced in `input.c`. The encoder's hardware counter wraps at 0/127; live setpoints (60V_OUT / 10A_OUT references, ISOMETER test-voltage index) read it through `input_encoder_read_clamped()` so turning past either end holds the value instead of jumping to the other end. Menu/list navigation keeps the wrapping raw count on purpose.
 - **Icons**: bitmaps from QSPI flash when available, procedural vector glyphs otherwise
+- **Hidden game**: holding OK for 1.5 s on the Settings > About screen starts
+  `tetris.c` (encoder = move, OK = rotate, OUT = soft drop, ESC = quit). It is
+  a sub-state of the About screen rather than a mode of its own — no
+  `statemachine_modes_t`, `mode_table.c` or `menu.c` entry, so it stays out of
+  the carousel and out of the power path (SETTINGS' `mode_table` row is
+  `CTRL_MODE_OFF`/`ADC_TRIGGER_NONE`). It draws only changed cells because
+  there is no framebuffer: a full-screen redraw is ~31 ms, more than one 20 ms
+  tick. The only hook outside `tetris.c`/`tetris.h` is ~14 lines in
+  `statemachine_step()`'s settings-detail branch, which must `return` so the
+  ESC that quits the game does not also drop the device to IDLE. While the game
+  is open, `STATEMACHINE_MODE_CHARGE` cannot be auto-entered (that only happens
+  from IDLE), so plugging in a supply mid-game does nothing until it is left.
+  Host test harness: `tools/tetris_sim/` (`make check` — plays the real
+  `tetris.c` natively against a shadow framebuffer)
 - **Display boards**: Isolated supply from a forward converter on PS1-1BA; PS1-2BA carries the display, encoder, and LED driver ICs
 
 ---

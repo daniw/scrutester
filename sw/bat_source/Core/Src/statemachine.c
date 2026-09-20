@@ -26,6 +26,7 @@
 #include "dac.h"
 #include "config_store.h"
 #include "mode_table.h"
+#include "tetris.h"
 
 statemachine_t statemachine_handle;
 uint16_t ok_button_pressed;
@@ -362,6 +363,27 @@ void statemachine_step(void) {
 			statemachine_step_calibration();
 			return;
 		} else {
+			/* Easter egg: holding OK on the About screen starts the game in
+			 * tetris.c, which from then on owns the LCD and reads the encoder
+			 * and buttons itself. Returning here is load-bearing twice over:
+			 * it keeps the game's tick away from the shared ESC tail at the
+			 * end of this function -- otherwise the ESC that quits the game
+			 * would also drop the device back to IDLE on the same tick -- and
+			 * it leaves the About screen's own ESC-to-list handling below
+			 * untouched for after the game. */
+			if (statemachine_handle.settings_mode
+					== STATEMACHINE_SETTINGS_MODE_ABOUT) {
+				if (tetris_is_active()) {
+					if (!tetris_step())
+						display_enter_settings_detail(
+								STATEMACHINE_SETTINGS_MODE_ABOUT);
+					return;
+				}
+				if (ok_button_pressed == TETRIS_UNLOCK_TICKS) {
+					tetris_start();
+					return;
+				}
+			}
 			display_update_settings_detail(statemachine_handle.settings_mode);
 			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
 					&& ok_button_pressed == 1) {
