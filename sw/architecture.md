@@ -25,7 +25,7 @@
 | TCA9554 (PCA9554) | I2C I/O expander — hardware ID reading | I2C4 (0x20) |
 | LP5817 / LP5816 | LED drivers — status LEDs and LCD backlight on UI board | I2C4 (0x2D / 0x2C) |
 | OPT3004 | Ambient light sensor — automatic backlight control | I2C4 (0x44) |
-| LCD (240×320 TFT) | Display — sunlight-readable, replaces original OLED | SPI4 (bit-banged) |
+| LCD (240×320 TFT) | Display — sunlight-readable, replaces original OLED | SPI4 (hardware, DMA — see §4) |
 
 ### Battery
 4× Tenpower IFR26700-45HE LiFePO₄ cells in series (~14.4 V nominal, 56.96 Wh).
@@ -273,7 +273,15 @@ event-driven); the queue is guarded against the I2C ISR and drops with
 
 ### SPI
 - **SPI3** (PA10/11/12, CS=PA15): ADS131M04 external ADC. DRDY_N interrupt on PD2; Sync/Reset on PD0.
-- **SPI4** (PE2–6): LCD display — software bit-bang due to PCB layout constraint.
+- **SPI4** (PE2–6): LCD display — real hardware SPI peripheral, DMA-driven for
+  bulk transfers (`lcd.c`). Only SCK/MISO/MOSI (PE2/PE5/PE6) are the SPI4
+  peripheral pins; PE3 (`DISPLAY.WR`, the D/C line) and PE4 (`DISPLAY.CS`) are
+  plain GPIO outputs toggled by hand around each transfer (`LCD_DC`/`LCD_CS`
+  in `lcd.h`) — normal for an SPI LCD, not bit-banging. (This corrects an
+  earlier version of this doc, which called it "software bit-bang due to a
+  PCB layout constraint"; nothing in the code or `bat_source.ioc` supports
+  that, and `spi.c`'s `MX_SPI4_Init()` configures SPI4 as an ordinary hardware
+  peripheral.)
 
 ### HRTIM
 | Macro | Timer | `sTimerxRegs[]` index | Role |

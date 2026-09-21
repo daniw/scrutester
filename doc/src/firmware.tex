@@ -123,7 +123,7 @@ covers the still-open CC$\to$CV sensor mismatch and the untuned-gains risk.
         TCA9554 & \ac{I2C} \ac{IO} expander, hardware ID reading & \ac{I2C}4 (0x20) \\
         LP5817 / LP5816 & \ac{LED} drivers, status \acp{LED} and \ac{LCD} backlight & \ac{I2C}4 (0x2D/0x2C) \\
         OPT3004 & Ambient light sensor, automatic backlight & \ac{I2C}4 (0x44) \\
-        \ac{LCD} (240$\times$320) & Display & \ac{SPI}4 (bit-banged) \\
+        \ac{LCD} (240$\times$320) & Display & \ac{SPI}4 (hardware, \ac{DMA}) \\
     \end{tabular}
     \caption{Key external \acp{IC} and their bus interfaces}
 \end{table}
@@ -144,7 +144,10 @@ for the milliohm mode as a \qty{1}{\hertz} \qty{50}{\percent} square wave
 All \ac{I2C}4 slaves share one bus; transactions are queued and
 \ac{DMA}/event-driven, dropping with an error code rather than blocking
 when the queue is full. \ac{SPI}3 talks to the external \ac{ADC}; \ac{SPI}4
-drives the \ac{LCD} by bit-banging, a \ac{PCB}-layout constraint. \ac{HRTIM}
+is a real hardware \ac{SPI} peripheral driving the \ac{LCD}, with bulk
+transfers \ac{DMA}-driven -- only the chip-select and data/command lines
+are toggled by \ac{GPIO}, which is the usual wiring for an \ac{SPI} \ac{LCD},
+not bit-banging. \ac{HRTIM}
 drives three channels -- primary buck-boost, high-voltage flyback, and the
 secondary winding -- with hardware dead-time insertion on the primary and
 secondary legs (see \autoref{sec:fmea}).
