@@ -246,7 +246,21 @@ typedef enum{
 #endif // LCD_DC
 
 #define SPI_PRESCALER_LCD_READ	32	//  5MHz
-#define SPI_PRESCALER_LCD_WRITE	16//4	// 40MHz
+/* Was left at 16 (10MHz, a quarter of the intended rate) since the initial
+ * "getting the LCD running" bring-up commit (317ef30) -- the trailing "//4"
+ * is that commit's own leftover note of the value actually wanted. spi.c's
+ * static MX_SPI4_Init() and bat_source.ioc (SPI4.BaudRatePrescaler,
+ * CalculateBaudRate=40.0 MBits/s) both already agree on 4/40MHz; nothing
+ * documents 16 as a deliberate fallback (no known-issues entry, no comment
+ * on a signal-integrity problem), so this restores that already-configured
+ * value. It matters beyond boot: LCD_ReadCmd() (only ever called from
+ * LCD_init()'s panel-ID reads) leaves the SPI peripheral at whichever of
+ * these two defines it restores to when it's done, and every draw for the
+ * rest of runtime -- splash, menus, this driver's own LCD_Fill/LCD_WriteData
+ * bulk transfers -- runs at that same rate. If 40MHz turns out to be
+ * electrically unreliable on the bench (this has not been possible to test
+ * without hardware), try 8 (20MHz) before reverting to 16. */
+#define SPI_PRESCALER_LCD_WRITE	4	// 40MHz
 
 #define color565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
 #define ABS(x) ((x) > 0 ? (x) : -(x))

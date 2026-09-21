@@ -223,10 +223,15 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 }
 
 // A single DMA chunk can be up to 65535 pixels (16 bit each); at SPI4's
-// current 5 MBit/s (bat_source.ioc), that's ~210ms to clock out. Must
-// stay comfortably above that or this "safety" timeout aborts large
-// fills partway through - which is exactly what happened at 100ms,
-// cutting a full-screen fill off around the halfway point.
+// 40 MBit/s (SPI_PRESCALER_LCD_WRITE, matching bat_source.ioc's
+// SPI4.CalculateBaudRate), that's ~26ms to clock out. Must stay comfortably
+// above that or this "safety" timeout aborts large fills partway through -
+// which is exactly what happened at 100ms, cutting a full-screen fill off
+// around the halfway point (that was measured back when SPI_PRESCALER_LCD_WRITE
+// was left throttled to 10 MBit/s, i.e. ~105ms/chunk -- 500ms is now a much
+// wider margin than the 100ms failure implies, which is fine: this timeout
+// is only ever meant to catch a genuinely stuck transfer, not to track the
+// nominal transfer time closely).
 #define LCD_DMA_TIMEOUT_MS 500
 #endif
 
