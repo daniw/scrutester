@@ -59,6 +59,24 @@ static uint8_t charge_lockout;
 static uint8_t charge_await_notified;
 #endif
 
+// Auto power-off after this long with no user interaction, in ANY mode. In
+// ticks (STATEMACHINE_STEP_PERIOD_mS each) rather than milliseconds so it
+// doesn't need a wider type: 10 min / 20 ms = 30000, comfortably inside
+// uint16_t (max 65535, i.e. up to ~21.8 min) with room to retune.
+#define STATEMACHINE_INACTIVITY_TIMEOUT_TICKS ((10UL * 60UL * 1000UL) / STATEMACHINE_STEP_PERIOD_mS)
+
+// Ticks since the encoder last moved, a button was last pressed/held, or a
+// control loop was last actively running (see statemachine_step()'s use of
+// this). Reset on every mode entry (statemachine_switchtoIdle() and
+// statemachine_switchfromIdle()'s shared tail) so a near-expired count from
+// a previous mode doesn't carry over into a freshly entered one.
+static uint16_t inactivity_ticks;
+
+// Raw encoder count as of the last tick, to detect movement independently of
+// what any given mode does with it (menu index, setpoint, calibration
+// selection, ...) -- see statemachine_step().
+static uint16_t last_raw_encoder;
+
 void statemachine_switchfromIdle(statemachine_modes_t mode);
 void statemachine_switchtoIdle(void);
 static void statemachine_apply_encoder_setpoint(void);
@@ -264,6 +282,35 @@ void statemachine_step(void) {
 	if (charge_lockout
 			&& adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_START_VIN_LOW_mV) {
 		charge_lockout = 0;
+	}
+
+	// Auto power-off, in every mode: reset the timer on any encoder movement,
+	// any button press/hold, or a control loop actively running (covers
+	// CHARGE, an auto-started RESISTANCE measurement, and 60V/10A/ISOMETER
+	// while OUT is held) -- deliberately NOT statemachine_handle.output_on,
+	// which mode_table.c documents as left stale across a mode switch for
+	// passive-readout modes (VOLTMETER's entry there), unlike
+	// ctrl_main_handle.mode, which ctrl_main_stop_control() (called from
+	// statemachine_switchtoIdle()) reliably clears to CTRL_MODE_OFF every
+	// time IDLE is (re-)entered. STATEMACHINE_MODE_SHUTDOWN never becomes a
+	// lasting current_mode (see statemachine_switchfromIdle()), so it needs
+	// no case here.
+	uint16_t raw_encoder = input_encoder_read();
+	uint8_t active = (raw_encoder != last_raw_encoder)
+			|| ok_button_pressed || esc_button_pressed || out_button_pressed
+			|| ctrl_main_handle.mode != CTRL_MODE_OFF;
+	last_raw_encoder = raw_encoder;
+	if (active) {
+		inactivity_ticks = 0;
+	} else if (++inactivity_ticks >= STATEMACHINE_INACTIVITY_TIMEOUT_TICKS) {
+		printf("Auto power-off: untouched for %lus in mode %d\r\n",
+				(unsigned long) STATEMACHINE_INACTIVITY_TIMEOUT_TICKS
+						* STATEMACHINE_STEP_PERIOD_mS / 1000UL,
+				statemachine_handle.current_mode);
+		gpio_power_off();
+		// Only reached if power didn't actually cut (see gpio_power_off()):
+		// wait out another full timeout instead of retrying every tick.
+		inactivity_ticks = 0;
 	}
 
 	// Select transition to next state
@@ -689,6 +736,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	aux_io_ctrl_set_config(mode);
 	input_encoder_reset(0);
 	input_encoder_clamp_reset(&encoder_setpoint_clamp, 0);
+	inactivity_ticks = 0;
 
 }
 
@@ -707,4 +755,5 @@ void statemachine_switchtoIdle(void) {
 	statemachine_handle.current_menu_index = 0xFF; /* force a redraw on the next tick */
 	ui_ctrl_ledOutOff();
 	ui_ctrl_ledSenseOff();
+	inactivity_ticks = 0;
 }

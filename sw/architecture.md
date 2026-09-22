@@ -133,6 +133,27 @@ Per-mode data (control mode, relay/shunt mask, enable GPIO, entry flags, ADC
 trigger) is centralised rather than duplicated across `statemachine.c`,
 `ctrl_main.c`, `adc.c` and `aux_io_ctrl.c` — see `mode_table.c`.
 
+**Inactivity auto power-off**: `STATEMACHINE_INACTIVITY_TIMEOUT_TICKS`
+(`statemachine.c`, 10 min), checked once per tick in every mode, not just
+`STATEMACHINE_IDLE`. Resets on any encoder movement (tracked as the raw
+count, independent of what the current mode does with it), any button
+press/hold, or `ctrl_main_handle.mode != CTRL_MODE_OFF` (a control loop
+actively running) — the last one is what keeps `CHARGE`, an auto-started
+`RESISTANCE_1A`/`1mA` measurement, and `60V_OUT`/`10A_OUT`/`ISOMETER` while
+`OUT` is held from ever being cut off mid-charge or mid-output. It
+deliberately does **not** use `statemachine_handle.output_on`: `mode_table.c`
+documents that field as left stale across a mode switch for the
+passive-readout modes (see the `VOLTMETER` entry there), so it can't be
+trusted as an "active right now" signal, unlike `ctrl_main_handle.mode`,
+which `ctrl_main_stop_control()` (called from `statemachine_switchtoIdle()`)
+reliably clears every time `IDLE` is (re-)entered.
+`STATEMACHINE_MODE_SHUTDOWN` never becomes a lasting `current_mode` (see
+`statemachine_switchfromIdle()`), so it needs no case of its own. Once the
+timeout fires, `gpio_power_off()` (`gpio.c`) runs — also used by the CLI's
+`turnOff`: deasserts `ON_REQ`, waits ~100 ms to confirm the on/off controller
+actually cut power, and re-asserts it (logging that shutdown failed) if the
+MCU is still running.
+
 ### Control Loop (`ctrl_main.h/c`, `ctrl_PID_control.h/c`)
 
 Executed from the **ADC1 DMA-complete interrupt**, not directly from HRTIM.

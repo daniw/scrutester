@@ -819,18 +819,7 @@ void cmd_setSerial(void) {
 }
 
 void cmd_turnOff(void) {
-	printf("Turning off ...\r\n");
-	//Todo: disable any controller or converter that might be running before shutdown to prevent damage!
-	HAL_Delay(10);
-	gpio_turnOff();
-	for (uint16_t i = 0; i < 100; i++){
-		if (i%10 == 0){
-			printf("Waiting ...\n");
-		}
-		HAL_Delay(1);
-	}
-	gpio_turnOn();
-	printf("Turning off unsuccessful, reenabling on/off controller\r\n");
+	gpio_power_off();
 }
 
 void cmd_printGPIO(void) {
