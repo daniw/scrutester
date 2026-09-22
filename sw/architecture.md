@@ -49,7 +49,7 @@ The BQ76905 monitors each cell, measures pack current via a 5 mΩ shunt, and con
 - **Control**: PWM via HRTIM at 350 kHz, RCD snubber on primary switch node
 
 ### Output Stage
-- Output relays K1/K2/K3 for galvanic isolation between measurement paths
+- Output relays K1 (converter output ↔ jacks) and K2 (HV flyback path), both normally closed, opened by driving `OUT_SEL_HV` / `OUT_SEL_ISO` high, for galvanic isolation between measurement paths
 - Gas discharge tubes (GDT) for transient suppression on output terminals
 - Shrouded 4 mm safety jacks (Stäubli SLB4-F6.3)
 
@@ -182,13 +182,67 @@ fields, its defaults and its duty saturation limits. `ctrl_main_init()`,
 > **Note**: PID gains remain initial/placeholder values. No tuning has been
 > performed — see Known Issues.
 
-### Charging (CC/CV)
+### Charging (multi-phase start, then CC/CV)
 Auto-entered from IDLE when the external terminal voltage
 (`v_term_ext_mv`) is 15–24 V, no BMS safety fault (`safetyStatusA`/`B`) is
-latched, and the BMS `StackVoltage` is below the end voltage minus the
-restart margin. Runs constant-current (ramped reference) until the
-constant-voltage latch fires, then stays in the CV tail for the rest of the
-cycle (one-way latch, cleared only when CHARGE is re-entered).
+latched, the BMS `StackVoltage` is inside its plausibility window and below the
+end voltage minus the restart margin, and no lockout is active (see below).
+The same charger-window check refuses entry from the CLI's `state` command.
+
+Starting charge used to produce very high inrush currents, from two causes: the
+output relay closed against a running converter whose output was not at the
+charger voltage, and the CC loop was preloaded so the SEK duty started near
+zero, which is the *maximum*-current end. The start is therefore a sequence
+(`charge_seq.c`, phases `charge_phase_t`; the ISR publishes the phase in
+`ctrl_main_handle.charge_phase`, the state machine steps it every 20 ms):
+
+| Phase | Output relay K1 | What runs |
+|-------|-----------------|-----------|
+| `PRECHARGE` | open (`OUT_SEL_HV`=1; K2 also open, `OUT_SEL_ISO`=1) | Converter as an **open-loop boost**: PRIM ramps `PRIM_START_FRACTION` (0.1) → full duty over `CTRL_PARAM_CHARGE_PRECHARGE_PRIM_RAMP_s` (0.2 s) with SEK held at minimum duty, then the SEK duty follows `D = 1 − 0.985·V_in/V_ref` with `V_ref` ramped to `CTRL_PARAM_CHARGE_PRECHARGE_RATIO` (0.99) × the latched charger voltage over `CTRL_PARAM_CHARGE_PRECHARGE_SEK_RAMP_s` (0.2 s), then a `CTRL_PARAM_CHARGE_PRECHARGE_HOLD_s` (0.2 s) hold. `PRIM_START_FRACTION` is a `charge_seq.c`-private constant, not in `ctrl_param.h`. |
+| `CLOSE` | commanded closed (`OUT_SEL_HV`=0), wait `CTRL_PARAM_CHARGE_RELAY_SETTLE_ms` (100 ms) | ISR holds the duties. At the command the SEK duty is stepped to the **zero-current duty** `D0 = 1 − 0.985·V_in/V_term` and the CC PI is preloaded to `0.985 − D0`. |
+| `CC_RAMP` | closed | Charge-current loop; the reference ramps 0 → `CTRL_PARAM_CHARGE_CURRENT_mA` over `CTRL_PARAM_CHARGE_RAMP_s` (5 s). |
+| `CV` | closed | Constant-voltage tail (below). |
+
+Both output relays are **normally closed**: driving `OUT_SEL_HV` (K1, converter
+output ↔ jacks) or `OUT_SEL_ISO` (K2, HV flyback path) high *opens* them. The
+relay state of each mode is in `mode_table[]`; CHARGE's row is the PRECHARGE
+state, and the relays are set *before* the converter starts
+(`statemachine_enter_charge()`).
+
+The duty relations behind this (see `charge_seq.h`): boost
+`V_OUT_LV = D_prim·V_in/(1 − D_sek)`; charging (buck) direction current
+`≈ (V_OUT_LV·(1 − D_sek) − D_prim·V_bat)/R`, so a *larger* SEK duty means *less*
+charge current; the charge loop writes `D_sek = 0.985 − PI action`, bounded only
+by the PI limits (the former 0.5 SEK duty ceiling was removed).
+
+**Bench debug build** (`CHARGE_DEBUG`, defined in `charge_seq.h`, off by
+default like `LCD_TEST_DEMO_ENABLED`): gates everything below and the
+periodic/peak CLI printouts in `statemachine.c`, so none of it is in a normal
+build. The single-step API itself (`charge_seq_set_manual()` etc.) stays
+compiled in either way — inert with nothing to call it — so `charge_seq.c`
+needs no `#ifdef` and stays host-testable as-is.
+
+**Single-step bench test mode** (`charge_seq_set_manual()`): the CLI's
+`chargeStep 1` makes CHARGE hold after PRECHARGE finishes (relay still open,
+duty held) instead of continuing on its own, so open-loop boosting alone can
+be checked (TP12, the periodic `V_IN`/`V_OUT` print) before `chargeNext`
+releases it -- closing the relay and starting the current ramp. The flag
+persists across CHARGE (re-)starts until `chargeStep 0`.
+
+**OUT_LV (the converter output node behind K1) is not measured.** `V_OUT`,
+`V_TERM` and `I_OUT` are all on the jack side of the relay, so with K1 open
+`V_OUT` just reads the charger; only test point TP12 sees OUT_LV. PRECHARGE is
+therefore open-loop and only as accurate as `V_IN` and the duty model, which is
+why the target is `CTRL_PARAM_CHARGE_PRECHARGE_RATIO` (99 %) and not 100 %. A stuck-open relay is detected in
+`CC_RAMP` (reference above `CTRL_PARAM_CHARGE_STUCK_OPEN_REF_mA` for
+`…_ms` with less than `…_MEAS_mA` flowing) and aborts the charge.
+
+The end-of-charge exit is only evaluated in `CC_RAMP`/`CV`; supply drop, BMS
+fault, ESC and protection exits apply in every phase. ESC, protection, BMS-fault
+and stuck-open exits set a **lockout** so the IDLE auto-entry does not restart
+CHARGE on the next tick; it is cleared when the charger is removed
+(`v_term_ext_mv` < `CTRL_PARAM_CHARGE_START_VIN_LOW_mV`). `charge_percentage`
+is set to 100 % and the accumulator reset only on true completion.
 
 The CC→CV latch and the cycle-termination check both key off the same
 sensor, the BMS `StackVoltage`, against `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` —
@@ -212,7 +266,9 @@ these two quantities diverge, which is untested. The cycle terminates once
 `CTRL_PARAM_CHARGE_TAPER_CURRENT_mA`, **and** the cell-voltage spread
 (`max(cell) - min(cell)`) is ≤ 50 mV — or immediately on a BMS safety fault
 or on the supply dropping below `CTRL_PARAM_CHARGE_STOP_VIN_mV`. Live ADC
-values are printed on the CLI throughout charging for bench visibility.
+values are printed on the CLI (~10 Hz, from `statemachine_step()`, not the ISR) throughout
+charging for bench visibility, plus once the peak |`I_OUT`| in the 0.4 s after the
+relay-close command, for tuning `PRECHARGE_RATIO` and `RELAY_SETTLE_ms`.
 
 ---
 
@@ -301,7 +357,7 @@ command). Data logging not yet wired up.
 | Group | Signals | Notes |
 |-------|---------|-------|
 | Converter control | `CONV_CTRL_EN`, `CONV_CTRL_PRIM_L/H`, `CONV_CTRL_SEC_L/H`, `HV_CTRL_PRIM/EN` | Enable/disable half-bridge legs |
-| Output switching | `OUT_SEL_ISO`, `OUT_SEL_HV`, `SHUNT_EN`, `SHUNT_ISO_EN` | Route signal paths, driven per mode from `mode_table[]` |
+| Output switching | `OUT_SEL_ISO`, `OUT_SEL_HV`, `SHUNT_EN`, `SHUNT_ISO_EN` | Route signal paths, driven per mode from `mode_table[]`. The two output relays are normally closed: `OUT_SEL_HV`=1 opens K1 (converter ↔ jacks), `OUT_SEL_ISO`=1 opens K2 (HV flyback ↔ jacks). CHARGE additionally drives `OUT_SEL_HV` itself, mid-sequence. |
 | Protection | `OVP_N`, `OVP_RESET`, `OCP_N`, `DISCHARGE_N` | Latch reset and discharge control |
 | BMS | `BMS_CTRL_WAKEUP` (PF9) | Wake BQ76905 from low-power state |
 | UI inputs | `BUTTON_ESC` (PD4), `BUTTON_OUT` (PB9), `BUTTON_OK` (PE1), `ENCODER_A/B` | User controls |
@@ -347,7 +403,8 @@ its own if the supply is still present.
 | `main.c` | Peripheral init, main event loop |
 | `statemachine.c` | 11-mode FSM, UI navigation, protection interlock |
 | `mode_table.c` | Per-mode descriptor table — single source of truth for mode data |
-| `ctrl_main.c` | Control mode dispatch, per-mode PI loops, PID registry |
+| `ctrl_main.c` | Control mode dispatch, per-mode PI loops, PID registry, CHARGE phase handling in the ISR |
+| `charge_seq.c` | HAL-free CHARGE start sequencing: duty formulas, PRECHARGE ramp, phase stepper, stuck-open detector (host-tested) |
 | `ctrl_PID_control.c` | Generic PI with integrator-clamping anti-windup |
 | `adc.c` | ADC config per mode, scaling, ISR conversion + snapshot |
 | `protection.c` | OVP/OCP and temperature supervision |
@@ -383,8 +440,11 @@ its own if the supply is still present.
 Built with STM32CubeIDE (managed build, `-Os`). The bundled ARM toolchain lives
 under `/opt/st/stm32cubeide_*/plugins/…gnu-tools-for-stm32.*/tools/bin/`.
 
-There is no unit test harness and no host build. The automated check available
-is **`sw/bat_source/tools/check.sh`**, which syntax-compiles every
+There is no general unit test harness and no host build of the firmware. The one
+host test is **`sw/bat_source/tools/test_charge_seq.sh`**, which compiles the
+HAL-free `charge_seq.c` with gcc and checks the duty formulas, the PRECHARGE ramp
+shape and the phase-stepper ordering. The automated compile check is
+**`sw/bat_source/tools/check.sh`**, which syntax-compiles every
 `Core/Src/*.c` with `-Wall -Wextra` using the same flags as `.cproject` and
 diffs the diagnostics against `tools/warnings.baseline`. New warnings fail;
 resolved ones are reported as progress. `--update` regenerates the baseline.
@@ -436,7 +496,7 @@ stub. The queue is guarded against ISR / main-context races.
 
 | # | Area | Issue |
 |---|------|-------|
-| 1 | Power-on | Inrush current (~26 A) triggers BMS overcurrent at startup — precharge circuit needs redesign. Operational workaround in the meantime: holding the startup button during power-on slows the BMS's own FET switching, reducing inrush to ~0.7 A (see `modifications.tex`). |
+| 1 | Power-on | (Battery-side power-on inrush; the charge-start inrush across the output relay is separate, see #12.) Inrush current (~26 A) triggers BMS overcurrent at startup — precharge circuit needs redesign. Operational workaround in the meantime: holding the startup button during power-on slows the BMS's own FET switching, reducing inrush to ~0.7 A (see `modifications.tex`). |
 | 2 | GaN drivers | Bootstrap capacitor discharge limits maximum converter on-time at low duty cycles |
 | 3 | I2C | Level shifter outputs 2.4 V instead of 3.3 V — marginal for some slaves |
 | 4 | Current meas. | ~100 mA noise floor on instrumentation amp output |
@@ -447,3 +507,4 @@ stub. The queue is guarded against ISR / main-context races.
 | 9 | Charge thresholds | The CC→CV latch and cycle termination both key off the BMS `StackVoltage` against `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` (consistent — this corrects an earlier version of this table, which claimed the latch tested `v_in`). The CV tail's own PI loop, however, now regulates towards `4 × highest cell voltage` rather than `StackVoltage` (see §3, Charging). Under significant cell imbalance, the quantity being latched/terminated on (real `StackVoltage`) and the quantity the CV loop is driving towards (extrapolated `4 × max-cell`) can diverge — untested. Termination also now requires the cell-voltage spread to be ≤ 50 mV, which should catch most of this in practice, but the two-sensor tension itself is unresolved. |
 | 10 | Data logging | QSPI flash driver exists and holds the icon store, but logging is not wired into the application |
 | 11 | Error log | `error_Write()` is an unimplemented stub, so queued errors are discarded |
+| 12 | Charge start | The multi-phase CHARGE start (§3) has been run on the bench and works with the current tuning (`CTRL_PARAM_CHARGE_PRECHARGE_*`, `CTRL_PARAM_CHARGE_RAMP_s` — see §3 for the values). An audible oscillation/whine was observed while the voltage first rises, clearing after roughly 1 s; suspected but **not confirmed by a scope capture** to be the open-loop, unregulated `PRECHARGE` exciting the `OUT_LV` LC tank near its resonance (10 µH inductor, 33 µF `OUT_LV` bank C22–C36 → ≈8.8 kHz, audible), since nothing damps it while `V_OUT`/`I_OUT` are unmeasured there. Shortening the ramps and raising `PRECHARGE_RATIO` (now 0.99) reduced it to where it's no longer a problem in practice, but the mechanism itself is unconfirmed. Remaining open items: the relay settle time (`CTRL_PARAM_CHARGE_RELAY_SETTLE_ms`, datasheet not in the repo) and the duty model (unloaded synchronous boost, PRIM at full duty) are still bench assumptions, not measured. A future `OUT_LV` divider on a spare ADC channel would allow closing the PRECHARGE loop and would let `I_BAT` (already sampled during CHARGE) or a real voltage loop actively damp this instead of relying on tuning alone. |

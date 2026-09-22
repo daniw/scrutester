@@ -13,6 +13,9 @@
 #include "stdio.h"
 
 // Register addresses
+/* Cells actually wired on this 4S pack (the chip has five inputs). */
+#define BQ76905_PACK_CELL_COUNT        4
+
 #define BQ76905_COMMAND_ALERT_A        0x02
 #define BQ76905_COMMAND_STATUS_A       0x03
 #define BQ76905_COMMAND_ALERT_B        0x04
@@ -98,6 +101,8 @@ typedef struct{
 	    uint8_t safetyStatusB;
 	} SafetyRegisters;
 
+	/* The BQ76905 has five cell inputs, but this pack is 4S: only
+	 * CellVoltages[0..BQ76905_PACK_CELL_COUNT-1] are wired, [4] reads 0. */
 	struct{
 	    uint16_t BatteryStatus;
 	    uint16_t CellVoltages[5];

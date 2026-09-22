@@ -114,6 +114,10 @@ void cmd_setGain(void);
 void cmd_setSerial(void);
 void cmd_flashIcons(void);
 void cmd_printProtection(void);
+#ifdef CHARGE_DEBUG
+void cmd_chargeStep(void);
+void cmd_chargeNext(void);
+#endif
 
 // List of functions pointers corresponding to each command
 void (*cmd_func[])(void) = {
@@ -152,6 +156,11 @@ void (*cmd_func[])(void) = {
 	cmd_flashIcons,
 	cmd_printProtection,
 	cmd_set1ARef
+#ifdef CHARGE_DEBUG
+	,
+	cmd_chargeStep,
+	cmd_chargeNext
+#endif
 };
 
 // List of command names
@@ -191,6 +200,11 @@ const char *cmd_str[] = {
 		"flashIcons",
 		"pProt",
 		"set1ARef"
+#ifdef CHARGE_DEBUG
+		,
+		"chargeStep",
+		"chargeNext"
+#endif
 };
 
 // List of command names including arguments
@@ -230,6 +244,11 @@ const char *cmd_arg_str[] = {
 		"flashIcons",
 		"pProt",
 		"set1ARef [12-bit DAC value]"
+#ifdef CHARGE_DEBUG
+		,
+		"chargeStep [0 disable | 1 enable] -- hold CHARGE after precharge (relay open) until chargeNext",
+		"chargeNext -- release a chargeStep hold: close the output relay and start the current ramp"
+#endif
 };
 
 int cmd_index;
@@ -1533,6 +1552,29 @@ void cmd_changeState(void){
 	}
 	statemachine_switchfromIdle((statemachine_modes_t) newstate);
 }
+
+#ifdef CHARGE_DEBUG
+/* Bench test aid for the multi-phase CHARGE start (charge_seq.h): with
+ * single-step mode on, CHARGE holds after the open-loop precharge (relay
+ * still open) instead of continuing on its own, so step 1 (precharge) can be
+ * checked on the bench before chargeNext releases step 2 (close the relay,
+ * ramp the current). Persists across CHARGE (re-)starts until turned off. */
+void cmd_chargeStep(void) {
+	CLI_CHECK_ARG_CNT(1);
+	char *end;
+	long enable = strtol(arg_locs[1], &end, 10);
+	if (enable != 0 && enable != 1) {
+		printf("Invalid value\r\n");
+		return;
+	}
+	statemachine_charge_test_set_manual((uint8_t) enable);
+}
+
+void cmd_chargeNext(void) {
+	CLI_CHECK_ARG_CNT(0);
+	statemachine_charge_test_advance();
+}
+#endif /* CHARGE_DEBUG */
 
 void cmd_setCtrlGain(void) {
 	float P, I;

@@ -17,6 +17,10 @@
 #include "mode_table.h"
 
 extern BQ76905_handle bms;
+extern ADC_MEAS_DATA adc_data;
+
+// Main-context only (ctrl_main_charge_handover()/_take_peak()).
+static uint8_t charge_peak_reported;
 
 ctrl_main_t ctrl_main_handle;
 PID_controller_t ctrl_pi_voltage_buck;
@@ -27,7 +31,6 @@ PID_controller_t ctrl_pi_charge_current;
 PID_controller_t ctrl_pi_charge_voltage;
 PID_controller_t ctrl_pi_voltage_hv;
 PID_controller_t ctrl_pi_hv_iout_limit;
-uint32_t cli_cnt = 0;
 
 const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
@@ -72,6 +75,7 @@ void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV);
 void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
+static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas);
 
 /**
  * Initializes the controllers
@@ -120,14 +124,27 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		ctrl_PID_reset(&ctrl_pi_charge_current);
 		ctrl_PID_reset(&ctrl_pi_charge_voltage);
 		ctrl_main_handle.charge_cv_phase = 0;
-		// Preload for smoother turn on
-		ctrl_pi_charge_current.prev_I_action = CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH;
+		ctrl_main_handle.charge_i_peak_mA = 0;
+		ctrl_main_handle.charge_peak_ticks = 0;
+		// The CC loop is NOT preloaded here any more: the old preload of
+		// CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH wrote SEK duty ~0, i.e.
+		// the maximum-current end. It is preloaded with the zero-current
+		// duty at the CLOSE -> CC_RAMP hand-over instead
+		// (ctrl_main_charge_handover()).
+		//
+		// Starts as the open-loop PRECHARGE boost (relay open, OUT_LV not
+		// measurable): the ISR ramps PRIM/SEK from here.
+		charge_precharge_start(&ctrl_main_handle.precharge,
+				adc_data.converted.v_term_ext_mv_filt);
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
-		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH);
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW);
+		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH * 0.2F);
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW);
 		hrtim_enable(HRTIM_CHANNEL_PRIM);
 		hrtim_enable(HRTIM_CHANNEL_SEK);
+		// Assigned before `mode` (below), so the ISR never sees CTRL_MODE_CHARGE
+		// with a stale phase.
+		ctrl_main_handle.charge_phase = CHG_PHASE_PRECHARGE;
 		break;
 	case CTRL_MODE_60V:
 		ctrl_PID_reset(&ctrl_pi_voltage_boost);
@@ -189,6 +206,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
  */
 void ctrl_main_stop_control(void) {
 	ctrl_main_handle.mode = CTRL_MODE_OFF;
+	ctrl_main_handle.charge_phase = CHG_PHASE_OFF;
 	hrtim_disable(HRTIM_CHANNEL_ALL);
 }
 
@@ -226,45 +244,7 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 				meas->i_iso_ext_uA);
 		break;
 	case CTRL_MODE_CHARGE:
-		uint16_t stack_mV = bms.VoltageRegisters.StackVoltage;
-		uint8_t stack_valid = (stack_mV >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV)
-				&& (stack_mV <= CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV);
-
-		if (!ctrl_main_handle.charge_cv_phase && stack_valid
-				&& stack_mV >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
-			ctrl_main_handle.charge_cv_phase = 1;
-			ctrl_pi_charge_voltage.prev_I_action = ctrl_pi_charge_current.action;
-		}
-
-		uint16_t cell_max = 0;
-		if (!ctrl_main_handle.charge_cv_phase) {
-			ctrl_main_ctrl_charge_current(-meas->i_out,
-					-meas->i_out_ext_mA);
-		}
-		else {
-//			ctrl_main_ctrl_charge_voltage(meas->v_in,
-//					bms.VoltageRegisters.StackVoltage);
-			for (uint8_t i = 0; i <= 4; i++) {
-				if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
-					cell_max = bms.CellVoltageRegisters.CellVoltages[i];
-				}
-			}
-			ctrl_main_ctrl_charge_voltage(meas->v_in,
-					4 * cell_max);
-//			ctrl_main_ctrl_current(current_meas_mA, current_meas_accurate)
-		}
-		if (cli_cnt >= 2500) {
-			if (!ctrl_main_handle.charge_cv_phase) {
-				printf("Charging: CC, I_OUT: %5d, I_OUT_ext_mA: %5ld\r\n", -meas->i_out, -meas->i_out_ext_mA);
-			}
-			else {
-				printf("Charging: CV, I_OUT: %5d, I_OUT_ext_mA: %5ld, V_IN: %5ld, StackVoltage: %5d, max(cell) = %4d\r\n", -meas->i_out, -meas->i_out_ext_mA, meas->v_in, bms.VoltageRegisters.StackVoltage, cell_max);
-			}
-			cli_cnt = 0;
-		}
-		else {
-			cli_cnt++;
-		}
+		ctrl_main_ctrl_charge(meas);
 		break;
 
 	case CTRL_MODE_OFF:
@@ -273,6 +253,126 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 	}
 
 
+}
+
+/*
+ * CHARGE, per phase (see charge_seq.h). Runs in the control ISR.
+ *
+ * PRECHARGE is fully open-loop and driven from here; CLOSE only holds the
+ * duties (the state machine is switching the output relay and, on the
+ * hand-over, writes the SEK duty and the PI state itself -- which is safe
+ * because this ISR touches none of them in CLOSE); CC_RAMP and CV are the
+ * closed loops.
+ */
+static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas) {
+	switch (ctrl_main_handle.charge_phase) {
+
+	case CHG_PHASE_PRECHARGE: {
+		float prim_duty, sek_duty;
+		uint8_t done = charge_precharge_step(&ctrl_main_handle.precharge,
+				meas->v_in, &prim_duty, &sek_duty);
+		hrtim_set_duty(HRTIM_CHANNEL_PRIM, prim_duty);
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, sek_duty);
+		ctrl_main_handle.duty = sek_duty * 1000;
+		if (done)
+			ctrl_main_handle.charge_phase = CHG_PHASE_CLOSE;
+		break;
+	}
+
+	case CHG_PHASE_CLOSE:
+	case CHG_PHASE_CC_RAMP:
+	case CHG_PHASE_CV: {
+		// Peak |I_OUT| in the window after the relay-close command. The
+		// window only starts counting once the state machine has issued the
+		// command (ctrl_main_charge_handover() zeroes the counter), so the
+		// PRECHARGE -> CLOSE wait for that command is not part of it.
+		if (ctrl_main_handle.charge_peak_ticks
+				< (uint32_t) (CTRL_PARAM_CHARGE_PEAK_WINDOW_s * CTRL_FREQ)) {
+			int32_t a = meas->i_out < 0 ? -meas->i_out : meas->i_out;
+			if (a > ctrl_main_handle.charge_i_peak_mA)
+				ctrl_main_handle.charge_i_peak_mA = a;
+			ctrl_main_handle.charge_peak_ticks++;
+		}
+
+		if (ctrl_main_handle.charge_phase == CHG_PHASE_CLOSE)
+			break;
+
+		uint16_t stack_mV = bms.VoltageRegisters.StackVoltage;
+		uint8_t stack_valid = (stack_mV >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV)
+				&& (stack_mV <= CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV);
+
+		if (ctrl_main_handle.charge_phase == CHG_PHASE_CC_RAMP && stack_valid
+				&& stack_mV >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
+			ctrl_pi_charge_voltage.prev_I_action = ctrl_pi_charge_current.action;
+			ctrl_main_handle.charge_cv_phase = 1;
+			ctrl_main_handle.charge_phase = CHG_PHASE_CV;
+		}
+
+		if (ctrl_main_handle.charge_phase == CHG_PHASE_CC_RAMP) {
+			ctrl_main_ctrl_charge_current(-meas->i_out,
+					-meas->i_out_ext_mA);
+		} else {
+			uint16_t cell_max = 0;
+			for (uint8_t i = 0; i < BQ76905_PACK_CELL_COUNT; i++) {
+				if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
+					cell_max = bms.CellVoltageRegisters.CellVoltages[i];
+				}
+			}
+			ctrl_main_ctrl_charge_voltage(meas->v_in,
+					BQ76905_PACK_CELL_COUNT * cell_max);
+		}
+		break;
+	}
+
+	case CHG_PHASE_OFF:
+	default:
+		break;
+	}
+}
+
+void ctrl_main_charge_handover(int32_t v_in_mV, int32_t v_term_mV) {
+	if (ctrl_main_handle.charge_phase != CHG_PHASE_CLOSE)
+		return;
+
+	float d0 = charge_seq_zero_current_duty(v_in_mV, v_term_mV);
+	ctrl_PID_reset(&ctrl_pi_charge_current);
+	ctrl_pi_charge_current.ref = 0.0F;
+	// D = CONST_DUTY_HIGH - action is what ctrl_apply_inverted_sek_duty()
+	// writes, so this makes the first CC tick write d0 again.
+	ctrl_pi_charge_current.prev_I_action = charge_seq_cc_preload_action(d0);
+	hrtim_set_duty(HRTIM_CHANNEL_SEK, d0);
+	ctrl_main_handle.duty = d0 * 1000;
+
+	ctrl_main_handle.charge_i_peak_mA = 0;
+	ctrl_main_handle.charge_peak_ticks = 0;
+	charge_peak_reported = 0;
+}
+
+void ctrl_main_charge_start_ramp(void) {
+	if (ctrl_main_handle.charge_phase != CHG_PHASE_CLOSE)
+		return;
+
+	// ctrl_main_ctrl_charge_current() ramps the reference with
+	// ctrl_apply_ramped_ref(), which starts from whatever `ramp` holds;
+	// start_ctrl() leaves it at 0.2 for the other modes' soft start.
+	ctrl_main_handle.ramp = 0.0F;
+	ctrl_main_handle.charge_phase = CHG_PHASE_CC_RAMP; // last: the ISR acts on it
+}
+
+int32_t ctrl_main_charge_reference_mA(void) {
+	return (int32_t) (ctrl_pi_charge_current.ref * 1000.0F);
+}
+
+uint8_t ctrl_main_charge_take_peak(int32_t *peak_mA) {
+	if (charge_peak_reported
+			|| ctrl_main_handle.charge_phase == CHG_PHASE_OFF
+			|| ctrl_main_handle.charge_phase == CHG_PHASE_PRECHARGE
+			|| ctrl_main_handle.charge_peak_ticks
+					< (uint32_t) (CTRL_PARAM_CHARGE_PEAK_WINDOW_s * CTRL_FREQ))
+		return 0;
+	*peak_mA = ctrl_main_handle.charge_i_peak_mA;
+	charge_peak_reported = 1;
+	return 1;
 }
 
 /**
@@ -374,29 +474,17 @@ static float ctrl_apply_stepped_ref(PID_controller_t *c, float target) {
 	return multiplier;
 }
 
-// Hard duty ceiling on the SEK channel (see ctrl_apply_inverted_sek_duty()
-// below). No rationale beyond "hard limit" was recorded when this was
-// originally written inline in ctrl_main_ctrl_charge_current()/
-// ctrl_main_ctrl_charge_voltage(); preserved verbatim as a named constant.
-#define CTRL_MAIN_SEK_DUTY_CEILING 0.5F
-
 /*
  * Shared tail of CHARGE's CC and CV loops: HRTIM_CHANNEL_SEK is driven
- * inverted (see comment at each call site), clamped to
- * CTRL_MAIN_SEK_DUTY_CEILING.
- *
- * ctrl_main_handle.duty (the display's telemetry field) is intentionally
- * assigned the UNCLAMPED value even on the branch where the duty actually
- * written to HRTIM_CHANNEL_SEK was clamped -- that mismatch is what the
- * pre-refactor code did and what the display currently shows, so it is kept
- * as-is here rather than "fixed".
+ * inverted, D = CTRL_PARAM_CONST_DUTY_HIGH - action, so a larger PI action
+ * means a smaller SEK duty and more charge current (see charge_seq.h for the
+ * duty/current relation). The PI saturation limits bound the result; there
+ * is no further ceiling on the SEK duty.
  */
 static void ctrl_apply_inverted_sek_duty(float action) {
-	if ((CTRL_PARAM_CONST_DUTY_HIGH - action) > CTRL_MAIN_SEK_DUTY_CEILING)
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_MAIN_SEK_DUTY_CEILING);
-	else
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_HIGH - action);
-	ctrl_main_handle.duty = (CTRL_PARAM_CONST_DUTY_HIGH - action) * 1000;
+	float duty = (float) CTRL_PARAM_CONST_DUTY_HIGH - action;
+	hrtim_set_duty(HRTIM_CHANNEL_SEK, duty);
+	ctrl_main_handle.duty = duty * 1000;
 }
 
 void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
@@ -456,8 +544,12 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate) {
 
+	// Reference 0 -> setpoint over CTRL_PARAM_CHARGE_RAMP_s (ramp starts at 0,
+	// see ctrl_main_charge_start_ramp()); once the ramp has passed 1.0 the
+	// helper latches the full setpoint.
 	ctrl_apply_ramped_ref(&ctrl_pi_charge_current,
-			ctrl_main_handle.current_reference_mA / 1000.0F, 0.5F);
+			ctrl_main_handle.current_reference_mA / 1000.0F,
+			1.0F / CTRL_PARAM_CHARGE_RAMP_s);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);

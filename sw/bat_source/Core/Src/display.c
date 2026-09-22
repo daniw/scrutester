@@ -440,8 +440,9 @@ static void update_charge(uint8_t output_active) {
 		LCD_PutStr(CELL_SEGMENT_X[i], SECOND_Y + 36, text, FONT_TINY, color, C_BLACK);
 	}
 
-	snprintf(text, sizeof(text), "Phase: %s",
-			ctrl_main_handle.charge_cv_phase ? "CV" : "CC");
+	// Fixed width so a shorter label ("CC") fully overwrites a longer one ("CLOSE").
+	snprintf(text, sizeof(text), "Phase: %-5s",
+			charge_seq_phase_name(ctrl_main_handle.charge_phase));
 	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, C_WHITE, C_BLACK);
 
 }

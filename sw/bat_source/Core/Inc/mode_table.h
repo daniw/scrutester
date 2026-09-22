@@ -44,14 +44,15 @@
 /* ui_ctrl_ledSenseOn() at entry -- RESISTANCE_1A only. */
 #define MODE_F_LED_SENSE_ON     (1u << 1)
 /* Start the control loop and assert enable_gpio immediately on entry
- * (RESISTANCE_1A/1mA, CHARGE). Without this flag, the mode instead waits for
+ * (RESISTANCE_1A/1mA). Without this flag, the mode instead waits for
  * OUT to be held down -- ctrl_main_start_ctrl()/enable_gpio are asserted from
  * statemachine_step()'s per-tick OUT-button handling instead (60V_OUT,
- * 10A_OUT, ISOMETER). */
+ * 10A_OUT, ISOMETER). CHARGE is entered by its own function, not through
+ * these flags (see the CHARGE row in mode_table.c). */
 #define MODE_F_AUTOSTART_CTRL   (1u << 2)
 /* output_on = 0 at entry. */
 #define MODE_F_OUTPUT_ON_ZERO   (1u << 3)
-/* output_on = 1 at entry (CHARGE only). */
+/* output_on = 1 at entry (RESISTANCE_1A/1mA). */
 #define MODE_F_OUTPUT_ON_ONE    (1u << 4)
 /* dac_sqwave_start() at entry -- RESISTANCE_1A only (drives the ~1A test
  * pulse). */

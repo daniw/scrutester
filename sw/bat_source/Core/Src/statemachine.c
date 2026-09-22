@@ -43,11 +43,30 @@ extern BQ76905_handle bms;
  * live mask has already gone back to 0. */
 static uint16_t charge_protection_exit_mask;
 
+/* Main-context view of the multi-phase CHARGE sequence, see charge_seq.h. */
+static charge_seq_t charge_seq;
+
+/* Set when CHARGE is left for a reason that would simply recur (ESC,
+ * protection, BMS fault, stuck-open abort): the IDLE auto-entry rule would
+ * otherwise restart CHARGE on the very next tick while the charger is still
+ * connected. Cleared once the charger is removed (see statemachine_step()). */
+static uint8_t charge_lockout;
+
+#ifdef CHARGE_DEBUG
+/* One-shot "precharge is done, waiting for chargeNext" notice, since the
+ * periodic debug print alone doesn't call out that the hold is deliberate.
+ * Reset on every CHARGE entry. */
+static uint8_t charge_await_notified;
+#endif
+
 void statemachine_switchfromIdle(statemachine_modes_t mode);
 void statemachine_switchtoIdle(void);
 static void statemachine_apply_encoder_setpoint(void);
 static void statemachine_step_calibration(void);
 static void statemachine_enter_mode_generic(statemachine_modes_t mode);
+static uint8_t statemachine_enter_charge(void);
+static void statemachine_step_charge(void);
+static void statemachine_charge_lockout(void);
 
 /* Settings > Calibration sub-UI state -- 0=channel list, 1=zero step,
  * 2=optional gain step (see display_calibration_enter/update()). */
@@ -217,6 +236,7 @@ void statemachine_step(void) {
 						printf(" %s", protection_source_name(PROTECTION_SOURCES[i]));
 				}
 				printf(" (mask=0x%04X)\r\n", charge_protection_exit_mask);
+				statemachine_charge_lockout();
 				statemachine_switchtoIdle();
 			}
 		}
@@ -240,6 +260,12 @@ void statemachine_step(void) {
 	} else
 		out_button_pressed = 0;
 
+	// Re-arm the CHARGE auto-entry once the charger has been unplugged.
+	if (charge_lockout
+			&& adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_START_VIN_LOW_mV) {
+		charge_lockout = 0;
+	}
+
 	// Select transition to next state
 	switch (statemachine_handle.current_mode) {
 	case STATEMACHINE_IDLE:
@@ -256,11 +282,17 @@ void statemachine_step(void) {
 			statemachine_switchfromIdle(STATEMACHINE_MODE_SHUTDOWN);
 
 		// CHARGE is auto-entered, not menu/button-selected: whenever idle and
-		// a 15-25V supply is detected at the output with no BMS fault
-		// latched, start charging on our own.
-		if (adc_data.converted.v_term_ext_mv >= CTRL_PARAM_CHARGE_START_VIN_LOW_mV
-				&& adc_data.converted.v_term_ext_mv <= CTRL_PARAM_CHARGE_START_VIN_HIGH_mV
+		// a 15-24V supply is detected at the output with no BMS fault
+		// latched, start charging on our own -- unless the last charge was
+		// ended by ESC/a fault and the charger has not been removed since
+		// (charge_lockout), or the BMS has not delivered a plausible stack
+		// voltage yet (it reads 0 before the first poll, which would pass the
+		// "below end voltage" test below).
+		if (!charge_lockout
+				&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)
 				&& !(bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB)
+				&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV
+				&& bms.VoltageRegisters.StackVoltage <= CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV
 				&& bms.VoltageRegisters.StackVoltage
 						< CTRL_PARAM_CHARGE_END_VOLTAGE_mV - CTRL_PARAM_CHARGE_RESTART_MARGIN_mV) {
 			statemachine_switchfromIdle(STATEMACHINE_MODE_CHARGE);
@@ -296,45 +328,7 @@ void statemachine_step(void) {
 		break;
 
 	case STATEMACHINE_MODE_CHARGE:
-		display_update_mode(statemachine_handle.current_mode,
-				statemachine_handle.output_on);
-		uint16_t cell_min = 3650;
-		uint16_t cell_max = 0;
-		for (uint8_t i = 0; i <= 4; i++) {
-			if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
-				cell_max = bms.CellVoltageRegisters.CellVoltages[i];
-			}
-			if (bms.CellVoltageRegisters.CellVoltages[i] < cell_min) {
-				cell_min = bms.CellVoltageRegisters.CellVoltages[i];
-			}
-		}
-		if ((bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
-					&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA
-					&& (cell_max - cell_min <= 50))
-				|| bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB
-				|| adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV) {
-			if (bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
-					&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA) {
-				printf("CHARGE exit: end voltage reached and current tapered off "
-						"(stack=%umV >= end=%dmV, i_out=%ldmA <= taper=%dmA)\r\n",
-						bms.VoltageRegisters.StackVoltage, CTRL_PARAM_CHARGE_END_VOLTAGE_mV,
-						-adc_data.converted.i_out_ext_mA, CTRL_PARAM_CHARGE_TAPER_CURRENT_mA);
-			}
-			if (bms.SafetyRegisters.safetyStatusA) {
-				printf("CHARGE exit: BMS safetyStatusA=0x%02X\r\n", bms.SafetyRegisters.safetyStatusA);
-			}
-			if (bms.SafetyRegisters.safetyStatusB) {
-				printf("CHARGE exit: BMS safetyStatusB=0x%02X\r\n", bms.SafetyRegisters.safetyStatusB);
-			}
-			if (adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV) {
-				printf("CHARGE exit: supply voltage dropped (v_term_ext_mv=%ldmV < stop=%dmV)\r\n",
-						adc_data.converted.v_term_ext_mv, CTRL_PARAM_CHARGE_STOP_VIN_mV);
-			}
-			BQ76905_resetChargeAccumulator(&bms);
-			bms.Accumulator.accumulatedCharge = 0;
-			bms.charge_percentage = 100;
-			statemachine_switchtoIdle();
-		}
+		statemachine_step_charge();
 		break;
 
 	case STATEMACHINE_MODE_SETTINGS:
@@ -385,10 +379,209 @@ void statemachine_step(void) {
 	if (esc_button_pressed == 1) {
 		if (statemachine_handle.current_mode == STATEMACHINE_MODE_CHARGE) {
 			printf("CHARGE exit: ESC pressed by user\r\n");
+			statemachine_charge_lockout();
 		}
 		statemachine_switchtoIdle();
 	}
 
+}
+
+static void statemachine_charge_lockout(void) {
+	charge_lockout = 1;
+	printf("CHARGE locked out until the charger is removed\r\n");
+}
+
+#ifdef CHARGE_DEBUG
+/* charge_seq's `manual` flag lives on the static `charge_seq` instance below,
+ * which charge_seq_init() (called on every CHARGE entry) does not touch -- so
+ * this persists across CHARGE (re-)starts on its own; no separate flag needed
+ * here. */
+void statemachine_charge_test_set_manual(uint8_t enable) {
+	charge_seq_set_manual(&charge_seq, enable);
+	printf("CHARGE test mode: single-step %s\r\n", enable
+			? "enabled -- will hold after precharge (relay still open) until chargeNext"
+			: "disabled");
+}
+
+uint8_t statemachine_charge_test_advance(void) {
+	if (statemachine_handle.current_mode != STATEMACHINE_MODE_CHARGE) {
+		printf("Not charging\r\n");
+		return 0;
+	}
+	if (!charge_seq_awaiting_advance(&charge_seq)) {
+		printf("CHARGE: nothing to advance right now (phase=%s)\r\n",
+				charge_seq_phase_name(ctrl_main_handle.charge_phase));
+		return 0;
+	}
+	charge_seq_request_advance(&charge_seq);
+	printf("CHARGE: advancing -- closing the output relay and starting the current ramp\r\n");
+	return 1;
+}
+#endif /* CHARGE_DEBUG */
+
+/* Per-tick CHARGE handling: phase sequencing (charge_seq.h), debug output and
+ * the exit conditions. Runs from statemachine_step()'s CHARGE case. */
+static void statemachine_step_charge(void) {
+	display_update_mode(statemachine_handle.current_mode,
+			statemachine_handle.output_on);
+
+	// Phase sequencing. Not while a protection fault has the converter forced
+	// off: control is stopped then, and the recovery branch at the top of
+	// statemachine_step() ends CHARGE once the fault clears.
+	if (!statemachine_handle.protection_forced_output_off) {
+		charge_seq_in_t in = {
+			.isr_phase = ctrl_main_handle.charge_phase,
+			.ref_mA = ctrl_main_charge_reference_mA(),
+			.charge_mA = -adc_data.converted.i_out_ext_mA,
+		};
+		switch (charge_seq_step(&charge_seq, &in, STATEMACHINE_STEP_PERIOD_mS)) {
+		case CHG_ACT_CLOSE_RELAY:
+			// The relays are normally closed: OUT_SEL_HV low = K1 closed, which
+			// connects the converter output to the charger. The hand-over
+			// steps the SEK duty to the zero-current duty at the same moment,
+			// so OUT_LV is already at the charger voltage when the contacts
+			// meet (and the current loop starts from ~0 A).
+			aux_io_ctrl_manual_set_io(GPIO_OUT_SEL_HV, 0);
+			ctrl_main_charge_handover(adc_data.converted.v_in,
+					adc_data.converted.v_term_ext_mv_filt);
+#ifdef CHARGE_DEBUG
+			printf("CHARGE: precharge done (V_IN=%ldmV, V_TERM=%ldmV), relay closing\r\n",
+					adc_data.converted.v_in, adc_data.converted.v_term_ext_mv_filt);
+#endif
+			break;
+		case CHG_ACT_START_RAMP:
+			ctrl_main_charge_start_ramp();
+#ifdef CHARGE_DEBUG
+			printf("CHARGE: relay settled, current ramp started\r\n");
+#endif
+			break;
+		case CHG_ACT_ABORT_STUCK_OPEN:
+			printf("CHARGE exit: no charge current although the reference is up "
+					"(relay stuck open, or charger gone)\r\n");
+			statemachine_charge_lockout();
+			statemachine_switchtoIdle();
+			return;
+		case CHG_ACT_NONE:
+		default:
+			break;
+		}
+
+#ifdef CHARGE_DEBUG
+		if (charge_seq_awaiting_advance(&charge_seq)) {
+			if (!charge_await_notified) {
+				charge_await_notified = 1;
+				printf("CHARGE: precharge complete, holding (relay still open) "
+						"-- send 'chargeNext' to close it and start the current ramp\r\n");
+			}
+		} else {
+			charge_await_notified = 0;
+		}
+#endif
+	}
+
+	// Only the wired cells: CellVoltages[4] is unused and reads 0, which
+	// would make the spread check below fail forever.
+	uint16_t cell_min = 0xFFFF;
+	uint16_t cell_max = 0;
+	for (uint8_t i = 0; i < BQ76905_PACK_CELL_COUNT; i++) {
+		if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
+			cell_max = bms.CellVoltageRegisters.CellVoltages[i];
+		}
+		if (bms.CellVoltageRegisters.CellVoltages[i] < cell_min) {
+			cell_min = bms.CellVoltageRegisters.CellVoltages[i];
+		}
+	}
+
+#ifdef CHARGE_DEBUG
+	// Debug output. It used to be printed from the control ISR, where the
+	// blocking UART write stalled the 25 kHz loop for several milliseconds.
+	int32_t peak_mA;
+	if (ctrl_main_charge_take_peak(&peak_mA)) {
+		printf("CHARGE: peak |I_OUT| after the relay-close command: %ldmA\r\n", peak_mA);
+	}
+	static uint8_t print_div;
+	if (++print_div >= 5) { // ~10 Hz at the 20 ms tick
+		print_div = 0;
+		printf("Charging: %s, I_OUT: %5d, I_OUT_ext_mA: %5ld, V_IN: %5ld, V_OUT: %5ld, "
+				"V_TERM: %5ld, Stack: %5u, max(cell): %4u\r\n",
+				charge_seq_phase_name(ctrl_main_handle.charge_phase),
+				-adc_data.converted.i_out, -adc_data.converted.i_out_ext_mA,
+				adc_data.converted.v_in, adc_data.converted.v_out,
+				adc_data.converted.v_term_ext_mv,
+				bms.VoltageRegisters.StackVoltage, cell_max);
+	}
+#endif /* CHARGE_DEBUG */
+
+	// Exit conditions. End of charge only counts once current is actually
+	// flowing (CC_RAMP/CV); everything else applies in every phase.
+	uint8_t charge_completed = charge_seq_may_complete(&charge_seq)
+			&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
+			&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA
+			&& (cell_max - cell_min <= 50);
+	uint8_t bms_fault = bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB;
+	uint8_t supply_low = adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV;
+
+	if (charge_completed || bms_fault || supply_low) {
+		if (charge_completed) {
+			printf("CHARGE exit: end voltage reached and current tapered off "
+					"(stack=%umV >= end=%dmV, i_out=%ldmA <= taper=%dmA)\r\n",
+					bms.VoltageRegisters.StackVoltage, CTRL_PARAM_CHARGE_END_VOLTAGE_mV,
+					-adc_data.converted.i_out_ext_mA, CTRL_PARAM_CHARGE_TAPER_CURRENT_mA);
+		}
+		if (bms.SafetyRegisters.safetyStatusA) {
+			printf("CHARGE exit: BMS safetyStatusA=0x%02X\r\n", bms.SafetyRegisters.safetyStatusA);
+		}
+		if (bms.SafetyRegisters.safetyStatusB) {
+			printf("CHARGE exit: BMS safetyStatusB=0x%02X\r\n", bms.SafetyRegisters.safetyStatusB);
+		}
+		if (supply_low) {
+			printf("CHARGE exit: supply voltage dropped (v_term_ext_mv=%ldmV < stop=%dmV)\r\n",
+					adc_data.converted.v_term_ext_mv, CTRL_PARAM_CHARGE_STOP_VIN_mV);
+		}
+		// Only a finished charge means "full"; a fault, a supply drop or
+		// ESC must not declare the pack 100% or discard the accumulated charge.
+		if (charge_completed) {
+			BQ76905_resetChargeAccumulator(&bms);
+			bms.Accumulator.accumulatedCharge = 0;
+			bms.charge_percentage = 100;
+		}
+		if (bms_fault) {
+			statemachine_charge_lockout();
+		}
+		statemachine_switchtoIdle();
+	}
+}
+
+/* CHARGE entry, called from statemachine_switchfromIdle(). Unlike the other
+ * modes the relays are set BEFORE the converter starts: the sequence begins
+ * with K1 (converter output to the jacks) open. Returns 0 (and does nothing)
+ * if there is no charger in the allowed window, which also covers the CLI's
+ * `state` command forcing CHARGE without one. */
+static uint8_t statemachine_enter_charge(void) {
+	if (!charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
+		printf("Unable to switch to CHARGE: charger voltage %ldmV outside %d..%dmV\r\n",
+				adc_data.converted.v_term_ext_mv,
+				CTRL_PARAM_CHARGE_START_VIN_LOW_mV, CTRL_PARAM_CHARGE_START_VIN_HIGH_mV);
+		return 0;
+	}
+
+	ui_ctrl_ledOutOn();
+	statemachine_handle.current_mode = STATEMACHINE_MODE_CHARGE;
+	adc_configure_mode(STATEMACHINE_MODE_CHARGE);
+
+	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE);   // relays open, before any PWM
+	charge_seq_init(&charge_seq);
+#ifdef CHARGE_DEBUG
+	charge_await_notified = 0;
+#endif
+	ctrl_main_start_ctrl(CTRL_MODE_CHARGE);             // PRECHARGE
+	aux_io_ctrl_manual_set_io(mode_table[STATEMACHINE_MODE_CHARGE].enable_gpio, 1);
+	statemachine_handle.output_on = 1;
+
+	display_enter_mode(STATEMACHINE_MODE_CHARGE);
+	printf("CHARGE: precharging the converter output (V_TERM=%ldmV)\r\n",
+			adc_data.converted.v_term_ext_mv);
+	return 1;
 }
 
 /* Runs the shared, mode_table[]-driven entry sequence used by every real
@@ -471,8 +664,12 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
-	case STATEMACHINE_MODE_CHARGE:
 		statemachine_enter_mode_generic(mode);
+		break;
+
+	case STATEMACHINE_MODE_CHARGE:
+		if (!statemachine_enter_charge())
+			return; // refused: skip the shared tail, like AMPMETER above
 		break;
 
 	case STATEMACHINE_MODE_SETTINGS:
