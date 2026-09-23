@@ -435,9 +435,9 @@ void statemachine_step(void) {
 				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {
 					balancing_clear_manual_override();
 				}
+				input_encoder_reset(statemachine_handle.settings_mode - STATEMACHINE_SETTINGS_MODE_BMS);
 				statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
 				display_show_settings_list(statemachine_handle.current_menu_index);
-				input_encoder_reset(statemachine_handle.settings_mode-STATEMACHINE_SETTINGS_MODE_BMS);
 				return;
 			}
 		}
@@ -572,8 +572,6 @@ static void statemachine_step_charge(void) {
 		}
 	}
 
-	// Only the wired cells: CellVoltages[4] is unused and reads 0, which
-	// would make the spread check below fail forever.
 	uint16_t cell_min = 0xFFFF;
 	uint16_t cell_max = 0;
 	for (uint8_t i = 0; i < BQ76905_PACK_CELL_COUNT; i++) {
