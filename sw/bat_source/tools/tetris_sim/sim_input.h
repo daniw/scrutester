@@ -15,6 +15,13 @@
 #define SIM_BTN_ESC 1
 #define SIM_BTN_OUT 2
 
+/* Encoder counts the simulated knob produces per detent. Matches what the
+ * bench showed: tetris.c's ENC_PER_STEP is 1, i.e. one column per count, and
+ * a detent moves the piece one column. (input.h documents 2 counts per
+ * detent; if the hardware really does produce 2, a detent is two columns
+ * with the current tetris.c setting -- change both together.) */
+#define SIM_COUNTS_PER_DETENT 1
+
 /* Turns the knob by `detents` (positive = the direction that counts up). */
 void sim_input_encoder_turn(int detents);
 

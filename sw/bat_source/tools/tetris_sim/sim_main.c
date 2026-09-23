@@ -509,9 +509,13 @@ static int run_ai(uint32_t frames) {
 	printf("ai: best score=%ld  lines=%ld  level=%ld\n", best_score, best_lines,
 			best_level);
 
-	if (best_lines <= 0) {
-		printf("FAIL: not one line was cleared -- clearing or scoring is "
-				"broken\n");
+	/* A good run clears hundreds of lines; a broken encoder mapping (e.g. the
+	 * sim and tetris.c disagreeing on counts per column) still clears a
+	 * handful by luck, so demand a real number rather than just "not zero". */
+	if (best_lines < (long) (frames / 1000) || best_lines <= 0) {
+		printf("FAIL: only %ld line(s) cleared in %u frames -- clearing, "
+				"scoring or the encoder mapping is broken\n", best_lines,
+				frames);
 		failures++;
 	}
 	if (best_lines >= 10 && best_level < 2) {

@@ -2,7 +2,8 @@
  * tools/tetris_sim/sim_input.c
  *
  * See sim_input.h. tim_encoder_read() emulates TIM4 exactly as configured in
- * tim.c -- a counter that wraps at 127 with 2 counts per mechanical detent --
+ * tim.c -- a counter that wraps at 127 -- with SIM_COUNTS_PER_DETENT counts
+ * per turn of the knob --
  * because that wrap is precisely what input_encoder_read_clamped(), and
  * therefore tetris.c's horizontal movement, has to get right.
  */
@@ -36,7 +37,7 @@ uint8_t gpio_readBtnOut(void) {
 }
 
 void sim_input_encoder_turn(int detents) {
-	encoder_count = (uint8_t) ((encoder_count + 2 * detents) & 0x7F);
+	encoder_count = (uint8_t) ((encoder_count + SIM_COUNTS_PER_DETENT * detents) & 0x7F);
 }
 
 void sim_input_tap(int button, int frames) {
