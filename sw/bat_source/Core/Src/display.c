@@ -157,6 +157,24 @@ void display_show_idle(uint8_t menu_index) {
 	}
 }
 
+/* Transient error banner for the idle carousel, e.g. a mode entry refused
+ * for a hardware-safety reason (see AMPMETER in statemachine.c). Drawn in
+ * the black space between the status bar and the icons, so it doesn't
+ * overlap the carousel or the mode-name label below it. No explicit "clear"
+ * call is needed: display_show_idle() blacks out and redraws this whole
+ * region the next time the encoder moves the carousel, and a repeat OK
+ * press either succeeds (leaving the idle screen entirely) or re-triggers
+ * this same call -- both remove any stale message on their own. */
+void display_show_idle_error(const char *msg) {
+	int16_t y = STATUS_H + 4;
+	int16_t w = (int16_t) (strlen(msg) * UG_GetFontWidth(FONT_TINY));
+
+	UG_FillFrame(0, y, LCD_WIDTH - 1, y + UG_GetFontHeight(FONT_TINY),
+			C_BLACK);
+	LCD_PutStr(LCD_WIDTH / 2 - w / 2, y, (char*) msg, FONT_TINY, C_RED,
+	C_BLACK);
+}
+
 /* ---------------------------------------------------------------------- */
 /* Active-output template (60V / 10A): big measured value, secondary row,  */
 /* setpoint row, hold-to-enable border.                                    */

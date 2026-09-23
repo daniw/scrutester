@@ -22,7 +22,7 @@
 #define SPLASH_TITLE_COLOR  C_WHITE
 #define SPLASH_CREDIT_COLOR C_WHITE_63
 
-#define SPLASH_TITLE   "Scrutester"
+#define SPLASH_TITLE   "ScruTester"
 #define SPLASH_CREDIT  "by daniw & ahorat"
 #define SPLASH_TITLE_FONT   FONT_16X26
 #define SPLASH_CREDIT_FONT  FONT_12X16

@@ -775,6 +775,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		// the relays for a mode we just refused to actually enter.
 		if (adc_data.converted.v_term >= 500) { // mV
 			printf("Unable to switch to %d, voltage present at terminals, returning to Idle\r\n", mode);
+			display_show_idle_error("ERROR: Remove external Voltage");
 			return;
 		}
         /* fall through */
