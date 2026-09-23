@@ -666,7 +666,7 @@ static uint8_t statemachine_enter_charge(void) {
 	statemachine_handle.current_mode = STATEMACHINE_MODE_CHARGE;
 	adc_configure_mode(STATEMACHINE_MODE_CHARGE);
 
-	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE);   // relays open, before any PWM
+	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE, 0);   // relays open, before any PWM
 	charge_seq_init(&charge_seq);
 #ifdef CHARGE_DEBUG
 	charge_await_notified = 0;
@@ -701,7 +701,7 @@ static uint8_t statemachine_enter_charge_low_current(void) {
 	statemachine_handle.current_mode = STATEMACHINE_MODE_CHARGE;
 	adc_configure_mode(STATEMACHINE_MODE_CHARGE);
 
-	aux_io_ctrl_set_config_keep_k1_closed(STATEMACHINE_MODE_CHARGE); // K1 stays closed
+	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE,1); // K1 stays closed
 	charge_seq_init_low_current_recovery(&charge_seq);
 #ifdef CHARGE_DEBUG
 	charge_await_notified = 0;
@@ -823,7 +823,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	default:
 		break;
 	}
-	aux_io_ctrl_set_config(mode);
+	aux_io_ctrl_set_config(mode, 0);
 	input_encoder_reset(0);
 	input_encoder_clamp_reset(&encoder_setpoint_clamp, 0);
 	inactivity_ticks = 0;
@@ -834,18 +834,8 @@ void statemachine_switchtoIdle(void) {
 
 	ctrl_main_stop_control();
 	printf("Switch to Idle\r\n");
-	// A latched CUV (cell undervoltage) fault means the BMS has opened its
-	// DSG FET -- the device may be running purely on charger power fed
-	// through K1 (OUT_SEL_HV closed) into OUT_LV, with no battery path at
-	// all (see statemachine_enter_charge_low_current()). Opening K1 here,
-	// as the normal IDLE relay config does, would cut that power. This is
-	// the one chokepoint every CHARGE exit path (fault, stuck-open, ESC,
-	// boot) funnels through, so guarding it here covers all of them.
-	if (bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV) {
-		aux_io_ctrl_set_config_keep_k1_closed(STATEMACHINE_IDLE);
-	} else {
-		aux_io_ctrl_set_config(STATEMACHINE_IDLE);
-	}
+	aux_io_ctrl_set_config(STATEMACHINE_IDLE, bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV);
+
 	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
 	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
 	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
