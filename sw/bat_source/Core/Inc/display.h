@@ -15,6 +15,13 @@
 
 void display_init(void);
 
+/* Redraws the status bar's battery icon, but only when bms.charge_percentage
+ * has actually changed since the last redraw -- cheap to call unconditionally
+ * once per tick from statemachine_step(), regardless of which screen is
+ * showing (the icon sits at the same spot in every screen's status bar). See
+ * display.c for why this replaced a handful of per-mode update_*() calls. */
+void display_refresh_battery_icon(void);
+
 /* Home / carousel screen. menu_index is the raw carousel position (0..MENU_ORDER_LENGTH-1). */
 void display_show_idle(uint8_t menu_index);
 

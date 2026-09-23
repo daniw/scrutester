@@ -285,6 +285,11 @@ void statemachine_step(void) {
 		charge_lockout = 0;
 	}
 
+	// Battery icon, in every mode: see display_refresh_battery_icon() for why
+	// this one call replaced several per-mode ones -- it no-ops unless
+	// bms.charge_percentage actually changed, so this is cheap every tick.
+	display_refresh_battery_icon();
+
 	// Auto power-off, in every mode: reset the timer on any encoder movement,
 	// any button press/hold, or CHARGE actively running. 60V/10A/ISOMETER are
 	// hold-OUT-to-enable, so `out_button_pressed` alone already covers "stay
