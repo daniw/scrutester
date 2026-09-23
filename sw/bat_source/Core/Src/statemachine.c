@@ -286,20 +286,28 @@ void statemachine_step(void) {
 	}
 
 	// Auto power-off, in every mode: reset the timer on any encoder movement,
-	// any button press/hold, or a control loop actively running (covers
-	// CHARGE, an auto-started RESISTANCE measurement, and 60V/10A/ISOMETER
-	// while OUT is held) -- deliberately NOT statemachine_handle.output_on,
-	// which mode_table.c documents as left stale across a mode switch for
-	// passive-readout modes (VOLTMETER's entry there), unlike
-	// ctrl_main_handle.mode, which ctrl_main_stop_control() (called from
-	// statemachine_switchtoIdle()) reliably clears to CTRL_MODE_OFF every
-	// time IDLE is (re-)entered. STATEMACHINE_MODE_SHUTDOWN never becomes a
-	// lasting current_mode (see statemachine_switchfromIdle()), so it needs
-	// no case here.
+	// any button press/hold, or CHARGE actively running. 60V/10A/ISOMETER are
+	// hold-OUT-to-enable, so `out_button_pressed` alone already covers "stay
+	// on while OUT is held" for them -- no need to also key off
+	// ctrl_main_handle.mode there. RESISTANCE_1A/1mA are auto-started
+	// (MODE_F_AUTOSTART_CTRL, see mode_table.c) and keep running with OUT
+	// untouched, so they must NOT get a free pass from
+	// `ctrl_main_handle.mode != CTRL_MODE_OFF` the way they used to: like any
+	// other passive-readout mode, holding OUT is what keeps them on, nothing
+	// else does. CHARGE is the one mode this deliberately keeps exempt
+	// regardless of button/encoder activity, since there is no "hold OUT" (or
+	// any button) that would otherwise ever satisfy it mid-charge.
+	// Deliberately NOT statemachine_handle.output_on, which mode_table.c
+	// documents as left stale across a mode switch for passive-readout modes
+	// (VOLTMETER's entry there), unlike ctrl_main_handle.mode, which
+	// ctrl_main_stop_control() (called from statemachine_switchtoIdle())
+	// reliably clears to CTRL_MODE_OFF every time IDLE is (re-)entered.
+	// STATEMACHINE_MODE_SHUTDOWN never becomes a lasting current_mode (see
+	// statemachine_switchfromIdle()), so it needs no case here.
 	uint16_t raw_encoder = input_encoder_read();
 	uint8_t active = (raw_encoder != last_raw_encoder)
 			|| ok_button_pressed || esc_button_pressed || out_button_pressed
-			|| ctrl_main_handle.mode != CTRL_MODE_OFF;
+			|| ctrl_main_handle.mode == CTRL_MODE_CHARGE;
 	last_raw_encoder = raw_encoder;
 	if (active) {
 		inactivity_ticks = 0;

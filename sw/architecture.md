@@ -137,11 +137,19 @@ trigger) is centralised rather than duplicated across `statemachine.c`,
 (`statemachine.c`, 10 min), checked once per tick in every mode, not just
 `STATEMACHINE_IDLE`. Resets on any encoder movement (tracked as the raw
 count, independent of what the current mode does with it), any button
-press/hold, or `ctrl_main_handle.mode != CTRL_MODE_OFF` (a control loop
-actively running) — the last one is what keeps `CHARGE`, an auto-started
-`RESISTANCE_1A`/`1mA` measurement, and `60V_OUT`/`10A_OUT`/`ISOMETER` while
-`OUT` is held from ever being cut off mid-charge or mid-output. It
-deliberately does **not** use `statemachine_handle.output_on`: `mode_table.c`
+press/hold, or `ctrl_main_handle.mode == CTRL_MODE_CHARGE`. `CHARGE` is the
+only mode kept unconditionally exempt — there is no button that would
+otherwise ever satisfy the timeout mid-charge. `60V_OUT`/`10A_OUT`/`ISOMETER`
+are hold-OUT-to-enable, so `out_button_pressed` alone (already one of the
+button terms above) already covers "stay on while OUT is held" for them, no
+special-casing needed. `RESISTANCE_1A`/`1mA` auto-start their control loop on
+entry (`MODE_F_AUTOSTART_CTRL`, `mode_table.c`) and keep it running with OUT
+untouched — earlier this instead keyed off `ctrl_main_handle.mode !=
+CTRL_MODE_OFF` (a control loop actively running at all), which gave them a
+blanket exemption from the timeout no matter how long they sat untouched;
+now, like any other passive-readout mode, only holding OUT keeps them from
+timing out. It deliberately does **not** use `statemachine_handle.output_on`:
+`mode_table.c`
 documents that field as left stale across a mode switch for the
 passive-readout modes (see the `VOLTMETER` entry there), so it can't be
 trusted as an "active right now" signal, unlike `ctrl_main_handle.mode`,
