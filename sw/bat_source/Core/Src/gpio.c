@@ -20,6 +20,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "gpio.h"
+#include <stdio.h>
 
 /* USER CODE BEGIN 0 */
 #include "irq_priority.h"
@@ -202,5 +203,24 @@ void gpio_turnOn(void){
  */
 void gpio_turnOff(void){
 	HAL_GPIO_WritePin(ON_REQ_GPIO_Port, ON_REQ_Pin,0);
+}
+
+// See gpio.h. Moved here (was cmd_turnOff()'s body, cli.c) so an automatic
+// shutdown (statemachine.c) can go through the same confirm-or-recover
+// sequence as the CLI's manual one, instead of a bare gpio_turnOff() that
+// would leave the firmware in a half-off state if power doesn't actually cut.
+void gpio_power_off(void) {
+	printf("Turning off ...\r\n");
+	//Todo: disable any controller or converter that might be running before shutdown to prevent damage!
+	HAL_Delay(10);
+	gpio_turnOff();
+	for (uint16_t i = 0; i < 100; i++){
+		if (i%10 == 0){
+			printf("Waiting ...\r\n");
+		}
+		HAL_Delay(1);
+	}
+	gpio_turnOn();
+	printf("Turning off unsuccessful, reenabling on/off controller\r\n");
 }
 /* USER CODE END 2 */

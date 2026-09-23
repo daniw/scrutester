@@ -70,6 +70,14 @@ static inline void gpio_shutdown(void){
 
 void gpio_turnOn(void);
 void gpio_turnOff(void);
+
+/* Deasserts ON_REQ (gpio_turnOff()) and waits to confirm the on/off
+ * controller actually cut power; if the MCU is still running afterwards,
+ * re-asserts ON_REQ (gpio_turnOn()) rather than leaving the device in a
+ * half-off state. Blocks for ~110 ms in the case where the device really is
+ * about to lose power, which is expected: shared by the CLI's `turnOff` and
+ * the IDLE-timeout auto power-off (statemachine.c). */
+void gpio_power_off(void);
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

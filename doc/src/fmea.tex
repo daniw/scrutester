@@ -72,6 +72,36 @@ severity:
         {Passed-charge integration used the wrong unit (0.25 userAsec), skewing reported \acs{SoC}/passed charge.}
         {Displayed \ac{SoC}/charge state could mislead the operator about battery status.}
         {Fixed in firmware (commits \texttt{1eb7f9b}, \texttt{1f3783b}). Kept here, marked closed, as the working example of how this table tracks a resolved finding rather than deleting it.}
+    \FMEAItemModerate
+        {[HW+FW] Charge-start inrush across the output relay}
+        {The output relay (K1, normally closed) used to close onto a running converter whose output node was not at the charger voltage, and the charge-current loop started near the maximum-current duty.}
+        {Current pulse into the converter output capacitors and the battery at the start of every charge; trips the \ac{BMS} charge-overcurrent protection, stresses the relay contacts (a welded relay has been seen on one unit).}
+        {Multi-phase start (\texttt{charge\_seq.c}): relay open and converter run as an open-loop boost to 99\,\% of the charger voltage, relay closed with the SEK duty stepped to the zero-current duty, current reference ramped from \qty{0}{\ampere} over \qty{5}{\second}. The peak current after the close command is printed for bench tuning. Validated on hardware.}
+    \FMEAItemModerate
+        {[HW+FW] Converter output node not measured during precharge}
+        {\texttt{OUT\_LV}, behind the relay, has no \ac{ADC} channel: \texttt{V\_OUT}, \texttt{V\_TERM} and \texttt{I\_OUT} are all on the jack side. The precharge duty is computed open-loop from \texttt{V\_IN}.}
+        {Model error (V\_IN accuracy, dead time, unloaded-boost assumption) leaves \texttt{OUT\_LV} off target when the relay closes: residual inrush if too low, reverse current into the charger if too high.}
+        {The target is 99\,\% rather than 100\,\% of the charger voltage, all ramps are slow, and the ratio and relay settle time are tunable constants. Recommendation: add an \texttt{OUT\_LV} divider on a spare \ac{ADC} channel to close the loop.}
+    \FMEAItemModerate
+        {[HW] Output relay stuck open or slow to close}
+        {K1 does not connect the converter to the charger after the close command.}
+        {No charge current flows; the charge-current PI integrator would wind up and the loop surge when the path finally closes.}
+        {Detected in the current ramp: reference above \qty{300}{\milli\ampere} for \qty{2}{\second} with less than \qty{20}{\milli\ampere} flowing aborts the charge and locks out re-entry until the charger is removed.}
+    \FMEAItemModerate
+        {[HW] Output relay stuck closed (welded)}
+        {K1 is closed during the precharge.}
+        {The open-loop boost then runs against the connected charger; the precharge duty is below the charger voltage, so current flows into the battery.}
+        {Not detected in the precharge phase today; the \ac{BMS} charge-overcurrent protection is the backstop. Recommendation: abort if charge current is measured while the precharge is running.}
+    \FMEAItemModerate
+        {[HW+FW] Normal CHARGE exit would cut the device's own power during a deep-discharge recovery}
+        {A pack discharged far enough that the \ac{BMS} latches a cell-undervoltage (CUV) fault opens its DSG \ac{FET} (Q5); the device is then powered only through K1 (normally closed) feeding the charger voltage into \texttt{OUT\_LV}, with no battery-side supply at all. Every normal CHARGE exit (BMS fault, stuck-open abort, \ac{ESC}, boot) routes through \texttt{statemachine\_switchtoIdle()}, whose ordinary IDLE relay configuration opens K1.}
+        {Opening K1 in this state removes the device's only power source mid-recovery: the microcontroller browns out/resets, unable to ever begin recovering the pack without external intervention.}
+        {\texttt{statemachine\_switchtoIdle()} keeps K1 closed whenever CUV is latched, regardless of why it was called -- one chokepoint covers boot, fault-exit, stuck-open and \ac{ESC} alike. The recovery charge itself is entered directly (\texttt{statemachine\_enter\_charge\_low\_current()}), skipping the open-loop \texttt{PRECHARGE} boost since \texttt{V\_IN} reads $\approx$\qty{0}{\volt} with the DSG \ac{FET} open, and starts \texttt{CC\_RAMP} at a reduced current (\qty{100}{\milli\ampere}, tunable) that reaches the pack through Q6 (the separate charge \ac{FET}, gated directly by the \ac{BMS}, independent of DSG) and Q5's body diode. Validated on hardware.}
+    \FMEAItemMinor
+        {[FW] CUV masked from the CHARGE fault-exit check during recovery}
+        {While the deep-discharge recovery charge is active, the CUV bit specifically is excluded from the fault check that would otherwise abort CHARGE -- it is exactly the condition the run exists to clear.}
+        {If this masking were broader than intended, a genuine unrelated fault occurring during the same window could be missed by firmware's own CHARGE-exit logic.}
+        {The mask is scoped to exactly the CUV bit (bit 6 of Safety Status A); any other \ac{BMS} safety fault bit still aborts the charge immediately, same as a normal charge. Independently, the \ac{BMS}'s own autonomous protections (overvoltage, overcurrent, short-circuit, thermal) and the \ac{OVP} crowbar remain active throughout regardless of this firmware-level check.}
     \end{FMEATable}
     \caption{FMEA -- Charging}
 \end{table}

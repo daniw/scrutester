@@ -71,6 +71,14 @@
 #define CTRL_PARAM_CHARGE_CURRENT_mA 1000
 #define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3500*4)
 
+// Reduced current target for a deep-discharge/CUV recovery charge (see
+// statemachine_enter_charge_low_current() in statemachine.c) -- charging
+// into a pack the BMS has flagged undervoltage on, through the DSG FET's
+// body diode with no closed-loop DSG path. Independently bench-tunable, not
+// derived from CTRL_PARAM_CHARGE_CURRENT_mA, in case the safe recovery
+// current doesn't simply scale with the normal charge current.
+#define CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA 100
+
 // Rated pack capacity, in mA-seconds to match the BQ76905 PASSQ
 // accumulator's units (4.5Ah LiFePO4 = 4500mAh * 3600s/h). Stored
 // adaptable in EEPROM (config_store.calibration.battery_capacity_mAs)
@@ -105,6 +113,41 @@
 // a pack sitting right at the end-voltage threshold (e.g. rebounding once
 // current stops) could flap in and out of CHARGE mode.
 #define CTRL_PARAM_CHARGE_RESTART_MARGIN_mV 300
+
+// ---- Multi-phase CHARGE start (see charge_seq.h) --------------------------
+// All placeholders pending bench tuning: OUT_LV (the converter output node
+// behind the output relay) has no ADC channel, so PRECHARGE is open-loop and
+// its accuracy is only as good as V_IN and the duty model.
+
+// PRECHARGE target for the converter output node, as a fraction of the
+// charger voltage. Kept below 1.0 so an open-loop error cannot overshoot the
+// charger.
+#define CTRL_PARAM_CHARGE_PRECHARGE_RATIO 0.99F
+// PRIM duty ramp (PRIM_START_FRACTION -> full, like the 60V boost start),
+// then the SEK duty ramp towards the target, then a hold before the relay
+// is closed.
+#define CTRL_PARAM_CHARGE_PRECHARGE_PRIM_RAMP_s 0.2F
+#define CTRL_PARAM_CHARGE_PRECHARGE_SEK_RAMP_s 0.2F
+#define CTRL_PARAM_CHARGE_PRECHARGE_HOLD_s 0.2F
+
+// Wait after commanding the output relay closed before current control
+// starts. The relay's release time is not documented in the repo (datasheet
+// missing) - verify on the bench.
+#define CTRL_PARAM_CHARGE_RELAY_SETTLE_ms 100
+
+// Charge current reference ramps 0 -> CTRL_PARAM_CHARGE_CURRENT_mA over this.
+#define CTRL_PARAM_CHARGE_RAMP_s 5.0F
+
+// Window after the relay-close command over which the peak |I_OUT| is
+// recorded and printed (bench aid for tuning PRECHARGE_RATIO/RELAY_SETTLE_ms).
+#define CTRL_PARAM_CHARGE_PEAK_WINDOW_s 0.4F
+
+// Abort when the current reference is above ..._REF_mA but less than
+// ..._MEAS_mA actually flows for ..._ms: the charge path is open (relay
+// stuck open, charger gone) and the PI integrator would only wind up.
+#define CTRL_PARAM_CHARGE_STUCK_OPEN_REF_mA 300
+#define CTRL_PARAM_CHARGE_STUCK_OPEN_MEAS_mA 20
+#define CTRL_PARAM_CHARGE_STUCK_OPEN_ms 2000
 
 
 #endif /* INC_CTRL_PARAM_H_ */

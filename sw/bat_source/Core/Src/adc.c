@@ -1073,6 +1073,16 @@ void adc_configure_mode(statemachine_modes_t mode) {
 
 		break;
 	case STATEMACHINE_MODE_CHARGE:
+		// hadc4 was stopped above and nothing else restarts it, so without
+		// this v_out would stay frozen at its last value for the whole charge.
+		// It is not a control input: behind the (open) output relay it reads
+		// the jack side, not the converter output node.
+		sConfig.Channel = ADC_CHANNEL_2;
+		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
+			Error_Handler();
+		HAL_ADC_Init(&hadc4);
+		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
+
 		adc_configure_injected(ADC_CHANNEL_1, ADC_TRIGGER_HRTIM_SEK);
 		break;
 	case STATEMACHINE_MODE_10A_OUT:

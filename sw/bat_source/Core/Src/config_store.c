@@ -186,8 +186,8 @@ static int8_t config_store_write_block(uint16_t addr, const uint8_t *src, uint16
 int8_t config_store_store(void)
 {
 	int8_t result = 0;
+#ifdef ENABLE_CALIBRATION
 	int8_t r;
-
 	config_store.calibration_crc = config_store_crc32b((uint8_t *) &config_store.calibration, CONFIG_STORE_CALIBRATION_SIZE);
 
 	r = config_store_write_block(CONFIG_STORE_CALIBRATION_ADDR,
@@ -199,7 +199,7 @@ int8_t config_store_store(void)
 			(uint8_t *) &config_store.calibration_crc, sizeof(config_store.calibration_crc));
 	if (r != 0)
 		result = r;
-
+#endif
 	return result;
 }
 

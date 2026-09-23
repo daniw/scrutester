@@ -15,8 +15,20 @@
 
 void display_init(void);
 
+/* Redraws the status bar's battery icon, but only when bms.charge_percentage
+ * has actually changed since the last redraw -- cheap to call unconditionally
+ * once per tick from statemachine_step(), regardless of which screen is
+ * showing (the icon sits at the same spot in every screen's status bar). See
+ * display.c for why this replaced a handful of per-mode update_*() calls. */
+void display_refresh_battery_icon(void);
+
 /* Home / carousel screen. menu_index is the raw carousel position (0..MENU_ORDER_LENGTH-1). */
 void display_show_idle(uint8_t menu_index);
+
+/* Red, single-line error banner on the idle carousel screen (e.g. a mode
+ * entry refused for a hardware-safety reason). See display.c for how it's
+ * cleared. Call only while STATEMACHINE_IDLE is the current/displayed mode. */
+void display_show_idle_error(const char *msg);
 
 /* Static chrome (title, labels, units, footer) for a mode's detail screen -- call once on entry. */
 void display_enter_mode(statemachine_modes_t mode);

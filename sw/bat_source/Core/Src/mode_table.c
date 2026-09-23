@@ -139,14 +139,22 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .adc_trigger = ADC_TRIGGER_NONE,
     },
 
-    /* Auto-starts immediately like RESISTANCE_1A/1mA, and is the only mode
-     * that forces output_on to 1 at entry (charging starts "on" by
-     * design -- see the comment on this case in statemachine.c). */
+    /* NOT entered through statemachine_enter_mode_generic(): CHARGE is a
+     * multi-phase sequence (see charge_seq.h) with its own entry function in
+     * statemachine.c, hence no MODE_F_* flags here -- LED, output_on, the
+     * converter start and the relay order are all done there.
+     *
+     * aux_io_mask is the relay state of the FIRST phase, PRECHARGE: both
+     * relays open (the relays are normally closed, so OUT_SEL_HV / OUT_SEL_ISO
+     * high = K1 / K2 open), discharge sink off. The converter must not run
+     * before that. The state machine then drives OUT_SEL_HV low itself when the
+     * precharge is done, which closes K1 and connects the converter to the
+     * charger. */
     [STATEMACHINE_MODE_CHARGE] = {
         .ctrl_mode   = CTRL_MODE_CHARGE,
-        .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
+        .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
         .enable_gpio = GPIO_CONV_CTRL_EN,
-        .flags       = MODE_F_LED_OUT_ON | MODE_F_OUTPUT_ON_ONE | MODE_F_AUTOSTART_CTRL,
+        .flags       = 0,
         .adc_trigger = ADC_TRIGGER_HRTIM_SEK,
     },
 
