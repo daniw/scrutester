@@ -71,6 +71,14 @@
 #define CTRL_PARAM_CHARGE_CURRENT_mA 1000
 #define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3500*4)
 
+// Reduced current target for a deep-discharge/CUV recovery charge (see
+// statemachine_enter_charge_low_current() in statemachine.c) -- charging
+// into a pack the BMS has flagged undervoltage on, through the DSG FET's
+// body diode with no closed-loop DSG path. Independently bench-tunable, not
+// derived from CTRL_PARAM_CHARGE_CURRENT_mA, in case the safe recovery
+// current doesn't simply scale with the normal charge current.
+#define CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA 100
+
 // Rated pack capacity, in mA-seconds to match the BQ76905 PASSQ
 // accumulator's units (4.5Ah LiFePO4 = 4500mAh * 3600s/h). Stored
 // adaptable in EEPROM (config_store.calibration.battery_capacity_mAs)

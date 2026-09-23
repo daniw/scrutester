@@ -101,6 +101,15 @@ typedef struct{
 	    uint8_t safetyStatusB;
 	} SafetyRegisters;
 
+/* Readback-side bit for Safety Status A (BQ76905 TRM SLUUCI8, Table 6-3) --
+ * distinct from the write-side BQ76905_REG_PROT_EN_A_CUV /
+ * BQ76905_REG_PROT_DSG_FET_A_CUV in bq76905_config_flags.h, which configure
+ * the device rather than decode its status readback (they happen to share
+ * bit 0x40, but that is coincidental, not the same register). CUV auto-
+ * recovers (autonomous recovery, default-enabled) once the weakest cell
+ * rises above threshold + hysteresis -- no manual clear needed. */
+#define BQ76905_SAFETY_STATUS_A_CUV 0x40
+
 	/* The BQ76905 has five cell inputs, but this pack is 4S: only
 	 * CellVoltages[0..BQ76905_PACK_CELL_COUNT-1] are wired, [4] reads 0. */
 	struct{

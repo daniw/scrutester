@@ -273,6 +273,52 @@ against latching on a bad BMS reading. This corrects an earlier version of
 this document, which claimed the latch tested the internal `v_in` instead;
 current code shows no such path.
 
+**Deep-discharge / BMS undervoltage recovery charging.** If the pack is
+discharged far enough that the BQ76905 latches a cell-undervoltage (CUV)
+fault, it opens its DSG FET (Q5, `hardware.tex`) — the battery side (`V_IN`)
+then reads ~0 V, so the boost-from-`V_IN` `PRECHARGE` phase above is
+meaningless. The device can still be running at all in this state only
+because K1 (`OUT_SEL_HV`) is normally closed and the MCU's own supply is fed
+through it from the charger port into `OUT_LV` — a path independent of the
+battery/DSG FET entirely. Every normal-charge exit path
+(`statemachine_switchtoIdle()`) would otherwise open K1 as part of its usual
+IDLE relay config, cutting that supply. **`statemachine_switchtoIdle()`
+therefore keeps K1 closed whenever CUV (`BQ76905_SAFETY_STATUS_A_CUV`, bit 6
+of `Safety Status A` per the BQ76905 TRM) is latched**, regardless of why it
+was called — this single chokepoint fix covers boot, a BMS-fault exit, a
+stuck-open abort, and ESC alike, rather than special-casing each one.
+
+With K1 guaranteed closed, the IDLE auto-entry check (above) gets a second
+branch: CUV latched (and no *other* fault bit), charger voltage plausible,
+not locked out → `statemachine_enter_charge_low_current()`
+(`statemachine.c`) instead of the normal `statemachine_enter_charge()`. This
+skips `PRECHARGE`/`CLOSE` and enters `CC_RAMP` directly
+(`charge_seq_init_low_current_recovery()`): PRIM is set straight to its
+normal pass-through duty (`CTRL_PARAM_CONST_DUTY_HIGH`, no soft-start — `V_IN`
+gives no usable feedback to ramp against), SEK is preloaded to the
+zero-current duty the same way the normal `CLOSE → CC_RAMP` hand-over does,
+and the current reference ramps 0 → `CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA`
+(100 mA, ~10 % of the normal charge current, independently tunable) over the
+usual `CTRL_PARAM_CHARGE_RAMP_s`. Physically, this current reaches the pack
+through Q6 (the separate charge FET, gated directly by the BMS's
+`BMS_ON_OFF.CHG`, independent of DSG) and Q5's body diode — the BQ76905 TRM
+confirms CUV only opens DSG, "the CHG FET remains enabled if already
+enabled".
+
+While this recovery run is active (`charge_seq_t.low_current_recovery`), the
+CHARGE fault-exit check masks out the CUV bit specifically — it's exactly
+the condition the run exists to clear, so it must not itself abort the
+charge — while any *other* fault bit still aborts immediately, same as a
+normal charge. Once CUV clears (weakest cell recovers above threshold +
+hysteresis — autonomous per the BQ76905, no manual recovery needed), the
+current reference is ramped from the recovery target up to the full
+`CTRL_PARAM_CHARGE_CURRENT_mA` in place, over the same `CTRL_PARAM_CHARGE_RAMP_s`
+(`statemachine_step_charge()`, main context — `ctrl_main_handle.ramp`, the
+ISR's own start-of-charge ramp, is already saturated by then, so this is a
+second, independent step applied directly to `current_reference_mA`); no
+relay recycle or restart. From there the run is indistinguishable from a
+normal charge, including the full fault check. **Bench-validated on hardware.**
+
 Once in the CV tail, the voltage PI loop (`ctrl_main_ctrl_charge_voltage()`)
 runs a deliberate fast/slow sensor blend: its P-term uses the fast internal
 ADC (`v_in`), its I-term uses an accurate but slow (~1 Hz) reading that, as
@@ -378,7 +424,7 @@ command). Data logging not yet wired up.
 | Group | Signals | Notes |
 |-------|---------|-------|
 | Converter control | `CONV_CTRL_EN`, `CONV_CTRL_PRIM_L/H`, `CONV_CTRL_SEC_L/H`, `HV_CTRL_PRIM/EN` | Enable/disable half-bridge legs |
-| Output switching | `OUT_SEL_ISO`, `OUT_SEL_HV`, `SHUNT_EN`, `SHUNT_ISO_EN` | Route signal paths, driven per mode from `mode_table[]`. The two output relays are normally closed: `OUT_SEL_HV`=1 opens K1 (converter ↔ jacks), `OUT_SEL_ISO`=1 opens K2 (HV flyback ↔ jacks). CHARGE additionally drives `OUT_SEL_HV` itself, mid-sequence. |
+| Output switching | `OUT_SEL_ISO`, `OUT_SEL_HV`, `SHUNT_EN`, `SHUNT_ISO_EN` | Route signal paths, driven per mode from `mode_table[]`. The two output relays are normally closed: `OUT_SEL_HV`=1 opens K1 (converter ↔ jacks), `OUT_SEL_ISO`=1 opens K2 (HV flyback ↔ jacks). CHARGE additionally drives `OUT_SEL_HV` itself, mid-sequence. **Exception**: `statemachine_switchtoIdle()` never drives `OUT_SEL_HV` high while a BMS CUV fault is latched, since K1 may be the device's only power path then — see §3, "Deep-discharge / BMS undervoltage recovery charging". |
 | Protection | `OVP_N`, `OVP_RESET`, `OCP_N`, `DISCHARGE_N` | Latch reset and discharge control |
 | BMS | `BMS_CTRL_WAKEUP` (PF9) | Wake BQ76905 from low-power state |
 | UI inputs | `BUTTON_ESC` (PD4), `BUTTON_OUT` (PB9), `BUTTON_OK` (PE1), `ENCODER_A/B` | User controls |
@@ -529,3 +575,4 @@ stub. The queue is guarded against ISR / main-context races.
 | 10 | Data logging | QSPI flash driver exists and holds the icon store, but logging is not wired into the application |
 | 11 | Error log | `error_Write()` is an unimplemented stub, so queued errors are discarded |
 | 12 | Charge start | The multi-phase CHARGE start (§3) has been run on the bench and works with the current tuning (`CTRL_PARAM_CHARGE_PRECHARGE_*`, `CTRL_PARAM_CHARGE_RAMP_s` — see §3 for the values). An audible oscillation/whine was observed while the voltage first rises, clearing after roughly 1 s; suspected but **not confirmed by a scope capture** to be the open-loop, unregulated `PRECHARGE` exciting the `OUT_LV` LC tank near its resonance (10 µH inductor, 33 µF `OUT_LV` bank C22–C36 → ≈8.8 kHz, audible), since nothing damps it while `V_OUT`/`I_OUT` are unmeasured there. Shortening the ramps and raising `PRECHARGE_RATIO` (now 0.99) reduced it to where it's no longer a problem in practice, but the mechanism itself is unconfirmed. Remaining open items: the relay settle time (`CTRL_PARAM_CHARGE_RELAY_SETTLE_ms`, datasheet not in the repo) and the duty model (unloaded synchronous boost, PRIM at full duty) are still bench assumptions, not measured. A future `OUT_LV` divider on a spare ADC channel would allow closing the PRECHARGE loop and would let `I_BAT` (already sampled during CHARGE) or a real voltage loop actively damp this instead of relying on tuning alone. |
+| 13 | Deep-discharge charging | The CUV recovery path (§3) has been run on the bench and works — K1 stays closed, the BMS's CUV fault is masked correctly for the run, and recovery current reaches the pack through Q6/Q5's body diode as expected. The `CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA` (100 mA) target and the reuse of `CTRL_PARAM_CHARGE_RAMP_s` for both the initial 0→10 % ramp and the later 10→100 % handoff once CUV clears are first-pass values, not independently bench-tuned yet — revisit if either ramp turns out too fast/slow in practice. |

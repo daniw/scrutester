@@ -99,3 +99,22 @@ void aux_io_ctrl_set_config(statemachine_modes_t mode){
 			cfg & GPIO_MASK_DISCHARGE);
 }
 
+void aux_io_ctrl_set_config_keep_k1_closed(statemachine_modes_t mode) {
+	if (mode >= STATEMACHINE_MODE_RESERVED) {
+		return;
+	}
+
+	uint8_t cfg = mode_table[mode].aux_io_mask;
+
+	HAL_GPIO_WritePin(OUT_SEL_ISO_GPIO_Port, OUT_SEL_ISO_Pin,
+			cfg & GPIO_MASK_OUT_SEL_ISO);
+	// OUT_SEL_HV deliberately NOT derived from cfg here -- always closed.
+	HAL_GPIO_WritePin(OUT_SEL_HV_GPIO_Port, OUT_SEL_HV_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(SHUNT_EN_GPIO_Port, SHUNT_EN_Pin,
+			cfg & GPIO_MASK_SHUNT_EN);
+	HAL_GPIO_WritePin(SHUNT_ISO_EN_GPIO_Port, SHUNT_ISO_EN_Pin,
+			cfg & GPIO_MASK_SHUNT_ISO_EN);
+	HAL_GPIO_WritePin(DISCHARGE_N_GPIO_Port, DISCHARGE_N_Pin,
+			cfg & GPIO_MASK_DISCHARGE);
+}
+

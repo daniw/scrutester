@@ -57,5 +57,17 @@ void aux_io_ctrl_manual_set_io(uint8_t pin, uint8_t value);
  */
 void aux_io_ctrl_set_config(statemachine_modes_t mode);
 
+/**
+ * Same as aux_io_ctrl_set_config(), but always drives OUT_SEL_HV low
+ * (K1 closed), ignoring GPIO_MASK_OUT_SEL_HV in mode_table[mode].aux_io_mask
+ * entirely. Used wherever K1 must not be opened regardless of the target
+ * mode's normal relay config -- e.g. a deep-discharge/CUV recovery charge,
+ * where opening K1 would cut the MCU's own power (see statemachine.c). All
+ * other GPIOs in the mask (OUT_SEL_ISO, SHUNT_EN, SHUNT_ISO_EN, DISCHARGE)
+ * are applied normally.
+ * @param mode statemachine mode to be set.
+ */
+void aux_io_ctrl_set_config_keep_k1_closed(statemachine_modes_t mode);
+
 
 #endif /* SRC_AUX_IO_CTRL_H_ */

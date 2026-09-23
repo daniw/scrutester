@@ -263,12 +263,40 @@ static void test_ordering(void) {
 	}
 }
 
+/* Deep-discharge/CUV recovery entry: skips PRECHARGE/CLOSE, starts directly
+ * in CC_RAMP, same stuck-open behavior as a normal charge from there. */
+static void test_low_current_recovery(void) {
+	charge_seq_t s = {0}; // manual must start at 0: see charge_seq_init()'s doc comment
+	charge_seq_init_low_current_recovery(&s);
+	CHECK(s.phase == CHG_PHASE_CC_RAMP);
+	CHECK(s.low_current_recovery);
+	CHECK(charge_seq_may_complete(&s)); // no need to wait for PRECHARGE/CLOSE first
+
+	/* Reference low or current flowing: never abort, same as a normal charge
+	 * already past CLOSE. */
+	for (int i = 0; i < 500; i++)
+		CHECK(step(&s, CHG_PHASE_CC_RAMP, 200, 0) == CHG_ACT_NONE);
+
+	/* Stuck-open detection still applies (relay stuck open, or charger gone
+	 * mid-recovery, is just as real a fault here). */
+	int n = 0;
+	while (step(&s, CHG_PHASE_CC_RAMP, 400, 5) != CHG_ACT_ABORT_STUCK_OPEN)
+		CHECK(++n < 1000);
+	CHECK(n == 99);
+
+	/* A fresh charge_seq_init() (the normal-charge path) clears the flag. */
+	charge_seq_init(&s);
+	CHECK(!s.low_current_recovery);
+	CHECK(s.phase == CHG_PHASE_PRECHARGE);
+}
+
 int main(void) {
 	test_duty_formulas();
 	test_precharge();
 	test_phase_stepper();
 	test_manual_step();
 	test_ordering();
+	test_low_current_recovery();
 	if (failures) {
 		printf("%d check(s) failed\n", failures);
 		return 1;

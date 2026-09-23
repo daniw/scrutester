@@ -75,6 +75,14 @@ extern const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN];
 
 void ctrl_main_init(void);
 void ctrl_main_start_ctrl(ctrl_mode_t mode);
+/* Deep-discharge/CUV recovery variant of ctrl_main_start_ctrl(CTRL_MODE_CHARGE):
+ * V_IN reads ~0 (BMS DSG FET open), so there is nothing to boost from --
+ * skips PRECHARGE entirely and starts directly in CC_RAMP, at
+ * CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA rather than the normal full
+ * charge current. K1 must already be closed before this is called (see
+ * statemachine_enter_charge_low_current() in statemachine.c) -- this
+ * function does not touch any relay GPIO itself. */
+void ctrl_main_start_ctrl_charge_low_current(void);
 void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas);
 void ctrl_main_stop_control(void);
 void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count);

@@ -186,6 +186,46 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	ctrl_main_handle.mode = mode;
 }
 
+/* See ctrl_main.h. Mirrors CTRL_MODE_CHARGE above but skips PRECHARGE: V_IN
+ * is ~0 (BMS DSG FET open, see statemachine.c), so there is nothing to boost
+ * from, and K1 is already closed (kept that way by the caller), so there is
+ * no relay to wait for either -- starts directly in CC_RAMP. */
+void ctrl_main_start_ctrl_charge_low_current(void) {
+	ctrl_PID_reset(&ctrl_pi_voltage_buck);
+	ctrl_PID_reset(&ctrl_pi_charge_current);
+	ctrl_PID_reset(&ctrl_pi_charge_voltage);
+	ctrl_main_handle.charge_cv_phase = 0;
+	ctrl_main_handle.charge_i_peak_mA = 0;
+	ctrl_main_handle.charge_peak_ticks = 0;
+	ctrl_main_handle.current_reference_mA = CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA;
+	ctrl_main_handle.voltage_reference_mV = CTRL_PARAM_CHARGE_END_VOLTAGE_mV;
+
+	hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
+	hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
+	// PRIM jumps straight to its normal pass-through duty -- no soft-start
+	// ramp (V_IN gives no usable feedback to ramp against anyway).
+	hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH);
+	// Same zero-current preload ctrl_main_charge_handover() uses at the
+	// normal CLOSE -> CC_RAMP hand-over, so the first CC tick doesn't glitch.
+	// v_in_mV is passed as 0 rather than read live: it is not meaningful
+	// while the DSG FET is open, and charge_seq_zero_current_duty() already
+	// treats a non-positive v_term_mV as "least-current duty", so this is
+	// the same safe-minimum starting point either way.
+	float d0 = charge_seq_zero_current_duty(0, adc_data.converted.v_term_ext_mv_filt);
+	ctrl_pi_charge_current.ref = 0.0F;
+	ctrl_pi_charge_current.prev_I_action = charge_seq_cc_preload_action(d0);
+	hrtim_set_duty(HRTIM_CHANNEL_SEK, d0);
+	ctrl_main_handle.duty = d0 * 1000;
+	hrtim_enable(HRTIM_CHANNEL_PRIM);
+	hrtim_enable(HRTIM_CHANNEL_SEK);
+
+	ctrl_main_handle.ramp = 0.0F; // ISR ramps current 0 -> the reduced target
+	// Assigned before `mode` (below), so the ISR never sees CTRL_MODE_CHARGE
+	// with a stale phase (same ordering rule as ctrl_main_start_ctrl()).
+	ctrl_main_handle.charge_phase = CHG_PHASE_CC_RAMP;
+	ctrl_main_handle.mode = CTRL_MODE_CHARGE;
+}
+
 /*
  * The order of the two statements below is load-bearing, as is the fact that
  * ctrl_main_start_ctrl() assigns ctrl_main_handle.mode last.

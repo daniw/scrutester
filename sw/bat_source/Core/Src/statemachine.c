@@ -83,6 +83,7 @@ static void statemachine_apply_encoder_setpoint(void);
 static void statemachine_step_calibration(void);
 static void statemachine_enter_mode_generic(statemachine_modes_t mode);
 static uint8_t statemachine_enter_charge(void);
+static uint8_t statemachine_enter_charge_low_current(void);
 static void statemachine_step_charge(void);
 static void statemachine_charge_lockout(void);
 
@@ -343,6 +344,15 @@ void statemachine_step(void) {
 				&& bms.VoltageRegisters.StackVoltage
 						< CTRL_PARAM_CHARGE_END_VOLTAGE_mV - CTRL_PARAM_CHARGE_RESTART_MARGIN_mV) {
 			statemachine_switchfromIdle(STATEMACHINE_MODE_CHARGE);
+		} else if (!charge_lockout
+				&& (bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)
+				&& !(bms.SafetyRegisters.safetyStatusA & (uint8_t) ~BQ76905_SAFETY_STATUS_A_CUV)
+				&& !bms.SafetyRegisters.safetyStatusB
+				&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
+			// Deep-discharge/CUV recovery: called directly, not through
+			// statemachine_switchfromIdle() -- see
+			// statemachine_enter_charge_low_current()'s comment.
+			statemachine_enter_charge_low_current();
 		}
 		break;
 
@@ -524,6 +534,29 @@ static void statemachine_step_charge(void) {
 			charge_await_notified = 0;
 		}
 #endif
+
+		// Deep-discharge recovery: once the BMS clears CUV, ramp the current
+		// reference from the reduced recovery target back up to the normal
+		// one, in place -- K1 never opened, so no relay recycle or restart
+		// is needed. ctrl_main_handle.ramp (the ISR's own start-of-charge
+		// ramp) is already saturated past 1.0 by now, so it won't do this on
+		// its own -- this steps current_reference_mA directly, once per 20ms
+		// tick, over CTRL_PARAM_CHARGE_RAMP_s.
+		if (charge_seq.low_current_recovery
+				&& !(bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)) {
+			uint32_t step_mA = (uint32_t) ((CTRL_PARAM_CHARGE_CURRENT_mA
+					- CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA)
+					* STATEMACHINE_STEP_PERIOD_mS / (CTRL_PARAM_CHARGE_RAMP_s * 1000.0F));
+			if (step_mA == 0)
+				step_mA = 1; // guard against a ramp time too short for this current delta
+			if (ctrl_main_handle.current_reference_mA + step_mA >= CTRL_PARAM_CHARGE_CURRENT_mA) {
+				ctrl_main_handle.current_reference_mA = CTRL_PARAM_CHARGE_CURRENT_mA;
+				charge_seq.low_current_recovery = 0;
+				printf("CHARGE: BMS undervoltage cleared, ramped to full current\r\n");
+			} else {
+				ctrl_main_handle.current_reference_mA += step_mA;
+			}
+		}
 	}
 
 	// Only the wired cells: CellVoltages[4] is unused and reads 0, which
@@ -565,7 +598,16 @@ static void statemachine_step_charge(void) {
 			&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
 			&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA
 			&& (cell_max - cell_min <= 50);
-	uint8_t bms_fault = bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB;
+	// While recovering from a deep-discharge CUV fault, CUV is exactly the
+	// condition this run exists to clear -- it must not itself abort the
+	// charge that's trying to recover from it (see
+	// statemachine_enter_charge_low_current()). Any OTHER fault bit still
+	// aborts immediately, same as a normal charge.
+	uint8_t fault_mask_a = bms.SafetyRegisters.safetyStatusA;
+	if (charge_seq.low_current_recovery) {
+		fault_mask_a &= (uint8_t) ~BQ76905_SAFETY_STATUS_A_CUV;
+	}
+	uint8_t bms_fault = fault_mask_a || bms.SafetyRegisters.safetyStatusB;
 	uint8_t supply_low = adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV;
 
 	if (charge_completed || bms_fault || supply_low) {
@@ -575,8 +617,8 @@ static void statemachine_step_charge(void) {
 					bms.VoltageRegisters.StackVoltage, CTRL_PARAM_CHARGE_END_VOLTAGE_mV,
 					-adc_data.converted.i_out_ext_mA, CTRL_PARAM_CHARGE_TAPER_CURRENT_mA);
 		}
-		if (bms.SafetyRegisters.safetyStatusA) {
-			printf("CHARGE exit: BMS safetyStatusA=0x%02X\r\n", bms.SafetyRegisters.safetyStatusA);
+		if (fault_mask_a) {
+			printf("CHARGE exit: BMS safetyStatusA=0x%02X\r\n", fault_mask_a);
 		}
 		if (bms.SafetyRegisters.safetyStatusB) {
 			printf("CHARGE exit: BMS safetyStatusB=0x%02X\r\n", bms.SafetyRegisters.safetyStatusB);
@@ -628,6 +670,45 @@ static uint8_t statemachine_enter_charge(void) {
 	display_enter_mode(STATEMACHINE_MODE_CHARGE);
 	printf("CHARGE: precharging the converter output (V_TERM=%ldmV)\r\n",
 			adc_data.converted.v_term_ext_mv);
+	return 1;
+}
+
+/* Deep-discharge/CUV recovery entry: the BMS has latched a cell undervoltage
+ * fault (DSG FET open, V_IN ~0) and the device is running on charger power
+ * fed through K1 into OUT_LV -- see statemachine_switchtoIdle(). Called
+ * directly from the IDLE auto-entry check below rather than through
+ * statemachine_switchfromIdle(), because that function's shared tail ends
+ * with a plain aux_io_ctrl_set_config(mode) call which would reopen K1 right
+ * after this function closes it off deliberately. Mirrors
+ * statemachine_enter_charge() otherwise. */
+static uint8_t statemachine_enter_charge_low_current(void) {
+	if (!charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
+		printf("Unable to switch to low-current CHARGE: charger voltage %ldmV "
+				"outside %d..%dmV\r\n", adc_data.converted.v_term_ext_mv,
+				CTRL_PARAM_CHARGE_START_VIN_LOW_mV, CTRL_PARAM_CHARGE_START_VIN_HIGH_mV);
+		return 0;
+	}
+
+	ui_ctrl_ledOutOn();
+	statemachine_handle.current_mode = STATEMACHINE_MODE_CHARGE;
+	adc_configure_mode(STATEMACHINE_MODE_CHARGE);
+
+	aux_io_ctrl_set_config_keep_k1_closed(STATEMACHINE_MODE_CHARGE); // K1 stays closed
+	charge_seq_init_low_current_recovery(&charge_seq);
+#ifdef CHARGE_DEBUG
+	charge_await_notified = 0;
+#endif
+	ctrl_main_start_ctrl_charge_low_current();          // straight to CC_RAMP
+	aux_io_ctrl_manual_set_io(mode_table[STATEMACHINE_MODE_CHARGE].enable_gpio, 1);
+	statemachine_handle.output_on = 1;
+
+	input_encoder_reset(0);
+	input_encoder_clamp_reset(&encoder_setpoint_clamp, 0);
+	inactivity_ticks = 0;
+
+	display_enter_mode(STATEMACHINE_MODE_CHARGE);
+	printf("CHARGE: deep-discharge recovery at %dmA (BMS reports CUV, V_TERM=%ldmV)\r\n",
+			CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA, adc_data.converted.v_term_ext_mv);
 	return 1;
 }
 
@@ -744,7 +825,18 @@ void statemachine_switchtoIdle(void) {
 
 	ctrl_main_stop_control();
 	printf("Switch to Idle\r\n");
-	aux_io_ctrl_set_config(STATEMACHINE_IDLE);
+	// A latched CUV (cell undervoltage) fault means the BMS has opened its
+	// DSG FET -- the device may be running purely on charger power fed
+	// through K1 (OUT_SEL_HV closed) into OUT_LV, with no battery path at
+	// all (see statemachine_enter_charge_low_current()). Opening K1 here,
+	// as the normal IDLE relay config does, would cut that power. This is
+	// the one chokepoint every CHARGE exit path (fault, stuck-open, ESC,
+	// boot) funnels through, so guarding it here covers all of them.
+	if (bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV) {
+		aux_io_ctrl_set_config_keep_k1_closed(STATEMACHINE_IDLE);
+	} else {
+		aux_io_ctrl_set_config(STATEMACHINE_IDLE);
+	}
 	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
 	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
 	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
