@@ -70,7 +70,7 @@
 #define LINES_PER_LEVEL  10
 
 /* Raw encoder counts per mechanical detent (see input.h) = one column. */
-#define ENC_PER_STEP     2
+#define ENC_PER_STEP     1
 /* Set to 1 if turning clockwise should move the piece left instead of right.
  * Which way the encoder counts up can only be confirmed on the bench. */
 #define ENC_INVERT       0
@@ -340,7 +340,7 @@ static void draw_chrome(void) {
 			(int16_t) (BOARD_X + BOARD_W_PX + 1),
 			(int16_t) (BOARD_Y + BOARD_H_PX + 1), COL_FRAME);
 
-	LCD_PutStr(PANEL_X, 6, "TETRIS", FONT_SMALL, C_DODGER_BLUE, COL_BG);
+	LCD_PutStr(PANEL_X, 6, "ScruTetris", FONT_SMALL, C_DODGER_BLUE, COL_BG);
 	LCD_PutStr(PANEL_X, 30, "NEXT", FONT_TINY, COL_LABEL, COL_BG);
 	LCD_PutStr(PANEL_X, 98, "SCORE", FONT_TINY, COL_LABEL, COL_BG);
 	LCD_PutStr(PANEL_X, 134, "LEVEL", FONT_TINY, COL_LABEL, COL_BG);
