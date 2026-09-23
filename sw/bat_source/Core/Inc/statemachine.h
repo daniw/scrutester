@@ -9,6 +9,7 @@
 #define INC_STATEMACHINE_H_
 
 #include "stdint.h"
+#include "charge_seq.h" // for CHARGE_DEBUG, see below
 
 #define STATEMACHINE_STEP_PERIOD_mS 20 //ms
 
@@ -54,5 +55,14 @@ void statemachine_init(void);
 void statemachine_step(void);
 
 void statemachine_switchfromIdle(statemachine_modes_t mode);
+
+#ifdef CHARGE_DEBUG
+/* CHARGE single-step bench test (charge_seq.h): with test mode on, CHARGE
+ * holds after the open-loop precharge (relay still open) until
+ * statemachine_charge_test_advance() closes the relay and starts the
+ * current ramp -- the CLI's `chargeStep`/`chargeNext` commands. */
+void statemachine_charge_test_set_manual(uint8_t enable);
+uint8_t statemachine_charge_test_advance(void);
+#endif
 
 #endif /* INC_STATEMACHINE_H_ */

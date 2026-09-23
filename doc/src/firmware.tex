@@ -96,17 +96,23 @@ runs as PI. Eight tunable loops share one registry,
 All eight loops still run placeholder gains -- see \autoref{sec:fmea} for
 why that matters and what backs it up in the meantime.
 
-\paragraph{Charging (CC/CV).} CHARGE is auto-entered from IDLE when a
-\qtyrange{15}{24}{\volt} supply is present, no \ac{BMS} fault is latched,
-and the pack is below the end voltage. It runs constant-current until the
-end voltage, then latches (one-way) into a constant-voltage tail, ending
-once the pack is at end voltage \emph{and} current has tapered below
-\qty{225}{\milli\ampere}. The most recent firmware pass (commit
-\texttt{cb868d6}) replaced the CV-phase's ramped reference with a stepped
-one and switched its feedback from stack voltage to the highest individual
-cell voltage for more precise regulation, and added a live \ac{CLI}
-\ac{ADC} readout during charging for bench visibility. \autoref{sec:fmea}
-covers the still-open CC$\to$CV sensor mismatch and the untuned-gains risk.
+\paragraph{Charging.} CHARGE is auto-entered from IDLE when a
+\qtyrange{15}{24}{\volt} charger is present, no \ac{BMS} fault is latched, the
+pack is below the end voltage and no lockout from an earlier abort is active.
+Closing the output relay onto a converter output that is not at the charger
+voltage, and a current loop that started at its maximum-current duty, caused
+large inrush currents, so the start is a sequence (\texttt{charge\_seq.c}):
+\emph{precharge} (relay open, converter run as an open-loop boost to
+\qty{95}{\percent} of the charger voltage, since the converter output node is
+not measured), \emph{close} (relay commanded closed while the duty is stepped to
+the zero-current value), \emph{CC ramp} (current reference from
+\qty{0}{\ampere} to \qty{1}{\ampere} over \qty{10}{\second}) and finally the
+constant-voltage tail, which regulates on the highest cell voltage with a stepped
+reference. The charge ends once the pack is at end voltage, the current has
+tapered below \qty{100}{\milli\ampere} and the cell spread is at most
+\qty{50}{\milli\volt}. The sequence is host-tested, but not yet validated on
+hardware; \autoref{sec:fmea} lists what is open (unmeasured converter output,
+relay timing, untuned gains).
 
 \subsection{Peripherals}
 

@@ -76,7 +76,7 @@ void aux_io_ctrl_manual_set_io(uint8_t pin, uint8_t value) {
 }
 
 
-void aux_io_ctrl_set_config(statemachine_modes_t mode){
+void aux_io_ctrl_set_config(statemachine_modes_t mode, uint8_t keep_k1_closed){
 	/* mode_table[] only covers the real statemachine modes (indices
 	 * 0..STATEMACHINE_MODE_RESERVED-1). An out-of-range mode must not be
 	 * allowed to index into it and drive the relay/output GPIOs from
@@ -89,13 +89,19 @@ void aux_io_ctrl_set_config(statemachine_modes_t mode){
 
 	HAL_GPIO_WritePin(OUT_SEL_ISO_GPIO_Port, OUT_SEL_ISO_Pin,
 			cfg & GPIO_MASK_OUT_SEL_ISO);
-	HAL_GPIO_WritePin(OUT_SEL_HV_GPIO_Port, OUT_SEL_HV_Pin,
-			cfg & GPIO_MASK_OUT_SEL_HV);
 	HAL_GPIO_WritePin(SHUNT_EN_GPIO_Port, SHUNT_EN_Pin,
 			cfg & GPIO_MASK_SHUNT_EN);
 	HAL_GPIO_WritePin(SHUNT_ISO_EN_GPIO_Port, SHUNT_ISO_EN_Pin,
 			cfg & GPIO_MASK_SHUNT_ISO_EN);
 	HAL_GPIO_WritePin(DISCHARGE_N_GPIO_Port, DISCHARGE_N_Pin,
 			cfg & GPIO_MASK_DISCHARGE);
+
+	if(keep_k1_closed == 0){
+
+		HAL_GPIO_WritePin(OUT_SEL_HV_GPIO_Port, OUT_SEL_HV_Pin,
+				cfg & GPIO_MASK_OUT_SEL_HV);
+	} else{
+		HAL_GPIO_WritePin(OUT_SEL_HV_GPIO_Port, OUT_SEL_HV_Pin, GPIO_PIN_RESET);
+	}
 }
 

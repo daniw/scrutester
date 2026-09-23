@@ -72,7 +72,11 @@ static void draw_status_bar(const char *title, UG_COLOR accent) {
 	UG_FillFrame(0, STATUS_H - 3, LCD_WIDTH - 1, STATUS_H - 1, accent);
 }
 
-static void update_status_bar(void) {
+static uint8_t battery_icon_last_pct = 0xFFu;
+void display_refresh_battery_icon(void) {
+	if (bms.charge_percentage == battery_icon_last_pct)
+		return;
+	battery_icon_last_pct = bms.charge_percentage;
 	draw_battery_icon(LCD_WIDTH - 40, 6, bms.charge_percentage);
 }
 
@@ -157,6 +161,24 @@ void display_show_idle(uint8_t menu_index) {
 	}
 }
 
+/* Transient error banner for the idle carousel, e.g. a mode entry refused
+ * for a hardware-safety reason (see AMPMETER in statemachine.c). Drawn in
+ * the black space between the status bar and the icons, so it doesn't
+ * overlap the carousel or the mode-name label below it. No explicit "clear"
+ * call is needed: display_show_idle() blacks out and redraws this whole
+ * region the next time the encoder moves the carousel, and a repeat OK
+ * press either succeeds (leaving the idle screen entirely) or re-triggers
+ * this same call -- both remove any stale message on their own. */
+void display_show_idle_error(const char *msg) {
+	int16_t y = STATUS_H + 4;
+	int16_t w = (int16_t) (strlen(msg) * UG_GetFontWidth(FONT_TINY));
+
+	UG_FillFrame(0, y, LCD_WIDTH - 1, y + UG_GetFontHeight(FONT_TINY),
+			C_BLACK);
+	LCD_PutStr(LCD_WIDTH / 2 - w / 2, y, (char*) msg, FONT_TINY, C_RED,
+	C_BLACK);
+}
+
 /* ---------------------------------------------------------------------- */
 /* Active-output template (60V / 10A): big measured value, secondary row,  */
 /* setpoint row, hold-to-enable border.                                    */
@@ -193,7 +215,6 @@ static void update_active_output(statemachine_modes_t mode,
 		return;
 
 	draw_output_border(entry->accent, output_active);
-	update_status_bar();
 
 	snprintf(text, sizeof(text), "%3d.%02d", (int) (big_value_x100 / 100),
 			(int) ((big_value_x100 < 0 ? -big_value_x100 : big_value_x100) % 100));
@@ -250,7 +271,6 @@ static void enter_passive_readout(statemachine_modes_t mode, const char *unit) {
 }
 
 static void update_passive_readout(int32_t value_x100) {
-	update_status_bar();
 	snprintf(text, sizeof(text), "%3d.%02d", (int) (value_x100 / 100),
 			(int) ((value_x100 < 0 ? -value_x100 : value_x100) % 100));
 	LCD_PutStr(passive_readout_x, passive_readout_y, text, FONT_HUGE, C_WHITE,
@@ -281,7 +301,6 @@ static void enter_resistance(statemachine_modes_t mode) {
 }
 
 static void update_resistance(statemachine_modes_t mode) {
-	update_status_bar();
 	/* The two modes read different fields with different over-range
 	 * semantics (see adc_convert_data() in adc.c):
 	 *  - RESISTANCE_1A/Milliohmmeter: r_mOhmx10 is UINT32_MAX when the
@@ -354,7 +373,6 @@ static void enter_isometer(void) {
 static void update_isometer(uint8_t output_active) {
 	const menu_entry_t *entry = menu_entry_for_mode(STATEMACHINE_MODE_ISOMETER);
 	draw_output_border(entry->accent, output_active);
-	update_status_bar();
 
 	snprintf(text, sizeof(text), "Test Voltage: %4u V   ",
 			ctrl_main_handle.voltage_iso_reference_V);
@@ -412,7 +430,6 @@ static void update_charge(uint8_t output_active) {
 	uint32_t elapsed_s = bms.Accumulator.passedTime / 4;
 
 	draw_output_border(entry->accent, output_active);
-	update_status_bar();
 
 	snprintf(text, sizeof(text), "%2u.%03u", bms.VoltageRegisters.StackVoltage / 1000,
 			bms.VoltageRegisters.StackVoltage % 1000);
@@ -440,8 +457,9 @@ static void update_charge(uint8_t output_active) {
 		LCD_PutStr(CELL_SEGMENT_X[i], SECOND_Y + 36, text, FONT_TINY, color, C_BLACK);
 	}
 
-	snprintf(text, sizeof(text), "Phase: %s",
-			ctrl_main_handle.charge_cv_phase ? "CV" : "CC");
+	// Fixed width so a shorter label ("CC") fully overwrites a longer one ("CLOSE").
+	snprintf(text, sizeof(text), "Phase: %-5s",
+			charge_seq_phase_name(ctrl_main_handle.charge_phase));
 	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, C_WHITE, C_BLACK);
 
 }
