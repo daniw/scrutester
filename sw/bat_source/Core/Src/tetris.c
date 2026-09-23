@@ -69,9 +69,8 @@
 #define SOFT_DROP_MS     40           /* while OUT is held */
 #define LINES_PER_LEVEL  10
 
-/* Raw encoder counts per column moved. 1 was found right on the bench; input.h
- * documents 2 counts per detent, which would make this 2 for a column per
- * detent. tools/tetris_sim/sim_input.h (SIM_COUNTS_PER_DETENT) mirrors it. */
+/* Raw encoder counts per column moved: the encoder gives 1 count per detent
+ * (see input.h), so one detent moves the piece one column. */
 #define ENC_PER_STEP     1
 /* Set to 1 if turning clockwise should move the piece left instead of right.
  * Which way the encoder counts up can only be confirmed on the bench. */

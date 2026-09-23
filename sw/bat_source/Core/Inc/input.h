@@ -20,7 +20,7 @@ void input_set_source(input_source_t src);
 input_source_t input_get_source(void);
 
 /* Same semantics as tim_encoder_read()/tim_encoder_reset(): raw 0-127 count,
- * 2 counts per mechanical detent. */
+ * 1 count per mechanical detent (measured on the bench). */
 uint16_t input_encoder_read(void);
 void input_encoder_reset(uint8_t value);
 
@@ -68,7 +68,7 @@ uint8_t input_btn_out(void);
  * parser; has no effect while INPUT_SOURCE_HW is active.
  */
 
-/* Moves the simulated encoder by one detent (2 counts): +1 = CW/increment, -1 = CCW/decrement. */
+/* Moves the simulated encoder by one detent (1 count): +1 = CW/increment, -1 = CCW/decrement. */
 void input_cli_encoder_step(int8_t direction);
 
 /* OK/ESC are momentary keys (Enter/Esc) -> one-shot pulse, consumed by the next input_btn_ok/esc() call. */
