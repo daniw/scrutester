@@ -120,8 +120,8 @@ const menu_entry_t menu_order[MENU_TOTAL_LENGTH] = {
 
 static const char *const MODE_NAMES[STATEMACHINE_MODE_RESERVED + 1] = {
 	[STATEMACHINE_IDLE] = "BatSource",
-	[STATEMACHINE_MODE_60V_OUT] = "60V Source",
-	[STATEMACHINE_MODE_10A_OUT] = "10A Source",
+	[STATEMACHINE_MODE_60V_OUT] = "Voltage Source",
+	[STATEMACHINE_MODE_10A_OUT] = "Current Source",
 	[STATEMACHINE_MODE_RESISTANCE_1A] = "Milliohmmeter",
 	[STATEMACHINE_MODE_RESISTANCE_1mA] = "Ohmmeter",
 	[STATEMACHINE_MODE_ISOMETER] = "Isolation Test",
