@@ -43,6 +43,7 @@ CrossRefPorts=2
 CrossRefCrossSheets=1
 CrossRefSheetEntries=0
 CrossRefFollowFromMainSettings=1
+CurrentVariant=ST1-2
 
 [Preferences]
 PrefsVaultGUID=
