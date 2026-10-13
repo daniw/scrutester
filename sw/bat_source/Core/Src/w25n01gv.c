@@ -6,6 +6,7 @@
  */
 
 #include "w25n01gv.h"
+#include "watchdog.h"
 #include "stdio.h"
 #include <string.h>
 
@@ -777,6 +778,10 @@ w25n01gv_status_t w25n01gv_wait_busy(w25n01gv_handle *hw25n01gv) {
 	cmd.DdrHoldHalfCycle    = QSPI_DDR_HHC_ANALOG_DELAY;
 	cmd.SIOOMode            = QSPI_SIOO_INST_EVERY_CMD;
 	do {
+		// Block erase / program can keep the chip busy for ms to tens of ms
+		// each, and a full erase or icon re-flash strings many of these
+		// together -- far longer than the watchdog timeout.
+		watchdog_kick();
 		status = (w25n01gv_status_t) HAL_QSPI_Command(hw25n01gv->hqspi, &cmd, hw25n01gv->timeout);
 		if (status == W25N01GV_OK) {
 			status = (w25n01gv_status_t) HAL_QSPI_Receive(hw25n01gv->hqspi, &hw25n01gv->reg_status.reg, hw25n01gv->timeout);

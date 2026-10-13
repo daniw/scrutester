@@ -53,6 +53,7 @@
 #include "ads131m04.h"
 #include "protection.h"
 #include "splash.h"
+#include "watchdog.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -167,6 +168,7 @@ int main(void)
    * CLI Setup
    */
   cli_init(&huart2);
+  watchdog_report_reset_cause();
 
   /*
    * Init UI control (LEDs)
@@ -221,6 +223,11 @@ int main(void)
   ctrl_main_init();
   statemachine_init();
 
+  /*
+   * Start the watchdog last: it can't be stopped once running, and everything
+   * above (splash, flash/BMS init, 100 ms waits) would otherwise need kicks.
+   */
+  watchdog_init();
 
   /* USER CODE END 2 */
 
@@ -228,6 +235,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  watchdog_kick();
 
 	  cli_loop();
 

@@ -498,6 +498,7 @@ its own if the supply is still present.
 | `timer.c` | Software millisecond timers on TIM2 |
 | `list.c` | Fixed-pool list used by `timer.c` |
 | `error.c` | Error code ring buffer (persistence not implemented) |
+| `watchdog.c` | Independent watchdog (IWDG), register-level; started last in `main()`, kicked once per main-loop iteration |
 | `bq76905.c` | BMS driver (I2C, voltage/current/temp, balancing, SoC) |
 | `ads131m04.c` | External 4-ch ADC driver (SPI, CRC, gain config) |
 | `hrtim.c` | HRTIM init, frequency/duty helpers, SEK short for AMPMETER |
@@ -555,6 +556,23 @@ link, so section sizes and stack headroom still need a full CubeIDE build.
 Errors are queued but **not persisted** — `error_Write()` is an unimplemented
 stub. The queue is guarded against ISR / main-context races.
 
+**Watchdog** (`watchdog.c`): the 25 kHz control loop lives in the ADC ISR, so a
+hung main loop would leave the converter running on stale setpoints. The IWDG
+(LSI ÷ 32, `WATCHDOG_TIMEOUT_MS` = 2000) is started by `watchdog_init()` as the
+last step before the main `while (1)` — it cannot be stopped once running, so
+starting it after init means the boot sequence (splash, flash/BMS init, 100 ms
+waits) needs no kicks. `watchdog_kick()` runs once per main-loop iteration and
+inside `w25n01gv_wait_busy()` (flash erase / icon flashing chain many busy-waits
+far longer than the timeout) and `gpio_power_off()`'s wait loop. **Rule: any new
+blocking wait that can approach ~1 s must call `watchdog_kick()`.** The LSI
+tolerance is wide, so the real timeout can be well below 2 s. The debugger
+freezes the counter (`__HAL_DBGMCU_FREEZE_IWDG()`), so breakpoints don't reset
+the chip. After a reset `watchdog_report_reset_cause()` prints
+"Reset caused by watchdog" and clears the sticky reset flags. `wdtTest` (CLI)
+hangs the main loop on purpose to prove the reset on the bench. The kick is
+unconditional per loop iteration — a dead control ISR alone would not trip it
+(see known issue #15).
+
 **Hardware protection layers:**
 1. **BMS** (BQ76905) — over/under-voltage, over-current, over-temperature per cell; watchdog
 2. **OCP latch** — analog overcurrent detection via shunt; blocks gate driver via `OCP_N`
@@ -593,3 +611,4 @@ stub. The queue is guarded against ISR / main-context races.
 | 12 | Charge start | The multi-phase CHARGE start (§3) has been run on the bench and works with the current tuning (`CTRL_PARAM_CHARGE_PRECHARGE_*`, `CTRL_PARAM_CHARGE_RAMP_s` — see §3 for the values). An audible oscillation/whine was observed while the voltage first rises, clearing after roughly 1 s; suspected but **not confirmed by a scope capture** to be the open-loop, unregulated `PRECHARGE` exciting the `OUT_LV` LC tank near its resonance (10 µH inductor, 33 µF `OUT_LV` bank C22–C36 → ≈8.8 kHz, audible), since nothing damps it while `V_OUT`/`I_OUT` are unmeasured there. Shortening the ramps and raising `PRECHARGE_RATIO` (now 0.99) reduced it to where it's no longer a problem in practice, but the mechanism itself is unconfirmed. Remaining open items: the relay settle time (`CTRL_PARAM_CHARGE_RELAY_SETTLE_ms`, datasheet not in the repo) and the duty model (unloaded synchronous boost, PRIM at full duty) are still bench assumptions, not measured. A future `OUT_LV` divider on a spare ADC channel would allow closing the PRECHARGE loop and would let `I_BAT` (already sampled during CHARGE) or a real voltage loop actively damp this instead of relying on tuning alone. |
 | 13 | Deep-discharge charging | The CUV recovery path (§3) has been run on the bench and works — K1 stays closed, the BMS's CUV fault is masked correctly for the run, and recovery current reaches the pack through Q6/Q5's body diode as expected. The `CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA` (100 mA) target and the reuse of `CTRL_PARAM_CHARGE_RAMP_s` for both the initial 0→10 % ramp and the later 10→100 % handoff once CUV clears are first-pass values, not independently bench-tuned yet — revisit if either ramp turns out too fast/slow in practice. |
 | 14 | LCD driver speed | Fixed (`515be99`): `SPI_PRESCALER_LCD_WRITE` (`lcd.h`) had been left at 16 (10 MHz) since the very first "getting the LCD running" bring-up commit (`317ef30`), a quarter of the 4/40 MHz that `spi.c`'s static `MX_SPI4_Init()` and `bat_source.ioc` (`SPI4.CalculateBaudRate=40.0 MBits/s`) both already specify — the define's own trailing `//4 // 40MHz` was that commit's leftover note of the value actually wanted. `LCD_ReadCmd()` (only called from `LCD_init()`'s panel-ID reads) is what leaves SPI4 at this rate for the rest of runtime, so every draw after boot — splash, menus, this driver's own bulk `LCD_Fill`/`LCD_WriteData` transfers — ran 4× slower than the hardware is configured for. Restored to 4/40 MHz. **Not yet verified on the bench**: nothing in the repo documents 16 as a deliberate signal-integrity fallback, but that possibility can't be ruled out without hardware; if 40 MHz proves unreliable, try 8 (20 MHz) before reverting. |
+| 15 | Watchdog | The IWDG (§8) is **untested on hardware**. Open points: (a) `ON_REQ` is the power self-hold GPIO; on any reset it falls back to its reset state until `gpio_turnOn()` runs right after `MX_GPIO_Init()`. Whether the on/off controller rides through that glitch (device reboots) or drops power (device switches off) is a hardware question to answer with `wdtTest`. (b) The 2000 ms timeout is untuned; check no legitimate path (`saveEEPROM`, `flashIcons`, `eraseFlash Full`, long LCD redraws) approaches it. (c) The kick is unconditional per main-loop pass, so a dead control ISR alone would not trip it — a gated kick (also require `adc_interrupt_cnt` to have advanced) would close that. |

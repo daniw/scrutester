@@ -20,6 +20,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "gpio.h"
+#include "watchdog.h"
 #include <stdio.h>
 
 /* USER CODE BEGIN 0 */
@@ -218,6 +219,7 @@ void gpio_power_off(void) {
 		if (i%10 == 0){
 			printf("Waiting ...\r\n");
 		}
+		watchdog_kick();
 		HAL_Delay(1);
 	}
 	gpio_turnOn();

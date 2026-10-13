@@ -37,6 +37,7 @@
 #include "icon_store.h"
 #include "calibration.h"
 #include "protection.h"
+#include "watchdog.h"
 
 #ifdef CLI_ENABLED
 
@@ -114,6 +115,7 @@ void cmd_setGain(void);
 void cmd_setSerial(void);
 void cmd_flashIcons(void);
 void cmd_printProtection(void);
+void cmd_wdtTest(void);
 #ifdef CHARGE_DEBUG
 void cmd_chargeStep(void);
 void cmd_chargeNext(void);
@@ -155,7 +157,8 @@ void (*cmd_func[])(void) = {
 	cmd_setSerial,
 	cmd_flashIcons,
 	cmd_printProtection,
-	cmd_set1ARef
+	cmd_set1ARef,
+	cmd_wdtTest
 #ifdef CHARGE_DEBUG
 	,
 	cmd_chargeStep,
@@ -199,7 +202,8 @@ const char *cmd_str[] = {
 		"setSerial",
 		"flashIcons",
 		"pProt",
-		"set1ARef"
+		"set1ARef",
+		"wdtTest"
 #ifdef CHARGE_DEBUG
 		,
 		"chargeStep",
@@ -243,7 +247,8 @@ const char *cmd_arg_str[] = {
 		"setSerial [serial number]",
 		"flashIcons",
 		"pProt",
-		"set1ARef [12-bit DAC value]"
+		"set1ARef [12-bit DAC value]",
+		"wdtTest -- hang the main loop on purpose; the watchdog should reset the board in ~2 s"
 #ifdef CHARGE_DEBUG
 		,
 		"chargeStep [0 disable | 1 enable] -- hold CHARGE after precharge (relay open) until chargeNext",
@@ -1714,6 +1719,19 @@ void cmd_flashIcons(void) {
 		printf("Icon store flashed OK.\r\n");
 	} else {
 		printf("Icon store flash FAILED.\r\n");
+	}
+}
+
+/**
+ * Bench check for the watchdog: spins without kicking it, so the board must
+ * reset within WATCHDOG_TIMEOUT_MS and the next boot reports a watchdog reset.
+ * The control ISR keeps running meanwhile, same as in a real main-loop hang.
+ */
+void cmd_wdtTest(void) {
+	printf("Hanging main loop, expecting a watchdog reset in ~%u ms ...\r\n", (unsigned) WATCHDOG_TIMEOUT_MS);
+	// Let the message drain before we stop servicing anything.
+	HAL_Delay(50);
+	while (1) {
 	}
 }
 
