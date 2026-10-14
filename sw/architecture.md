@@ -125,6 +125,7 @@ logic, and the protection interlock.
 | `STATEMACHINE_MODE_SETTINGS` | Settings menu |
 | `STATEMACHINE_MODE_SHUTDOWN` | Controlled power-down sequence |
 | `STATEMACHINE_MODE_CHARGE` | Internal battery charging — auto-entered from IDLE when a 15–24 V supply is detected, not user-selectable |
+| `STATEMACHINE_MODE_EMI` | EMI test (compiled in by default, `-DEMI_MODE_DISABLE` removes it): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (2 %), LV converter regulates `OUT_LV` with the 60V boost loop (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `CTRL_PARAM_EMI_OVERVOLTAGE_mV` / `CTRL_PARAM_EMI_OVERCURRENT_mA` on V_TERM / I_OUT; exempt from the inactivity power-off while running. **Untested on hardware.** |
 
 Settings sub-modes (`statemachine_settings_modes_t`): `MENU`, `BMS`,
 `DISPLAY`, `CALIBRATION`, `ABOUT`.

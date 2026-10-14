@@ -17,14 +17,22 @@
 /* Total number of entries in menu_order[], including ones (like CHARGE)
  * that aren't shown in the home carousel but still need their
  * accent/icon looked up by mode elsewhere. */
+#ifdef EMI_MODE_ENABLED
+#define MENU_TOTAL_LENGTH 10
+#else
 #define MENU_TOTAL_LENGTH 9
+#endif
 
 /* Number of modes shown in the home carousel - the first MENU_ORDER_LENGTH
  * slots of menu_order[]. Entries beyond this (currently just CHARGE, which
  * is auto-entered rather than user-selected) are unreachable via
  * menu_entry_at()/encoder navigation but still found by
  * menu_entry_for_mode(). */
+#ifdef EMI_MODE_ENABLED
+#define MENU_ORDER_LENGTH 9
+#else
 #define MENU_ORDER_LENGTH 8
+#endif
 
 typedef void (*menu_icon_draw_fn)(int16_t cx, int16_t cy, int16_t r, UG_COLOR color);
 

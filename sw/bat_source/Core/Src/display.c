@@ -494,6 +494,12 @@ void display_enter_mode(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_CHARGE:
 		enter_charge();
 		break;
+#ifdef EMI_MODE_ENABLED
+	case STATEMACHINE_MODE_EMI:
+		enter_active_output(mode, "V", "IOUT", "A", "V");
+		draw_footer("ESC: Back", "OUT: Start/Stop");
+		break;
+#endif
 	default:
 		break;
 	}
@@ -529,6 +535,14 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 	case STATEMACHINE_MODE_CHARGE:
 		update_charge(output_active);
 		break;
+#ifdef EMI_MODE_ENABLED
+	case STATEMACHINE_MODE_EMI:
+		update_active_output(mode, output_active,
+				adc_data.converted.v_term_ext_mv_filt / 10,
+				adc_data.converted.i_out_ext_mA,
+				ctrl_main_handle.voltage_reference_mV, ctrl_main_handle.duty);
+		break;
+#endif
 	default:
 		break;
 	}

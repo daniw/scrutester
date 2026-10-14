@@ -173,4 +173,20 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .flags       = MODE_F_LED_OUT_ON | MODE_F_SEK_FORCE_SHORT,
         .adc_trigger = ADC_TRIGGER_NONE,
     },
+
+    /* EMI test: both converters switching, no external load. Entry is table
+     * driven like 60V_OUT, but the run state is toggled by an OUT press (not
+     * hold-to-enable) and BOTH enables are driven, so enable_gpio -- one pin
+     * only -- names the LV one and statemachine.c drives GPIO_HV_CTRL_EN
+     * itself. Both relays are left closed (no OUT_SEL_* bits): the energy
+     * loop closes through them. SHUNT_EN as in 60V; DISCHARGE_N high = sink
+     * off. Triggered off PRIM like 60V_OUT, which is the loop that is closed
+     * (25 kHz = CTRL_FREQ); HV is open loop, so its trigger is irrelevant. */
+    [STATEMACHINE_MODE_EMI] = {
+        .ctrl_mode   = CTRL_MODE_EMI,
+        .aux_io_mask = GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
+        .enable_gpio = GPIO_CONV_CTRL_EN,
+        .flags       = MODE_F_LED_OUT_ON | MODE_F_OUTPUT_ON_ZERO,
+        .adc_trigger = ADC_TRIGGER_HRTIM_PRIM,
+    },
 };
