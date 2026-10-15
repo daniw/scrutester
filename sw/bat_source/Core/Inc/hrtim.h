@@ -44,6 +44,10 @@ extern HRTIM_HandleTypeDef hhrtim1;
 #define HRTIM_CHANNEL_PRIM 1
 #define HRTIM_CHANNEL_SEK 4
 #define HRTIM_CHANNEL_HV 2
+
+/* PERxR for a switching frequency (up/down counting, MUL32 prescaler:
+ * 2.56 GHz / f). Not clamped -- see hrtim_set_freq(). */
+#define HRTIM_PERIOD_FROM_FREQ(freq) (0x98968000U / (uint32_t) (freq))
 /* USER CODE END Private defines */
 
 void MX_HRTIM1_Init(void);
@@ -54,6 +58,7 @@ void HAL_HRTIM_MspPostInit(HRTIM_HandleTypeDef *hhrtim);
 void hrtim_start_timer(void);
 void hrtim_set_freq(uint8_t channel, uint32_t freq);
 void hrtim_set_duty(uint8_t channel, float value);
+void hrtim_set_prim_sek(uint32_t prim_freq, float prim_duty, uint32_t sek_freq, float sek_duty);
 void hrtim_enable(uint8_t channel);
 void hrtim_disable(uint8_t channel);
 void hrtim_sek_force_short(void);

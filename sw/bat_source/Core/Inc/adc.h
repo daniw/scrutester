@@ -95,6 +95,9 @@ extern ADC_HandleTypeDef hadc5;
 #define ADC_TRIGGER_HRTIM_PRIM ADC_EXTERNALTRIG_HRTIM_TRG1
 #define ADC_TRIGGER_HRTIM_HV ADC_EXTERNALTRIG_HRTIM_TRG5
 #define ADC_TRIGGER_HRTIM_SEK ADC_EXTERNALTRIG_HRTIM_TRG3
+/* Timer D, fixed 1 MHz and output-less -- see hrtim_adc_trigger_timer_init().
+ * For modes whose PRIM/SEK frequencies change on the fly. */
+#define ADC_TRIGGER_HRTIM_FIXED ADC_EXTERNALTRIG_HRTIM_TRG7
 
 /* USER CODE END Private defines */
 

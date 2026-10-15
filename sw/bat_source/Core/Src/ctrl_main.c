@@ -15,6 +15,7 @@
 #include "config_store.h"
 #include "bq76905.h"
 #include "mode_table.h"
+#include "vout_region.h"
 
 extern BQ76905_handle bms;
 extern ADC_MEAS_DATA adc_data;
@@ -31,6 +32,24 @@ PID_controller_t ctrl_pi_charge_current;
 PID_controller_t ctrl_pi_charge_voltage;
 PID_controller_t ctrl_pi_voltage_hv;
 PID_controller_t ctrl_pi_hv_iout_limit;
+PID_controller_t ctrl_pi_voltage_4sw;
+
+// RAM-only gains of ctrl_pi_voltage_4sw: unlike every other row of
+// ctrl_pid_table they have no field in config_store.calibration, because
+// growing calibration_t means bumping CONFIG_STORE_PSVN, and
+// config_store_read() answers a PSVN mismatch by overwriting the EEPROM with
+// defaults -- which would erase every device's stored calibration. Tunable
+// with setPI, reset to the CTRL_PARAM_ default on boot; promote to
+// calibration_t (and bump the PSVN deliberately) once the values are settled.
+static float ctrl_pi_voltage_4sw_p;
+static float ctrl_pi_voltage_4sw_i;
+
+// Full-range 60V mode (ctrl_main_ctrl_voltage_wide()). ISR-owned while
+// ctrl_main_handle.mode == CTRL_MODE_60V; initialised by start_ctrl() before
+// it assigns `mode`.
+static vout_region_t vout_region;
+static float vout_duty_prim; // last commanded, used to hand over between regions
+static float vout_duty_sek;
 
 const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
@@ -60,6 +79,9 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = {
 	{ &ctrl_pi_hv_iout_limit,   &config_store.calibration.flyback_current_p,   &config_store.calibration.flyback_current_i,
 	  CTRL_PARAM_HV_CURRENT_P,     CTRL_PARAM_HV_CURRENT_I,
 	  CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW, "HVCurrent" },
+	{ &ctrl_pi_voltage_4sw,      &ctrl_pi_voltage_4sw_p,                           &ctrl_pi_voltage_4sw_i,
+	  CTRL_PARAM_VOLTAGE_4SW_P,        CTRL_PARAM_VOLTAGE_4SW_I,
+	  CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_HIGH,   CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW,   "FourSwitch" },
 };
 
 /******************* Function Prototypes **************************/
@@ -76,6 +98,7 @@ void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
 void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
 static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas);
+static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas);
 
 /**
  * Initializes the controllers
@@ -147,13 +170,18 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		ctrl_main_handle.charge_phase = CHG_PHASE_PRECHARGE;
 		break;
 	case CTRL_MODE_60V:
+		ctrl_PID_reset(&ctrl_pi_voltage_buck);
+		ctrl_PID_reset(&ctrl_pi_voltage_4sw);
 		ctrl_PID_reset(&ctrl_pi_voltage_boost);
 		ctrl_PID_reset(&ctrl_pi_boost_iout_limit);
-		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
-		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
-		// This is set to low, because it is part of the voltage ramp.
-		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_LOW);
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW);
+		// Always start as a buck from 0 duty: the reference ramps up from
+		// 20 % and ctrl_main_ctrl_voltage_wide() walks through the other
+		// regions from there. Same frequency/duty set as RESISTANCE/10A.
+		vout_region = VOUT_REGION_BUCK;
+		vout_duty_prim = 0.0F;
+		vout_duty_sek = CTRL_PARAM_CONST_DUTY_LOW;
+		hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
+				CTRL_PARAM_SW_FREQ_LOW, vout_duty_sek);
 		hrtim_enable(HRTIM_CHANNEL_PRIM);
 		hrtim_enable(HRTIM_CHANNEL_SEK);
 		break;
@@ -265,8 +293,7 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 	switch (ctrl_main_handle.mode) {
 
 	case CTRL_MODE_60V:
-		ctrl_main_ctrl_voltage_boost(meas->v_out,
-				meas->v_term_ext_mv, meas->i_out_ext_mA);
+		ctrl_main_ctrl_voltage_wide(meas);
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
@@ -565,6 +592,112 @@ void ctrl_main_ctrl_voltage_boost(uint32_t voltage_meas_mV,
 	// Apply Duty
 	hrtim_set_duty(HRTIM_CHANNEL_SEK, duty_limited);
 	ctrl_main_handle.duty = duty_limited*1000;
+}
+
+/*
+ * Full-range voltage source: 0..60 V from a battery of ~13 V, as buck,
+ * 4-switch or boost depending on V_ref/V_in (vout_region.h). Runs in the
+ * control ISR, one call per tick, in place of the former boost-only loop.
+ *
+ * One PI per region (buck: ctrl_pi_voltage_buck, 4-switch:
+ * ctrl_pi_voltage_4sw, boost: ctrl_pi_voltage_boost), each driving that
+ * region's control duty; the other leg is parked as described in
+ * vout_region.h. They are all fed the same way the boost loop was: fast
+ * internal v_out for the P term, accurate external V_TERM for the I term.
+ * Only the active one executes, so the others keep a stale integrator --
+ * which is why every region change re-preloads the incoming one.
+ *
+ * Region choice is from the RAMPED reference, so during the start-up ramp the
+ * converter walks buck -> 4-switch -> boost by itself, and an encoder step is
+ * followed straight away.
+ *
+ * Region change = hand-over: the commanded duty pair is turned into the ideal
+ * conversion ratio, the incoming region's control duty for that same ratio
+ * preloads its PI, and frequencies + duties are written together
+ * (hrtim_set_prim_sek()), so the output does not step. The loop-rate trigger
+ * is Timer D, which does not change frequency (see
+ * hrtim_adc_trigger_timer_init()).
+ *
+ * The 1 A boost current limiter is applied in every region, as a cap on the
+ * region's control duty (it only ever acts for positive current).
+ */
+static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
+	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
+			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
+	float ref_V = ctrl_pi_voltage_buck.ref;
+	ctrl_pi_voltage_4sw.ref = ref_V;
+	ctrl_pi_voltage_boost.ref = ref_V;
+
+	float v_out_V = meas->v_out / 1000.0F;
+	float v_acc_V = meas->v_term_ext_mv / 1000.0F;
+
+	float v_in_mV = (float) meas->v_in;
+	if (v_in_mV < CTRL_PARAM_VOUT_VIN_MIN_mV)
+		v_in_mV = CTRL_PARAM_VOUT_VIN_MIN_mV;
+	float ratio = (ref_V * 1000.0F) / v_in_mV;
+
+	vout_region_t next = vout_region_select(vout_region, ratio);
+	PID_controller_t *pi;
+	switch (next) {
+	case VOUT_REGION_BUCK:        pi = &ctrl_pi_voltage_buck; break;
+	case VOUT_REGION_FOUR_SWITCH: pi = &ctrl_pi_voltage_4sw;  break;
+	default:                      pi = &ctrl_pi_voltage_boost; break;
+	}
+
+	uint8_t changed = (next != vout_region);
+	if (changed) {
+		float m = vout_region_ratio_from_duties(vout_duty_prim, vout_duty_sek);
+		float d = vout_region_duty_for_ratio(next, m);
+		// action = P + I, so preload I with what is left after this tick's P.
+		pi->prev_I_action = d - pi->P_gain * (pi->ref - v_out_V);
+		pi->sat_flag = 0;
+		// The limiter's duty scale differs per region; let it re-find its
+		// own level instead of carrying one over.
+		ctrl_pi_boost_iout_limit.prev_I_action = ctrl_pi_boost_iout_limit.sat_limit_high;
+		vout_region = next;
+	}
+
+	ctrl_PID_controller_execute(pi, v_out_V, v_acc_V, 0);
+	ctrl_PID_controller_execute(&ctrl_pi_boost_iout_limit,
+			meas->i_out_ext_mA / 1000.0F, meas->i_out_ext_mA / 1000.0F, 0);
+
+	float duty = pi->action;
+	if (ctrl_pi_boost_iout_limit.action < duty)
+		duty = ctrl_pi_boost_iout_limit.action;
+
+	switch (vout_region) {
+	case VOUT_REGION_BUCK:
+		vout_duty_prim = duty;
+		vout_duty_sek = CTRL_PARAM_CONST_DUTY_LOW;
+		if (changed)
+			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
+					CTRL_PARAM_SW_FREQ_LOW, vout_duty_sek);
+		else
+			hrtim_set_duty(HRTIM_CHANNEL_PRIM, vout_duty_prim);
+		break;
+	case VOUT_REGION_FOUR_SWITCH:
+		vout_duty_prim = duty;
+		vout_duty_sek = duty;
+		if (changed)
+			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
+					CTRL_PARAM_SW_FREQ_HIGH, vout_duty_sek);
+		else {
+			hrtim_set_duty(HRTIM_CHANNEL_PRIM, vout_duty_prim);
+			hrtim_set_duty(HRTIM_CHANNEL_SEK, vout_duty_sek);
+		}
+		break;
+	case VOUT_REGION_BOOST:
+	default:
+		vout_duty_prim = CTRL_PARAM_CONST_DUTY_HIGH;
+		vout_duty_sek = duty;
+		if (changed)
+			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_LOW, vout_duty_prim,
+					CTRL_PARAM_SW_FREQ_HIGH, vout_duty_sek);
+		else
+			hrtim_set_duty(HRTIM_CHANNEL_SEK, vout_duty_sek);
+		break;
+	}
+	ctrl_main_handle.duty = duty * 1000;
 }
 
 void ctrl_main_ctrl_current(int16_t current_meas_mA,

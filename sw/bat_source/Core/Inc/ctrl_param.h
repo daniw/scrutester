@@ -32,6 +32,25 @@
 #define CTRL_PARAM_BOOST_IOUT_LIMIT_P (0.01F)
 #define CTRL_PARAM_BOOST_IOUT_LIMIT_I (1.0F/CTRL_FREQ)
 
+// ---- Full-range voltage source (60V mode): buck / 4-switch / boost --------
+// Region edges are at V_ref/V_in = 1 -/+ MARGIN (see vout_region.h). The
+// margin is not free: the buck region has to reach (1 - MARGIN) * V_in with a
+// PI whose duty ceiling is CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH (0.8), i.e.
+// D_prim = (1 - MARGIN) * 0.985 must stay below it -- hence 0.25, not a
+// tighter band. The way back needs HYSTERESIS more ratio, to stop flapping.
+#define CTRL_PARAM_VOUT_REGION_MARGIN 0.25F
+#define CTRL_PARAM_VOUT_REGION_HYSTERESIS 0.05F
+// Lowest V_IN used for the region ratio, against a dropped/unread rail.
+#define CTRL_PARAM_VOUT_VIN_MIN_mV 6000
+
+// 4-switch region voltage loop. Plant gain dV/dD = V_in/(1-D)^2 is ~4x the
+// buck region's at D~0.5, so the gains start lower. RAM-only (see
+// ctrl_pi_voltage_4sw in ctrl_main.c): tunable with setPI, not saved.
+#define CTRL_PARAM_VOLTAGE_4SW_P 0.0025F
+#define CTRL_PARAM_VOLTAGE_4SW_I (0.25F/CTRL_FREQ)
+#define CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_HIGH 0.8F
+#define CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW 0.0F
+
 #define CTRL_PARAM_CURRENT_P 0.001F
 #define CTRL_PARAM_CURRENT_I (0.1F/CTRL_FREQ)
 #define CTRL_PARAM_CURRENT_DUTY_SAT_HIGH 0.5F

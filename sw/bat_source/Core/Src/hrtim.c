@@ -22,6 +22,9 @@
 
 /* USER CODE BEGIN 0 */
 #include "stdio.h"
+#include "ctrl_param.h"
+
+static void hrtim_adc_trigger_timer_init(void);
 /* USER CODE END 0 */
 
 HRTIM_HandleTypeDef hhrtim1;
@@ -342,7 +345,84 @@ void HAL_HRTIM_MspDeInit(HRTIM_HandleTypeDef* hrtimHandle)
  * Starts all HRTIM Channel counters
  */
 void hrtim_start_timer(void) {
-	HRTIM1->sMasterRegs.MCR |= (HRTIM_MCR_TBCEN | HRTIM_MCR_TCCEN | HRTIM_MCR_TECEN);
+	hrtim_adc_trigger_timer_init();
+	HRTIM1->sMasterRegs.MCR |= (HRTIM_MCR_TBCEN | HRTIM_MCR_TCCEN | HRTIM_MCR_TECEN
+			| HRTIM_MCR_TDCEN);
+}
+
+/**
+ * Timer D as a free-running, output-less 1 MHz time base whose only job is to
+ * pace the control-loop ADC conversions (ADC trigger 7, see
+ * ADC_TRIGGER_HRTIM_FIXED in adc.h).
+ *
+ * Why not PRIM or SEK: the full-range voltage mode (see vout_region.h) moves
+ * each of those between 50 kHz and 1 MHz on the fly, and a post-scaled
+ * period-event trigger follows its timer's frequency -- the loop would run at
+ * 1.25 kHz whenever the triggering leg is the slow one. Timer D never changes.
+ * Not Timer A/C either: C is the HV flyback (350 kHz, also running in the EMI
+ * test), and trigger 2/4 (usable from D) do not reach ADC3/4/5.
+ *
+ * Mirrors the Timer B/E ADC setup in MX_HRTIM1_Init(): up/down counting,
+ * trigger on the crest, post-scaler 19 (/20) -- so a 1 MHz timer gives the
+ * same 50 kHz conversion rate (25 kHz after the halving in
+ * HAL_ADC_ConvCpltCallback()) as PRIM/SEK at CTRL_PARAM_SW_FREQ_HIGH.
+ *
+ * The same configuration is recorded in bat_source.ioc (HRTIM1.*_TD,
+ * *ADCTrigger7 keys). It is set up here, in a USER CODE area, rather than in
+ * MX_HRTIM1_Init() because the .ioc keys were written by hand, not by
+ * CubeMX: if CubeMX generates a Timer D / trigger 7 block from them, this
+ * function becomes redundant and can be deleted.
+ */
+static void hrtim_adc_trigger_timer_init(void) {
+	HRTIM_ADCTriggerCfgTypeDef adc = {0};
+	HRTIM_TimeBaseCfgTypeDef tb = {0};
+	HRTIM_TimerCtlTypeDef ctl = {0};
+	HRTIM_TimerCfgTypeDef cfg = {0};
+
+	tb.Period = HRTIM_PERIOD_FROM_FREQ(CTRL_PARAM_SW_FREQ_HIGH);
+	tb.RepetitionCounter = 0x00;
+	tb.PrescalerRatio = HRTIM_PRESCALERRATIO_MUL32;
+	tb.Mode = HRTIM_MODE_CONTINUOUS;
+	if (HAL_HRTIM_TimeBaseConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, &tb) != HAL_OK)
+		Error_Handler();
+
+	ctl.UpDownMode = HRTIM_TIMERUPDOWNMODE_UPDOWN;
+	ctl.GreaterCMP1 = HRTIM_TIMERGTCMP1_EQUAL;
+	ctl.DualChannelDacEnable = HRTIM_TIMER_DCDE_DISABLED;
+	if (HAL_HRTIM_WaveformTimerControl(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, &ctl) != HAL_OK)
+		Error_Handler();
+	if (HAL_HRTIM_RollOverModeConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D,
+			HRTIM_TIM_ADROM_CREST) != HAL_OK)
+		Error_Handler();
+
+	// Same non-output timer settings the HV timer (C) uses.
+	cfg.HalfModeEnable = HRTIM_HALFMODE_DISABLED;
+	cfg.InterleavedMode = HRTIM_INTERLEAVED_MODE_DISABLED;
+	cfg.StartOnSync = HRTIM_SYNCSTART_DISABLED;
+	cfg.ResetOnSync = HRTIM_SYNCRESET_DISABLED;
+	cfg.DACSynchro = HRTIM_DACSYNC_NONE;
+	cfg.PreloadEnable = HRTIM_PRELOAD_DISABLED;
+	cfg.UpdateGating = HRTIM_UPDATEGATING_INDEPENDENT;
+	cfg.BurstMode = HRTIM_TIMERBURSTMODE_MAINTAINCLOCK;
+	cfg.RepetitionUpdate = HRTIM_UPDATEONREPETITION_DISABLED;
+	cfg.PushPull = HRTIM_TIMPUSHPULLMODE_DISABLED;
+	cfg.FaultEnable = HRTIM_TIMFAULTENABLE_NONE;
+	cfg.FaultLock = HRTIM_TIMFAULTLOCK_READWRITE;
+	cfg.DeadTimeInsertion = HRTIM_TIMDEADTIMEINSERTION_DISABLED;
+	cfg.DelayedProtectionMode = HRTIM_TIMER_D_E_DELAYEDPROTECTION_DISABLED;
+	cfg.UpdateTrigger = HRTIM_TIMUPDATETRIGGER_NONE;
+	cfg.ResetTrigger = HRTIM_TIMRESETTRIGGER_NONE;
+	cfg.ResetUpdate = HRTIM_TIMUPDATEONRESET_DISABLED;
+	cfg.ReSyncUpdate = HRTIM_TIMERESYNC_UPDATE_UNCONDITIONAL;
+	if (HAL_HRTIM_WaveformTimerConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, &cfg) != HAL_OK)
+		Error_Handler();
+
+	adc.UpdateSource = HRTIM_ADCTRIGGERUPDATE_TIMER_D;
+	adc.Trigger = HRTIM_ADCTRIGGEREVENT579_TIMERD_PERIOD;
+	if (HAL_HRTIM_ADCTriggerConfig(&hhrtim1, HRTIM_ADCTRIGGER_7, &adc) != HAL_OK)
+		Error_Handler();
+	if (HAL_HRTIM_ADCPostScalerConfig(&hhrtim1, HRTIM_ADCTRIGGER_7, 19) != HAL_OK)
+		Error_Handler();
 }
 
 /**
@@ -361,6 +441,46 @@ static uint8_t hrtim_channel_is_valid(uint8_t channel) {
 }
 
 /**
+ * Clamps a PERxR value to what the HRTIM can actually use.
+ *
+ * PERxR is a 16-bit register subject to the same HRTIM-imposed limits as
+ * CMP1xR (see hrtim_set_duty() below): a too-low freq makes the quotient
+ * overflow 16 bits and silently truncate to an arbitrary period, and a
+ * too-high freq can undershoot HRTIM's minimum usable period. Clamp to
+ * the same [0x60, 0xFFDF] window hrtim_set_duty() already enforces, so
+ * the timer always ends up at a well-defined, bounded frequency instead
+ * of an arbitrary truncated one - consistent with hrtim_set_duty()'s
+ * existing silent-clamp behaviour.
+ */
+static uint32_t hrtim_clamp_period(uint32_t period) {
+	if (period < 0x60)
+		period = 0x60;
+	else if (period > 0xFFDF)
+		period = 0xFFDF;
+	return period;
+}
+
+/**
+ * Compare value for a duty in pu (0..1) at a given period, with the same
+ * stricter HRTIM limit hrtim_set_duty() always applied.
+ */
+static uint32_t hrtim_duty_to_compare(uint32_t period, float value) {
+	uint32_t duty;
+
+	if (value < 0.0F)
+		value = 0.0F;
+	else if (value > 1.0F)
+		value = 1.0F;
+	duty = (period * value);
+	// Enforce more strict limit imposed by HRTIM
+	if (duty < 0x60)
+		duty = 0x60;
+	else if (duty > 0xFFDF)
+		duty = 0xFFDF;
+	return duty;
+}
+
+/**
  * Sets the frequency for the specified channel
  * @param channel Channel for which to set the frequency.
  * @param freq Frequency to set in Hz.
@@ -376,20 +496,8 @@ void hrtim_set_freq(uint8_t channel, uint32_t freq) {
 	if (freq == 0)
 		return;
 
-	period = (0x98968000 / freq);
-	// PERxR is a 16-bit register subject to the same HRTIM-imposed limits as
-	// CMP1xR (see hrtim_set_duty() below): a too-low freq makes the quotient
-	// overflow 16 bits and silently truncate to an arbitrary period, and a
-	// too-high freq can undershoot HRTIM's minimum usable period. Clamp to
-	// the same [0x60, 0xFFDF] window hrtim_set_duty() already enforces, so
-	// the timer always ends up at a well-defined, bounded frequency instead
-	// of an arbitrary truncated one - consistent with hrtim_set_duty()'s
-	// existing silent-clamp behaviour.
-	if (period < 0x60)
-		period = 0x60;
-	else if (period > 0xFFDF)
-		period = 0xFFDF;
-
+	period = HRTIM_PERIOD_FROM_FREQ(freq);
+	period = hrtim_clamp_period(period);
 	HRTIM1->sTimerxRegs[channel].PERxR = period;
 	//HRTIM1->sTimerxRegs[channel].TIMxCR = (HRTIM1->sTimerxRegs[channel].TIMxCR & (~ HRTIM_PRESCALERRATIO_DIV4)) | HRTIM_PRESCALERRATIO_MUL32;
 }
@@ -401,24 +509,44 @@ void hrtim_set_freq(uint8_t channel, uint32_t freq) {
  */
 
 void hrtim_set_duty(uint8_t channel, float value) {
-	uint32_t duty;
-
 	if (!hrtim_channel_is_valid(channel))
 		return;
 
-	if (value < 0.0F)
-		value = 0.0F;
-	else if (value > 1.0F)
-		value = 1.0F;
-	duty = (HRTIM1->sTimerxRegs[channel].PERxR * value);
-	// Enforce more strict limit imposed by HRTIM
-	if (duty < 0x60)
-		duty = 0x60;
-	else if (duty > 0xFFDF)
-		duty = 0xFFDF;
-	HRTIM1->sTimerxRegs[channel].CMP1xR = duty;
+	HRTIM1->sTimerxRegs[channel].CMP1xR = hrtim_duty_to_compare(
+			HRTIM1->sTimerxRegs[channel].PERxR, value);
+}
 
+/**
+ * Sets frequency and duty of PRIM and SEK so that all four new values take
+ * effect together, at the next period boundary of each timer.
+ *
+ * Both timers have preload enabled and update on their own reset (see
+ * MX_HRTIM1_Init()), so a plain hrtim_set_freq() + hrtim_set_duty() pair is
+ * only safe while no update event falls between the two writes -- otherwise
+ * one period runs with the new PERxR and the old CMP1xR (or vice versa),
+ * which for a 1 MHz <-> 50 kHz change is a duty off by a factor of 20. The
+ * update-disable bits (CR1.TxUDIS) hold the preload registers back while all
+ * four are written. The duty is computed from the period being written, not
+ * read back from PERxR, so it does not depend on whether a read returns the
+ * preload or the active value.
+ *
+ * Cost: the update is delayed by up to one period of the slower of the two
+ * old frequencies (20 us at 50 kHz).
+ */
+void hrtim_set_prim_sek(uint32_t prim_freq, float prim_duty,
+		uint32_t sek_freq, float sek_duty) {
+	if (prim_freq == 0 || sek_freq == 0)
+		return;
 
+	uint32_t prim_period = hrtim_clamp_period(HRTIM_PERIOD_FROM_FREQ(prim_freq));
+	uint32_t sek_period = hrtim_clamp_period(HRTIM_PERIOD_FROM_FREQ(sek_freq));
+
+	HRTIM1->sCommonRegs.CR1 |= (HRTIM_CR1_TBUDIS | HRTIM_CR1_TEUDIS);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].PERxR = prim_period;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].CMP1xR = hrtim_duty_to_compare(prim_period, prim_duty);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].PERxR = sek_period;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].CMP1xR = hrtim_duty_to_compare(sek_period, sek_duty);
+	HRTIM1->sCommonRegs.CR1 &= ~(HRTIM_CR1_TBUDIS | HRTIM_CR1_TEUDIS);
 }
 
 void hrtim_enable(uint8_t channel) {

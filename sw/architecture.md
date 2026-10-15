@@ -115,7 +115,7 @@ logic, and the protection interlock.
 | Mode | Description |
 |------|-------------|
 | `STATEMACHINE_IDLE` | Startup / menu navigation |
-| `STATEMACHINE_MODE_60V_OUT` | 60 V regulated voltage output (hold OUT to enable) |
+| `STATEMACHINE_MODE_60V_OUT` | Regulated voltage output, 0–60 V, buck / 4-switch / boost chosen on the fly (hold OUT to enable) — see §"Full-range voltage source" |
 | `STATEMACHINE_MODE_10A_OUT` | 10 A regulated current output (hold OUT to enable) |
 | `STATEMACHINE_MODE_RESISTANCE_1A` | Milliohmmeter, 1 A pulsed excitation |
 | `STATEMACHINE_MODE_RESISTANCE_1mA` | Ohmmeter, 1 mA excitation |
@@ -186,13 +186,37 @@ fields, its defaults and its duty saturation limits. `ctrl_main_init()`,
 | # | Name | Used for |
 |---|------|----------|
 | 0 | Buck | Buck voltage (resistance modes) |
-| 1 | Boost | 60 V output |
+| 1 | Boost | Boost region of the voltage source (60V_OUT) |
 | 2 | Current | 10 A output |
 | 3 | BoostIoutLimit | Output current limiter on the boost path |
 | 4 | ChargeCurrent | CC phase of charging |
 | 5 | ChargeVoltage | CV tail of charging |
 | 6 | HVVoltage | ISOMETER HV flyback voltage |
 | 7 | HVCurrent | ISOMETER leakage-current limiter |
+| 8 | FourSwitch | 4-switch region of the voltage source. **RAM-only**: no EEPROM field (see below), `setPI` works, `saveEEPROM` does not persist it |
+
+### Full-range voltage source (60V_OUT)
+
+The LV converter is a 4-switch buck-boost, `V_out = D_prim·V_in/(1 − D_sek)`.
+`ctrl_main_ctrl_voltage_wide()` picks the region from `m = V_ref/V_in`
+(`vout_region.c`, host-tested by `tools/test_vout_region.sh`), using the ramped
+reference so the start-up ramp walks through the regions by itself:
+
+| Region | Entered when | PRIM | SEK | PI |
+|--------|--------------|------|-----|----|
+| BUCK | m < 1 − `VOUT_REGION_MARGIN` (0.75) | 1 MHz, duty = PI | 50 kHz, `CONST_DUTY_LOW` | Buck |
+| FOUR_SWITCH | in between | 1 MHz, D | 1 MHz, same D | FourSwitch |
+| BOOST | m > 1 + margin (1.25) | 50 kHz, `CONST_DUTY_HIGH` | 1 MHz, duty = PI | Boost |
+
+The way back needs `VOUT_REGION_HYSTERESIS` (0.05) more. The margin is set by
+the buck PI's 0.8 duty ceiling, not freely. A region change turns the last
+commanded duties into the ideal ratio, preloads the incoming PI with the duty
+for that ratio, and writes both frequencies and both duties with
+`hrtim_set_prim_sek()` (update-disable bits, so PERxR/CMP1xR change together at
+a period boundary). The FourSwitch gains are RAM-only because growing
+`calibration_t` means bumping `CONFIG_STORE_PSVN`, which makes
+`config_store_read()` overwrite the EEPROM with defaults (erasing
+calibration). **Untested on hardware**; all gains placeholder.
 
 **Key parameters** (`ctrl_param.h`):
 
@@ -362,7 +386,11 @@ ADC5 uses 256× hardware oversampling with 4-bit right shift (effective 16-bit r
 
 `adc_configure_mode()` re-points triggers and channels per operating mode.
 HRTIM ADC triggers: TRG1 ← Timer B (PRIM, ÷20), TRG2 ← Timer C (HV, ÷15),
-TRG3 ← Timer E (SEK, ÷20).
+TRG3 ← Timer E (SEK, ÷20), TRG7 ← Timer D (fixed 1 MHz, no outputs, ÷20 —
+`ADC_TRIGGER_HRTIM_FIXED`, used by the voltage source because PRIM/SEK change
+frequency there; set up in `hrtim_adc_trigger_timer_init()` and also recorded
+in `bat_source.ioc` — the `.ioc` keys were added by hand, so check that CubeMX
+accepts them before relying on regeneration).
 
 **Concurrency**: `adc_data.raw` is DMA-written and declared `volatile`.
 `adc_data.converted` is computed in the ISR into a private instance and copied

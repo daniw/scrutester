@@ -32,13 +32,18 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
 
     /* Hold-OUT-to-enable: ctrl_main_start_ctrl()/GPIO_CONV_CTRL_EN are
      * asserted from statemachine_step()'s per-tick OUT handling, not here
-     * (no MODE_F_AUTOSTART_CTRL) - hence output_on is forced to 0 at entry. */
+     * (no MODE_F_AUTOSTART_CTRL) - hence output_on is forced to 0 at entry.
+     *
+     * Full-range 0..60 V (buck / 4-switch / boost, see vout_region.h): PRIM
+     * and SEK change frequency on the fly, so the loop cannot be paced by
+     * either of them -- it runs off the fixed Timer D trigger instead
+     * (25 kHz = CTRL_FREQ, same as before). */
     [STATEMACHINE_MODE_60V_OUT] = {
         .ctrl_mode   = CTRL_MODE_60V,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
         .enable_gpio = GPIO_CONV_CTRL_EN,
         .flags       = MODE_F_LED_OUT_ON | MODE_F_OUTPUT_ON_ZERO,
-        .adc_trigger = ADC_TRIGGER_HRTIM_SEK,
+        .adc_trigger = ADC_TRIGGER_HRTIM_FIXED,
     },
 
     /* Same shape as 60V_OUT -- hold-OUT-to-enable, output_on forced to 0. */
