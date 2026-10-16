@@ -85,8 +85,6 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = {
 /******************* Function Prototypes **************************/
 void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate);
-void ctrl_main_ctrl_voltage_boost(uint32_t voltage_meas_mV,
-		int32_t voltage_meas_accurate, int32_t current_meas_ext_mA);
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate);
 void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
@@ -136,6 +134,30 @@ ctrl_mode_t statemachine_mode_to_ctrl_mode(statemachine_modes_t mode) {
 	return mode_table[mode].ctrl_mode;
 }
 
+/* LV start of the full-range voltage loop (60V, EMI). */
+static void ctrl_main_start_voltage_wide(void) {
+	ctrl_PID_reset(&ctrl_pi_voltage_buck);
+	ctrl_PID_reset(&ctrl_pi_voltage_4sw);
+	ctrl_PID_reset(&ctrl_pi_voltage_boost);
+	ctrl_PID_reset(&ctrl_pi_boost_iout_limit);
+	// Start the limiter at its ceiling: from 0 it held the duty back
+	// while the voltage PI wound up, overshooting 5 V to ~9 V.
+	ctrl_pi_boost_iout_limit.prev_I_action = ctrl_pi_boost_iout_limit.sat_limit_high;
+	// Start as buck from 0 duty; the ramped reference walks the regions.
+	vout_region = VOUT_REGION_BUCK;
+	vout_vin_filt_mV = 0.0F;
+	vout_region_hold = 0;
+	vout_duty_prim = 0.0F;
+	vout_duty_sek = CTRL_PARAM_CONST_DUTY_LOW;
+	hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
+			CTRL_PARAM_SW_FREQ_LOW, vout_duty_sek);
+	// Parked-leg sync before the outputs are enabled (hrtim.c).
+	hrtim_burst_set_idle_cycles(CTRL_PARAM_VOUT_SYNC_CYCLES);
+	hrtim_sync_start(HRTIM_CHANNEL_PRIM);
+	hrtim_enable(HRTIM_CHANNEL_PRIM);
+	hrtim_enable(HRTIM_CHANNEL_SEK);
+}
+
 void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	switch (mode) {
 
@@ -168,26 +190,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		ctrl_main_handle.charge_phase = CHG_PHASE_PRECHARGE;
 		break;
 	case CTRL_MODE_60V:
-		ctrl_PID_reset(&ctrl_pi_voltage_buck);
-		ctrl_PID_reset(&ctrl_pi_voltage_4sw);
-		ctrl_PID_reset(&ctrl_pi_voltage_boost);
-		ctrl_PID_reset(&ctrl_pi_boost_iout_limit);
-		// Start the limiter at its ceiling: from 0 it held the duty back
-		// while the voltage PI wound up, overshooting 5 V to ~9 V.
-		ctrl_pi_boost_iout_limit.prev_I_action = ctrl_pi_boost_iout_limit.sat_limit_high;
-		// Start as buck from 0 duty; the ramped reference walks the regions.
-		vout_region = VOUT_REGION_BUCK;
-		vout_vin_filt_mV = 0.0F;
-		vout_region_hold = 0;
-		vout_duty_prim = 0.0F;
-		vout_duty_sek = CTRL_PARAM_CONST_DUTY_LOW;
-		hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
-				CTRL_PARAM_SW_FREQ_LOW, vout_duty_sek);
-		// Parked-leg sync before the outputs are enabled (hrtim.c).
-		hrtim_burst_set_idle_cycles(CTRL_PARAM_VOUT_SYNC_CYCLES);
-		hrtim_sync_start(HRTIM_CHANNEL_PRIM);
-		hrtim_enable(HRTIM_CHANNEL_PRIM);
-		hrtim_enable(HRTIM_CHANNEL_SEK);
+		ctrl_main_start_voltage_wide();
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
@@ -218,20 +221,10 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 
 #ifdef EMI_MODE_ENABLED
 	case CTRL_MODE_EMI:
-		// LV side is exactly the 60V boost start (PRIM duty is ramped up in
-		// lockstep with the reference by ctrl_main_ctrl_voltage_boost()).
-		ctrl_PID_reset(&ctrl_pi_voltage_boost);
-		ctrl_PID_reset(&ctrl_pi_boost_iout_limit);
-		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
-		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
-		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_LOW);
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW);
-		// HV flyback: open loop at a constant duty, no PI, nothing for the
-		// ISR to do with it afterwards.
+		// LV side as in 60V; HV flyback open loop at a constant duty.
+		ctrl_main_start_voltage_wide();
 		hrtim_set_freq(HRTIM_CHANNEL_HV, CTRL_PARAM_SW_FREQ_HV);
 		hrtim_set_duty(HRTIM_CHANNEL_HV, CTRL_PARAM_EMI_HV_DUTY);
-		hrtim_enable(HRTIM_CHANNEL_PRIM);
-		hrtim_enable(HRTIM_CHANNEL_SEK);
 		hrtim_enable(HRTIM_CHANNEL_HV);
 		break;
 #endif
@@ -324,14 +317,11 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 	switch (ctrl_main_handle.mode) {
 
 	case CTRL_MODE_60V:
+#ifdef EMI_MODE_ENABLED
+	case CTRL_MODE_EMI: // HV runs open loop
+#endif
 		ctrl_main_ctrl_voltage_wide(meas);
 		break;
-#ifdef EMI_MODE_ENABLED
-	case CTRL_MODE_EMI: // boost-only LV loop; HV runs open loop
-		ctrl_main_ctrl_voltage_boost(meas->v_out,
-				meas->v_term_ext_mv, meas->i_out_ext_mA);
-		break;
-#endif
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
 		ctrl_main_ctrl_voltage_buck(meas->v_out,
@@ -544,10 +534,7 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
  *
  * Returns the multiplier just applied to `target` (1.0F once the ramp has
  * saturated past 1.0F, otherwise the freshly-incremented
- * ctrl_main_handle.ramp), so a caller that needs to ramp something else in
- * lockstep with the reference -- currently only
- * ctrl_main_ctrl_voltage_boost()'s PRIM duty -- can reuse the exact value
- * instead of re-deriving it from ctrl_main_handle.ramp after the fact.
+ * ctrl_main_handle.ramp).
  */
 static float ctrl_apply_ramped_ref(PID_controller_t *c, float target, float div) {
 	float multiplier;
@@ -575,10 +562,7 @@ static float ctrl_apply_ramped_ref(PID_controller_t *c, float target, float div)
  *
  * Returns the multiplier just applied to `target` (1.0F once the ramp has
  * saturated past 1.0F, otherwise the freshly-incremented
- * ctrl_main_handle.ramp), so a caller that needs to ramp something else in
- * lockstep with the reference -- currently only
- * ctrl_main_ctrl_voltage_boost()'s PRIM duty -- can reuse the exact value
- * instead of re-deriving it from ctrl_main_handle.ramp after the fact.
+ * ctrl_main_handle.ramp).
  */
 static float ctrl_apply_stepped_ref(PID_controller_t *c, float target) {
 	float multiplier;
@@ -614,32 +598,6 @@ void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 	ctrl_main_handle.duty = ctrl_pi_voltage_buck.action*1000;
 }
 
-
-void ctrl_main_ctrl_voltage_boost(uint32_t voltage_meas_mV,
-		int32_t voltage_meas_accurate_mV, int32_t current_meas_ext_mA) {
-	// Boost also ramps HRTIM_CHANNEL_PRIM's duty in lockstep with the
-	// voltage reference (fixed at CTRL_PARAM_CONST_DUTY_HIGH once the ramp
-	// has saturated, otherwise scaled by the same in-flight ramp
-	// multiplier) -- reuse the multiplier ctrl_apply_ramped_ref() just
-	// applied to the ref rather than re-deriving it.
-	float ramp_multiplier = ctrl_apply_ramped_ref(&ctrl_pi_voltage_boost,
-			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
-	hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH * ramp_multiplier);
-
-	ctrl_PID_controller_execute(&ctrl_pi_voltage_boost, voltage_meas_mV / 1000.0F,
-			voltage_meas_accurate_mV / 1000.0F, 0);
-
-	ctrl_PID_controller_execute(&ctrl_pi_boost_iout_limit,
-			current_meas_ext_mA / 1000.0F, current_meas_ext_mA / 1000.0F, 0);
-
-	float duty_limited = ctrl_pi_voltage_boost.action;
-	if (ctrl_pi_boost_iout_limit.action < duty_limited)
-		duty_limited = ctrl_pi_boost_iout_limit.action;
-
-	// Apply Duty
-	hrtim_set_duty(HRTIM_CHANNEL_SEK, duty_limited);
-	ctrl_main_handle.duty = duty_limited*1000;
-}
 
 /*
  * Full-range voltage source (0..60 V): buck, 4-switch or boost by

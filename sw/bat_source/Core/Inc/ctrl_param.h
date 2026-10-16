@@ -101,7 +101,7 @@
 
 // ---- EMI test mode (see EMI_MODE_ENABLED in statemachine.h) ---------------
 // HV flyback runs open-loop at a fixed duty while the LV converter regulates
-// OUT_LV with the 60V boost loop; the LV loop pushes the flyback's energy
+// OUT_LV with the 60V full-range loop; the LV loop pushes the flyback's energy
 // back into the battery. All placeholders pending bench bring-up.
 #define CTRL_PARAM_EMI_HV_DUTY 0.02F
 // Encoder-adjustable LV setpoint: starts at ..._DEFAULT_mV, resolution 500 mV
