@@ -90,34 +90,24 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
+/* main() lives here, not in the generated part: the .ioc has NoMain set,
+ * so CubeMX never touches it (and gpio_turnOn() can sit right after
+ * MX_GPIO_Init()). */
 int main(void)
 {
 
-  /* USER CODE BEGIN 1 */
 	EVENT_STRUCT e;
-  /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
-  /* USER CODE BEGIN Init */
 
-  /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
-  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
@@ -229,10 +219,8 @@ int main(void)
    */
   watchdog_init();
 
-  /* USER CODE END 2 */
 
   /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
   while (1)
   {
 	  watchdog_kick();
@@ -275,12 +263,16 @@ int main(void)
 	   */
 	  HAL_Delay(1);
 
-    /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
   }
-  /* USER CODE END 3 */
 }
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
 
 /**
   * @brief System Clock Configuration

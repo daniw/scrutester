@@ -98,6 +98,9 @@ void ctrl_main_charge_handover(int32_t v_in_mV, int32_t v_term_mV);
 /* Called once the relay has settled: the current reference starts ramping
  * from 0 A. */
 void ctrl_main_charge_start_ramp(void);
+/* 60V mode bench diagnostics: region (0 buck, 1 4sw, 2 boost), number of
+ * region changes, last V_ref/V_in ratio. */
+void ctrl_main_vout_diag(uint8_t *region, uint32_t *changes, float *ratio);
 
 /* Present charge-current reference in mA (for the stuck-open check). */
 int32_t ctrl_main_charge_reference_mA(void);

@@ -185,10 +185,10 @@ fields, its defaults and its duty saturation limits. `ctrl_main_init()`,
 
 | # | Name | Used for |
 |---|------|----------|
-| 0 | Buck | Buck voltage (resistance modes) |
+| 0 | Buck | Buck voltage (resistance modes, buck region of the voltage source) |
 | 1 | Boost | Boost region of the voltage source (60V_OUT) |
 | 2 | Current | 10 A output |
-| 3 | BoostIoutLimit | Output current limiter on the boost path |
+| 3 | BoostIoutLimit | Output current limiter of the voltage source (all regions) |
 | 4 | ChargeCurrent | CC phase of charging |
 | 5 | ChargeVoltage | CV tail of charging |
 | 6 | HVVoltage | ISOMETER HV flyback voltage |
@@ -208,15 +208,34 @@ reference so the start-up ramp walks through the regions by itself:
 | FOUR_SWITCH | in between | 1 MHz, D | 1 MHz, same D | FourSwitch |
 | BOOST | m > 1 + margin (1.25) | 50 kHz, `CONST_DUTY_HIGH` | 1 MHz, duty = PI | Boost |
 
-The way back needs `VOUT_REGION_HYSTERESIS` (0.05) more. The margin is set by
-the buck PI's 0.8 duty ceiling, not freely. A region change turns the last
-commanded duties into the ideal ratio, preloads the incoming PI with the duty
-for that ratio, and writes both frequencies and both duties with
-`hrtim_set_prim_sek()` (update-disable bits, so PERxR/CMP1xR change together at
-a period boundary). The FourSwitch gains are RAM-only because growing
-`calibration_t` means bumping `CONFIG_STORE_PSVN`, which makes
-`config_store_read()` overwrite the EEPROM with defaults (erasing
-calibration). **Untested on hardware**; all gains placeholder.
+The way back needs `VOUT_REGION_HYSTERESIS` (0.05) more. The ratio uses V_IN
+low-passed (`VOUT_VIN_FILTER_s`, 10 ms) and each region is held at least
+`VOUT_REGION_DWELL_s` (20 ms); with the raw sample it toggled at the 1.25 edge.
+A region change preloads the incoming PI with the duty that gives the same
+ideal ratio and writes both frequencies and duties together
+(`hrtim_set_prim_sek()`). The 1 A limiter caps the duty in every region; it
+starts at its ceiling and the voltage PI's integrator tracks the applied duty
+while it is capped (from 0 it caused a 5 V -> 9 V start-up overshoot). The
+FourSwitch gains are RAM-only: a `calibration_t` field would need a
+`CONFIG_STORE_PSVN` bump, which overwrites the stored calibration with
+defaults. Gains bench-tuned at V_in ~13 V, light load; limiter untested.
+
+**Parked-leg sync and pulse skipping** (60V and 10A modes,
+`-DVOUT_SYNC_BURST_DISABLE` removes it). The parked leg's 1.5 % low pulse used
+to land anywhere, including while the fast leg's high side was on, which gave
+a ≥ 2.4 A floor into a short. The master timer (in the `.ioc`) defines a 20 µs
+frame: compare 1 resets Timers B/D, compare 3 resets E half a frame later, so
+the parked pulse sits at the same frame time in buck and boost. The burst
+controller (clock Timer D, trigger master compare 2, `hrtim.c`) idles a block
+of fast cycles there, **on the fast leg only** (low side on, high side off);
+a 50 kHz leg in up/down mode only enters/leaves burst idle at its roll-over
+(every 10 µs), which on the bench left SEC_L on for ~10 µs per frame. Block =
+`CTRL_PARAM_VOUT_SYNC_CYCLES` (3: ~100 nC bootstrap charge at 100 mA = 1 µs,
+plus margin; master compares 2/3 in the `.ioc` assume 3). Below the HRTIM
+compare floor (3.75 % at 1 MHz) the block grows and the run duty is held at
+`CTRL_PARAM_VOUT_MIN_RUN_DUTY` (`vout_burst_plan()`, host-tested; buck and
+10A only). The 4-switch region runs without the burst. Bench-checked in 10A,
+buck and boost.
 
 **Key parameters** (`ctrl_param.h`):
 
@@ -388,9 +407,7 @@ ADC5 uses 256× hardware oversampling with 4-bit right shift (effective 16-bit r
 HRTIM ADC triggers: TRG1 ← Timer B (PRIM, ÷20), TRG2 ← Timer C (HV, ÷15),
 TRG3 ← Timer E (SEK, ÷20), TRG7 ← Timer D (fixed 1 MHz, no outputs, ÷20 —
 `ADC_TRIGGER_HRTIM_FIXED`, used by the voltage source because PRIM/SEK change
-frequency there; set up in `hrtim_adc_trigger_timer_init()` and also recorded
-in `bat_source.ioc` — the `.ioc` keys were added by hand, so check that CubeMX
-accepts them before relying on regeneration).
+frequency there; configured in `bat_source.ioc`).
 
 **Concurrency**: `adc_data.raw` is DMA-written and declared `volatile`.
 `adc_data.converted` is computed in the ISR into a private instance and copied

@@ -966,6 +966,15 @@ void cmd_printADC() {
 		printf("  Ext I_Out  : %li : %li mA\r\n", adc_data.ext_adc_data[1], adc_data.converted.i_out_ext_mA );
 		printf("  Ext V_Sns  : %li : %li uV\r\n", adc_data.ext_adc_data[2], adc_data.converted.v_sens_ext_uv);
 		printf("  Ext I_Iso  : %li : %li uA\r\n", adc_data.ext_adc_data[3], adc_data.converted.i_iso_ext_uA );
+
+		uint8_t region;
+		uint32_t changes;
+		float ratio;
+		ctrl_main_vout_diag(&region, &changes, &ratio);
+		printf("  Vout region: %u (0 buck, 1 4sw, 2 boost), changes: %lu, ratio: ",
+				region, (unsigned long) changes);
+		cli_printFloat(ratio);
+		printf("\r\n");
 	}
 }
 

@@ -19,7 +19,7 @@
 
 #define CONFIG_STORE_HARDWARE_DATA_SIZE 16
 #define CONFIG_STORE_CALIBRATION_SIZE   192
-//#define ENABLE_CALIBRATION
+#define ENABLE_CALIBRATION
 
 /**
  * Factory-programmed hardware identification. Hardware revision is

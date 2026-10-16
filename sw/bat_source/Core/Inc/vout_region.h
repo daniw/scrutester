@@ -50,4 +50,19 @@ float vout_region_duty_for_ratio(vout_region_t region, float ratio);
 /* Ideal ratio D_prim / (1 - D_sek) of a commanded duty pair. */
 float vout_region_ratio_from_duties(float duty_prim, float duty_sek);
 
+/*
+ * Splits the frame-average duty into idle_cycles (contiguous block, at least
+ * sync_cycles) and the duty of the remaining cycles, keeping the average.
+ * With allow_skip, demands below min_run_duty run at min_run_duty on fewer
+ * cycles. duty_run is capped at max_run_duty.
+ */
+typedef struct {
+	unsigned idle_cycles;
+	float duty_run;
+} vout_burst_t;
+
+vout_burst_t vout_burst_plan(float duty_avg, unsigned frame_cycles,
+		unsigned sync_cycles, int allow_skip, float min_run_duty,
+		float max_run_duty);
+
 #endif /* INC_VOUT_REGION_H_ */

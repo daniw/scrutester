@@ -65,7 +65,52 @@ static void test_pi_limits_reachable(void) {
 	CHECK(d > CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW && d < CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH);
 }
 
+static void test_burst_plan(void) {
+	const unsigned F = CTRL_PARAM_VOUT_FRAME_CYCLES, N = CTRL_PARAM_VOUT_SYNC_CYCLES;
+	const float lo = CTRL_PARAM_VOUT_MIN_RUN_DUTY, hi = CTRL_PARAM_VOUT_MAX_RUN_DUTY;
+
+	// Sync window is long enough for the bootstrap recharge: Q / I plus two
+	// dead times (7.8 ns each) must fit in the idle block of 1/f_fast cycles.
+	float t_us = (float) CTRL_PARAM_BOOT_CHARGE_PER_PERIOD_nC / CTRL_PARAM_BOOT_RECHARGE_mA;
+	float cycle_us = 1e6F / CTRL_PARAM_SW_FREQ_HIGH;
+	CHECK(N * cycle_us >= t_us + 0.016F + cycle_us); // one cycle of alignment margin
+	CHECK(F == 20);
+
+	// Normal operation: average duty preserved, sync window only.
+	vout_burst_t b = vout_burst_plan(0.4F, F, N, 1, lo, hi);
+	CHECK(b.idle_cycles == N);
+	CHECK(fabsf(b.duty_run * (F - b.idle_cycles) / F - 0.4F) < 1e-4F);
+
+	// No parked leg (4-switch): no idle at all, duty untouched.
+	b = vout_burst_plan(0.5F, F, 0, 0, lo, hi);
+	CHECK(b.idle_cycles == 0 && fabsf(b.duty_run - 0.5F) < 1e-6F);
+
+	// Run duty capped.
+	b = vout_burst_plan(0.99F, F, N, 1, lo, hi);
+	CHECK(b.duty_run <= hi + 1e-6F);
+
+	// Demand below the HRTIM floor: floor duty, fewer run cycles, average held.
+	b = vout_burst_plan(0.01F, F, N, 1, lo, hi);
+	CHECK(fabsf(b.duty_run - lo) < 1e-6F);
+	CHECK(b.idle_cycles > N && b.idle_cycles <= F);
+	CHECK(fabsf(b.duty_run * (F - b.idle_cycles) / F - 0.01F) < lo / F); // within one cycle
+	// Zero demand (shorted output): everything skipped.
+	b = vout_burst_plan(0.0F, F, N, 1, lo, hi);
+	CHECK(b.idle_cycles == F);
+	// Skipping is a buck-only feature.
+	b = vout_burst_plan(0.0F, F, N, 0, lo, hi);
+	CHECK(b.idle_cycles == N);
+	// Monotonic: lower demand never gives more run cycles.
+	unsigned prev = 0;
+	for (int i = 0; i <= 100; i++) {
+		b = vout_burst_plan(0.0F + 0.0005F * i, F, N, 1, lo, hi);
+		CHECK(F - b.idle_cycles >= prev);
+		prev = F - b.idle_cycles;
+	}
+}
+
 int main(void) {
+	test_burst_plan();
 	test_select();
 	test_duty_model();
 	test_pi_limits_reachable();

@@ -59,3 +59,32 @@ float vout_region_ratio_from_duties(float duty_prim, float duty_sek) {
 		den = 0.01F;
 	return duty_prim / den;
 }
+
+vout_burst_t vout_burst_plan(float duty_avg, unsigned frame_cycles,
+		unsigned sync_cycles, int allow_skip, float min_run_duty,
+		float max_run_duty) {
+	vout_burst_t b;
+
+	if (duty_avg < 0.0F)
+		duty_avg = 0.0F;
+	if (sync_cycles > frame_cycles)
+		sync_cycles = frame_cycles;
+
+	unsigned run = frame_cycles - sync_cycles;
+	float duty = run ? duty_avg * (float) frame_cycles / (float) run : max_run_duty;
+
+	if (allow_skip && run && duty < min_run_duty) {
+		// Fewer cycles at the floor duty: average = floor * run / frame.
+		float r = duty_avg * (float) frame_cycles / min_run_duty;
+		run = (unsigned) (r + 0.5F);
+		if (run > frame_cycles - sync_cycles)
+			run = frame_cycles - sync_cycles;
+		duty = min_run_duty;
+	}
+	if (duty > max_run_duty)
+		duty = max_run_duty;
+
+	b.idle_cycles = frame_cycles - run;
+	b.duty_run = duty;
+	return b;
+}

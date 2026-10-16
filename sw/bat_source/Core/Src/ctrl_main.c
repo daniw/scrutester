@@ -34,22 +34,20 @@ PID_controller_t ctrl_pi_voltage_hv;
 PID_controller_t ctrl_pi_hv_iout_limit;
 PID_controller_t ctrl_pi_voltage_4sw;
 
-// RAM-only gains of ctrl_pi_voltage_4sw: unlike every other row of
-// ctrl_pid_table they have no field in config_store.calibration, because
-// growing calibration_t means bumping CONFIG_STORE_PSVN, and
-// config_store_read() answers a PSVN mismatch by overwriting the EEPROM with
-// defaults -- which would erase every device's stored calibration. Tunable
-// with setPI, reset to the CTRL_PARAM_ default on boot; promote to
-// calibration_t (and bump the PSVN deliberately) once the values are settled.
+// RAM-only gains: a calibration_t field would need a PSVN bump, which makes
+// config_store_read() overwrite the stored calibration with defaults.
 static float ctrl_pi_voltage_4sw_p;
 static float ctrl_pi_voltage_4sw_i;
 
-// Full-range 60V mode (ctrl_main_ctrl_voltage_wide()). ISR-owned while
-// ctrl_main_handle.mode == CTRL_MODE_60V; initialised by start_ctrl() before
-// it assigns `mode`.
+// Full-range 60V mode state, ISR-owned (ctrl_main_ctrl_voltage_wide()).
 static vout_region_t vout_region;
 static float vout_duty_prim; // last commanded, used to hand over between regions
 static float vout_duty_sek;
+// Bench diagnostics, printed by printADC.
+static volatile uint32_t vout_region_changes;
+static volatile float vout_last_ratio;
+static float vout_vin_filt_mV;        // 0 = not yet seeded
+static uint16_t vout_region_hold;     // ticks before the next region change
 
 const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
@@ -174,14 +172,20 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		ctrl_PID_reset(&ctrl_pi_voltage_4sw);
 		ctrl_PID_reset(&ctrl_pi_voltage_boost);
 		ctrl_PID_reset(&ctrl_pi_boost_iout_limit);
-		// Always start as a buck from 0 duty: the reference ramps up from
-		// 20 % and ctrl_main_ctrl_voltage_wide() walks through the other
-		// regions from there. Same frequency/duty set as RESISTANCE/10A.
+		// Start the limiter at its ceiling: from 0 it held the duty back
+		// while the voltage PI wound up, overshooting 5 V to ~9 V.
+		ctrl_pi_boost_iout_limit.prev_I_action = ctrl_pi_boost_iout_limit.sat_limit_high;
+		// Start as buck from 0 duty; the ramped reference walks the regions.
 		vout_region = VOUT_REGION_BUCK;
+		vout_vin_filt_mV = 0.0F;
+		vout_region_hold = 0;
 		vout_duty_prim = 0.0F;
 		vout_duty_sek = CTRL_PARAM_CONST_DUTY_LOW;
 		hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
 				CTRL_PARAM_SW_FREQ_LOW, vout_duty_sek);
+		// Parked-leg sync before the outputs are enabled (hrtim.c).
+		hrtim_burst_set_idle_cycles(CTRL_PARAM_VOUT_SYNC_CYCLES);
+		hrtim_sync_start(HRTIM_CHANNEL_PRIM);
 		hrtim_enable(HRTIM_CHANNEL_PRIM);
 		hrtim_enable(HRTIM_CHANNEL_SEK);
 		break;
@@ -195,6 +199,12 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW); // Needs to be low!!
 		hrtim_set_duty(HRTIM_CHANNEL_PRIM, 0);
+		// 10A only (RESISTANCE_* falls through): parked-SEK sync and pulse
+		// skipping, else a shorted output sits on the minimum pulse (>= 2.4 A).
+		if (mode == CTRL_MODE_10A) {
+			hrtim_burst_set_idle_cycles(CTRL_PARAM_VOUT_SYNC_CYCLES);
+			hrtim_sync_start(HRTIM_CHANNEL_PRIM);
+		}
 		hrtim_enable(HRTIM_CHANNEL_PRIM);
 		hrtim_enable(HRTIM_CHANNEL_SEK);
 		break;
@@ -276,6 +286,7 @@ void ctrl_main_stop_control(void) {
 	ctrl_main_handle.mode = CTRL_MODE_OFF;
 	ctrl_main_handle.charge_phase = CHG_PHASE_OFF;
 	hrtim_disable(HRTIM_CHANNEL_ALL);
+	hrtim_sync_stop();
 }
 
 /**
@@ -413,6 +424,13 @@ void ctrl_main_charge_handover(int32_t v_in_mV, int32_t v_term_mV) {
 	ctrl_main_handle.charge_i_peak_mA = 0;
 	ctrl_main_handle.charge_peak_ticks = 0;
 	charge_peak_reported = 0;
+}
+
+/* See ctrl_main.h. */
+void ctrl_main_vout_diag(uint8_t *region, uint32_t *changes, float *ratio) {
+	*region = (uint8_t) vout_region;
+	*changes = vout_region_changes;
+	*ratio = vout_last_ratio;
 }
 
 void ctrl_main_charge_start_ramp(void) {
@@ -595,31 +613,11 @@ void ctrl_main_ctrl_voltage_boost(uint32_t voltage_meas_mV,
 }
 
 /*
- * Full-range voltage source: 0..60 V from a battery of ~13 V, as buck,
- * 4-switch or boost depending on V_ref/V_in (vout_region.h). Runs in the
- * control ISR, one call per tick, in place of the former boost-only loop.
- *
- * One PI per region (buck: ctrl_pi_voltage_buck, 4-switch:
- * ctrl_pi_voltage_4sw, boost: ctrl_pi_voltage_boost), each driving that
- * region's control duty; the other leg is parked as described in
- * vout_region.h. They are all fed the same way the boost loop was: fast
- * internal v_out for the P term, accurate external V_TERM for the I term.
- * Only the active one executes, so the others keep a stale integrator --
- * which is why every region change re-preloads the incoming one.
- *
- * Region choice is from the RAMPED reference, so during the start-up ramp the
- * converter walks buck -> 4-switch -> boost by itself, and an encoder step is
- * followed straight away.
- *
- * Region change = hand-over: the commanded duty pair is turned into the ideal
- * conversion ratio, the incoming region's control duty for that same ratio
- * preloads its PI, and frequencies + duties are written together
- * (hrtim_set_prim_sek()), so the output does not step. The loop-rate trigger
- * is Timer D, which does not change frequency (see
- * hrtim_adc_trigger_timer_init()).
- *
- * The 1 A boost current limiter is applied in every region, as a cap on the
- * region's control duty (it only ever acts for positive current).
+ * Full-range voltage source (0..60 V): buck, 4-switch or boost by
+ * V_ref / V_in (vout_region.h), one PI per region. Only the active PI runs, so
+ * a region change preloads the incoming one with the duty that gives the same
+ * conversion ratio, and frequencies + duties are written together, so the
+ * output does not step. The 1 A limiter caps the duty in every region.
  */
 static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
@@ -631,12 +629,24 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 	float v_out_V = meas->v_out / 1000.0F;
 	float v_acc_V = meas->v_term_ext_mv / 1000.0F;
 
+	// Filtered V_IN and a dwell time keep the region from toggling at an edge.
 	float v_in_mV = (float) meas->v_in;
+	if (vout_vin_filt_mV <= 0.0F)
+		vout_vin_filt_mV = v_in_mV;
+	else
+		vout_vin_filt_mV += (v_in_mV - vout_vin_filt_mV)
+				* (1.0F / (CTRL_PARAM_VOUT_VIN_FILTER_s * CTRL_FREQ));
+	v_in_mV = vout_vin_filt_mV;
 	if (v_in_mV < CTRL_PARAM_VOUT_VIN_MIN_mV)
 		v_in_mV = CTRL_PARAM_VOUT_VIN_MIN_mV;
 	float ratio = (ref_V * 1000.0F) / v_in_mV;
 
-	vout_region_t next = vout_region_select(vout_region, ratio);
+	vout_last_ratio = ratio;
+	vout_region_t next = vout_region;
+	if (vout_region_hold > 0)
+		vout_region_hold--;
+	else
+		next = vout_region_select(vout_region, ratio);
 	PID_controller_t *pi;
 	switch (next) {
 	case VOUT_REGION_BUCK:        pi = &ctrl_pi_voltage_buck; break;
@@ -651,10 +661,11 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 		// action = P + I, so preload I with what is left after this tick's P.
 		pi->prev_I_action = d - pi->P_gain * (pi->ref - v_out_V);
 		pi->sat_flag = 0;
-		// The limiter's duty scale differs per region; let it re-find its
-		// own level instead of carrying one over.
+		// The limiter's duty scale differs per region.
 		ctrl_pi_boost_iout_limit.prev_I_action = ctrl_pi_boost_iout_limit.sat_limit_high;
 		vout_region = next;
+		vout_region_changes++;
+		vout_region_hold = (uint16_t) (CTRL_PARAM_VOUT_REGION_DWELL_s * CTRL_FREQ);
 	}
 
 	ctrl_PID_controller_execute(pi, v_out_V, v_acc_V, 0);
@@ -662,18 +673,41 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 			meas->i_out_ext_mA / 1000.0F, meas->i_out_ext_mA / 1000.0F, 0);
 
 	float duty = pi->action;
-	if (ctrl_pi_boost_iout_limit.action < duty)
+	if (ctrl_pi_boost_iout_limit.action < duty) {
 		duty = ctrl_pi_boost_iout_limit.action;
+		// Anti-windup against the limiter's cap.
+		pi->prev_I_action = duty - pi->P_action;
+	}
+
+	// `duty` is the average over a 20 us frame; the burst plan splits it into
+	// run duty and idle cycles (sync block; buck also skips below the HRTIM
+	// minimum duty). The 4-switch region parks nothing.
+	vout_burst_t bp = { 0, duty };
+#ifdef VOUT_SYNC_BURST_ENABLED
+	bp = vout_burst_plan(duty, CTRL_PARAM_VOUT_FRAME_CYCLES,
+			vout_region == VOUT_REGION_FOUR_SWITCH ? 0 : CTRL_PARAM_VOUT_SYNC_CYCLES,
+			vout_region == VOUT_REGION_BUCK,
+			CTRL_PARAM_VOUT_MIN_RUN_DUTY, CTRL_PARAM_VOUT_MAX_RUN_DUTY);
+	// Only the fast leg follows the burst: PRIM in buck, SEK in boost.
+	if (changed) {
+		if (vout_region == VOUT_REGION_FOUR_SWITCH)
+			hrtim_burst_enable(0);
+		else
+			hrtim_burst_select_leg(vout_region == VOUT_REGION_BOOST
+					? HRTIM_CHANNEL_SEK : HRTIM_CHANNEL_PRIM);
+	}
+	hrtim_burst_set_idle_cycles(bp.idle_cycles);
+#endif
 
 	switch (vout_region) {
 	case VOUT_REGION_BUCK:
 		vout_duty_prim = duty;
 		vout_duty_sek = CTRL_PARAM_CONST_DUTY_LOW;
 		if (changed)
-			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
+			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, bp.duty_run,
 					CTRL_PARAM_SW_FREQ_LOW, vout_duty_sek);
 		else
-			hrtim_set_duty(HRTIM_CHANNEL_PRIM, vout_duty_prim);
+			hrtim_set_duty(HRTIM_CHANNEL_PRIM, bp.duty_run);
 		break;
 	case VOUT_REGION_FOUR_SWITCH:
 		vout_duty_prim = duty;
@@ -692,9 +726,9 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 		vout_duty_sek = duty;
 		if (changed)
 			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_LOW, vout_duty_prim,
-					CTRL_PARAM_SW_FREQ_HIGH, vout_duty_sek);
+					CTRL_PARAM_SW_FREQ_HIGH, bp.duty_run);
 		else
-			hrtim_set_duty(HRTIM_CHANNEL_SEK, vout_duty_sek);
+			hrtim_set_duty(HRTIM_CHANNEL_SEK, bp.duty_run);
 		break;
 	}
 	ctrl_main_handle.duty = duty * 1000;
@@ -709,7 +743,17 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 	ctrl_PID_controller_execute(&ctrl_pi_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);
 
-	hrtim_set_duty(HRTIM_CHANNEL_PRIM, ctrl_pi_current.action);
+	// action is the average PRIM duty over a frame, split as in the voltage
+	// mode's buck region.
+	float duty_run = ctrl_pi_current.action;
+#ifdef VOUT_SYNC_BURST_ENABLED
+	vout_burst_t bp = vout_burst_plan(ctrl_pi_current.action,
+			CTRL_PARAM_VOUT_FRAME_CYCLES, CTRL_PARAM_VOUT_SYNC_CYCLES, 1,
+			CTRL_PARAM_VOUT_MIN_RUN_DUTY, CTRL_PARAM_VOUT_MAX_RUN_DUTY);
+	hrtim_burst_set_idle_cycles(bp.idle_cycles);
+	duty_run = bp.duty_run;
+#endif
+	hrtim_set_duty(HRTIM_CHANNEL_PRIM, duty_run);
 	ctrl_main_handle.duty = ctrl_pi_current.action*1000;
 
 }

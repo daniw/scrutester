@@ -16,11 +16,13 @@
 #define CTRL_PARAM_CONST_DUTY_LOW 0.015
 #define CTRL_PARAM_SW_FREQ_HV 350000
 
-#define CTRL_PARAM_VOLTAGE_BOOST_P 0.01F
-#define CTRL_PARAM_VOLTAGE_BOOST_I (1.0F/CTRL_FREQ)
+// Bench-tuned at V_in ~13 V, light load (1 A limiter not exercised).
+#define CTRL_PARAM_VOLTAGE_BOOST_P 0.005F
+#define CTRL_PARAM_VOLTAGE_BOOST_I (0.6F/CTRL_FREQ)
 
+// Bench-tuned in the 60V buck region; also used by RESISTANCE_1A/1mA.
 #define CTRL_PARAM_VOLTAGE_BUCK_P 0.01F
-#define CTRL_PARAM_VOLTAGE_BUCK_I (1.0F/CTRL_FREQ)
+#define CTRL_PARAM_VOLTAGE_BUCK_I (10.0F/CTRL_FREQ)
 
 #define CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH 0.8F
 #define CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_LOW 0.0F
@@ -33,26 +35,44 @@
 #define CTRL_PARAM_BOOST_IOUT_LIMIT_I (1.0F/CTRL_FREQ)
 
 // ---- Full-range voltage source (60V mode): buck / 4-switch / boost --------
-// Region edges are at V_ref/V_in = 1 -/+ MARGIN (see vout_region.h). The
-// margin is not free: the buck region has to reach (1 - MARGIN) * V_in with a
-// PI whose duty ceiling is CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH (0.8), i.e.
-// D_prim = (1 - MARGIN) * 0.985 must stay below it -- hence 0.25, not a
-// tighter band. The way back needs HYSTERESIS more ratio, to stop flapping.
+// Region edges at V_ref/V_in = 1 -/+ MARGIN; buck must reach 0.75 * V_in
+// below its 0.8 duty ceiling.
 #define CTRL_PARAM_VOUT_REGION_MARGIN 0.25F
 #define CTRL_PARAM_VOUT_REGION_HYSTERESIS 0.05F
 // Lowest V_IN used for the region ratio, against a dropped/unread rail.
 #define CTRL_PARAM_VOUT_VIN_MIN_mV 6000
+// Filtered V_IN and a minimum time per region: the raw sample toggled
+// 4-switch <-> boost at the 1.25 edge.
+#define CTRL_PARAM_VOUT_VIN_FILTER_s 0.01F
+#define CTRL_PARAM_VOUT_REGION_DWELL_s 0.02F
 
-// 4-switch region voltage loop. Plant gain dV/dD = V_in/(1-D)^2 is ~4x the
-// buck region's at D~0.5, so the gains start lower. RAM-only (see
-// ctrl_pi_voltage_4sw in ctrl_main.c): tunable with setPI, not saved.
-#define CTRL_PARAM_VOLTAGE_4SW_P 0.0025F
-#define CTRL_PARAM_VOLTAGE_4SW_I (0.25F/CTRL_FREQ)
+// ---- Parked-leg bootstrap sync + pulse skipping (vout_region.h) -------------
+// -DVOUT_SYNC_BURST_DISABLE restores free-running parked pulses, no skipping.
+#ifndef VOUT_SYNC_BURST_DISABLE
+#define VOUT_SYNC_BURST_ENABLED
+#endif
+// Idle block length: bootstrap charge per slow period (~100 nC, hardware.tex)
+// at ~100 mA recharge = 1 us, plus dead times and one cycle of margin.
+// Master compares 2/3 in the .ioc assume 3 cycles.
+#define CTRL_PARAM_BOOT_CHARGE_PER_PERIOD_nC 100
+#define CTRL_PARAM_BOOT_RECHARGE_mA 100
+#define CTRL_PARAM_VOUT_SYNC_CYCLES 3
+// Burst frame in fast-leg cycles.
+#define CTRL_PARAM_VOUT_FRAME_CYCLES (CTRL_PARAM_SW_FREQ_HIGH / CTRL_PARAM_SW_FREQ_LOW)
+// HRTIM compare floor (3.75 % at 1 MHz) plus margin; below it, pulses are
+// skipped instead (buck only).
+#define CTRL_PARAM_VOUT_MIN_RUN_DUTY 0.04F
+#define CTRL_PARAM_VOUT_MAX_RUN_DUTY 0.95F
+
+// 4-switch region loop, bench-tuned at V_in ~13 V. RAM-only (not saved).
+#define CTRL_PARAM_VOLTAGE_4SW_P 0.005F
+#define CTRL_PARAM_VOLTAGE_4SW_I (3.0F/CTRL_FREQ)
 #define CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_HIGH 0.8F
 #define CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW 0.0F
 
-#define CTRL_PARAM_CURRENT_P 0.001F
-#define CTRL_PARAM_CURRENT_I (0.1F/CTRL_FREQ)
+// Bench-tuned: P > 0.01 oscillates, I > 3.5 unstable.
+#define CTRL_PARAM_CURRENT_P 0.01F
+#define CTRL_PARAM_CURRENT_I (2.0F/CTRL_FREQ)
 #define CTRL_PARAM_CURRENT_DUTY_SAT_HIGH 0.5F
 #define CTRL_PARAM_CURRENT_DUTY_SAT_LOW 0.0F
 
