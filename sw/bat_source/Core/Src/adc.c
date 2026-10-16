@@ -1051,6 +1051,7 @@ void adc_configure_mode(statemachine_modes_t mode) {
 	switch (mode) {
 	case STATEMACHINE_IDLE:
 	case STATEMACHINE_MODE_60V_OUT:
+	case STATEMACHINE_MODE_EMI: // same v_out channel as 60V
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 		sConfig.Channel = ADC_CHANNEL_2;

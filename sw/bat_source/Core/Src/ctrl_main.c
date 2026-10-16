@@ -216,6 +216,26 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		hrtim_enable(HRTIM_CHANNEL_HV);
 		break;
 
+#ifdef EMI_MODE_ENABLED
+	case CTRL_MODE_EMI:
+		// LV side is exactly the 60V boost start (PRIM duty is ramped up in
+		// lockstep with the reference by ctrl_main_ctrl_voltage_boost()).
+		ctrl_PID_reset(&ctrl_pi_voltage_boost);
+		ctrl_PID_reset(&ctrl_pi_boost_iout_limit);
+		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
+		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
+		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_LOW);
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW);
+		// HV flyback: open loop at a constant duty, no PI, nothing for the
+		// ISR to do with it afterwards.
+		hrtim_set_freq(HRTIM_CHANNEL_HV, CTRL_PARAM_SW_FREQ_HV);
+		hrtim_set_duty(HRTIM_CHANNEL_HV, CTRL_PARAM_EMI_HV_DUTY);
+		hrtim_enable(HRTIM_CHANNEL_PRIM);
+		hrtim_enable(HRTIM_CHANNEL_SEK);
+		hrtim_enable(HRTIM_CHANNEL_HV);
+		break;
+#endif
+
 	case CTRL_MODE_OFF:
 	default:
 		break;
@@ -306,6 +326,12 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 	case CTRL_MODE_60V:
 		ctrl_main_ctrl_voltage_wide(meas);
 		break;
+#ifdef EMI_MODE_ENABLED
+	case CTRL_MODE_EMI: // boost-only LV loop; HV runs open loop
+		ctrl_main_ctrl_voltage_boost(meas->v_out,
+				meas->v_term_ext_mv, meas->i_out_ext_mA);
+		break;
+#endif
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
 		ctrl_main_ctrl_voltage_buck(meas->v_out,
@@ -473,6 +499,9 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 	switch (mode) {
 
 	case CTRL_MODE_60V:
+#ifdef EMI_MODE_ENABLED
+	case CTRL_MODE_EMI:
+#endif
 		ctrl_main_handle.voltage_reference_mV = reference_poti_count * 500; // 500mV Resolution, Max range 63V
 		break;
 	case CTRL_MODE_10A:

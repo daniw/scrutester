@@ -99,6 +99,20 @@
 #define CTRL_PARAM_HV_CURRENT_P 0.001F
 #define CTRL_PARAM_HV_CURRENT_I (0.1F/CTRL_FREQ)
 
+// ---- EMI test mode (see EMI_MODE_ENABLED in statemachine.h) ---------------
+// HV flyback runs open-loop at a fixed duty while the LV converter regulates
+// OUT_LV with the 60V boost loop; the LV loop pushes the flyback's energy
+// back into the battery. All placeholders pending bench bring-up.
+#define CTRL_PARAM_EMI_HV_DUTY 0.02F
+// Encoder-adjustable LV setpoint: starts at ..._DEFAULT_mV, resolution 500 mV
+// (same as 60V), clamped to ..._MAX_mV.
+#define CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV 40000
+#define CTRL_PARAM_EMI_VOLTAGE_MAX_mV 50000
+// Abort (both converters off) above these, measured on the terminals. The
+// overvoltage limit must stay above ..._MAX_mV.
+#define CTRL_PARAM_EMI_OVERVOLTAGE_mV 55000
+#define CTRL_PARAM_EMI_OVERCURRENT_mA 3000
+
 #define CTRL_PARAM_IDLE_VOLTAGE_1A_mV 2000
 #define CTRL_PARAM_IDLE_VOLTAGE_1mA_mV 3000
 

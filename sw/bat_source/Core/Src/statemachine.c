@@ -85,6 +85,9 @@ static void statemachine_enter_mode_generic(statemachine_modes_t mode);
 static uint8_t statemachine_enter_charge(void);
 static uint8_t statemachine_enter_charge_low_current(void);
 static void statemachine_step_charge(void);
+#ifdef EMI_MODE_ENABLED
+static void statemachine_step_emi(void);
+#endif
 static void statemachine_charge_lockout(void);
 
 /* Settings > Calibration sub-UI state -- 0=channel list, 1=zero step,
@@ -129,6 +132,10 @@ static input_encoder_clamp_t encoder_setpoint_clamp;
 
 static void statemachine_apply_encoder_setpoint(void) {
 	int32_t max = (statemachine_handle.current_mode == STATEMACHINE_MODE_ISOMETER) ? 3 : 127;
+#ifdef EMI_MODE_ENABLED
+	if (statemachine_handle.current_mode == STATEMACHINE_MODE_EMI)
+		max = CTRL_PARAM_EMI_VOLTAGE_MAX_mV / 500; // 500 mV per count, see ctrl_main_apply_reference()
+#endif
 	ctrl_main_handle.poti_reference = (uint16_t) input_encoder_read_clamped(
 			&encoder_setpoint_clamp, 0, max);
 	ctrl_main_apply_reference(statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode),
@@ -312,7 +319,13 @@ void statemachine_step(void) {
 	uint16_t raw_encoder = input_encoder_read();
 	uint8_t active = (raw_encoder != last_raw_encoder)
 			|| ok_button_pressed || esc_button_pressed || out_button_pressed
-			|| ctrl_main_handle.mode == CTRL_MODE_CHARGE;
+			|| ctrl_main_handle.mode == CTRL_MODE_CHARGE
+#ifdef EMI_MODE_ENABLED
+			// An EMI scan runs unattended and for longer than the timeout;
+			// like CHARGE, nothing the user presses would keep it alive.
+			|| ctrl_main_handle.mode == CTRL_MODE_EMI
+#endif
+			;
 	last_raw_encoder = raw_encoder;
 	if (active) {
 		inactivity_ticks = 0;
@@ -401,6 +414,12 @@ void statemachine_step(void) {
 		statemachine_step_charge();
 		break;
 
+#ifdef EMI_MODE_ENABLED
+	case STATEMACHINE_MODE_EMI:
+		statemachine_step_emi();
+		break;
+#endif
+
 	case STATEMACHINE_MODE_SETTINGS:
 		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_MENU) {
 			temp = STATEMACHINE_SETTINGS_MODE_BMS
@@ -455,6 +474,58 @@ void statemachine_step(void) {
 	}
 
 }
+
+#ifdef EMI_MODE_ENABLED
+/* Stops both converters and drops both enables. Same order as the other
+ * stop paths: control first (clears ctrl mode before the PWM goes away, see
+ * ctrl_main_stop_control()), then the gate-driver enables. */
+static void statemachine_emi_stop(void) {
+	statemachine_handle.output_on = 0;
+	ctrl_main_stop_control();
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+}
+
+/* Per-tick EMI handling. Unlike 60V/10A/ISOMETER this is not hold-to-enable:
+ * an OUT press toggles the run state, since an EMI scan outlasts anyone's
+ * thumb. ESC (handled at the bottom of statemachine_step()) leaves the mode
+ * and stops everything via statemachine_switchtoIdle(). */
+static void statemachine_step_emi(void) {
+	statemachine_apply_encoder_setpoint();
+
+	if (statemachine_handle.output_on) {
+		int32_t i_abs = adc_data.converted.i_out_ext_mA;
+		if (i_abs < 0)
+			i_abs = -i_abs;
+		if (adc_data.converted.v_term_ext_mv > CTRL_PARAM_EMI_OVERVOLTAGE_mV
+				|| i_abs > CTRL_PARAM_EMI_OVERCURRENT_mA) {
+			printf("EMI stopped: limit exceeded (V_TERM=%ldmV, I_OUT=%ldmA)\r\n",
+					adc_data.converted.v_term_ext_mv, adc_data.converted.i_out_ext_mA);
+			statemachine_emi_stop();
+		}
+	}
+
+	// out_button_pressed is 1 only on the tick the button goes down (2 while
+	// held), so a held button toggles once. It is also forced to 0 while a
+	// protection fault holds the converters off, and output_on is already 0
+	// then, so a fault ends the run and a fresh press is needed afterwards.
+	if (out_button_pressed == 1) {
+		if (statemachine_handle.output_on) {
+			statemachine_emi_stop();
+		} else if (!statemachine_handle.protection_forced_output_off) {
+			statemachine_handle.output_on = 1;
+			// Both converters at once: LV ramps to the setpoint, HV starts at
+			// its fixed duty, so the LV loop absorbs the HV energy from the
+			// first cycle.
+			ctrl_main_start_ctrl(CTRL_MODE_EMI);
+			aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
+			aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 1);
+		}
+	}
+
+	display_update_mode(statemachine_handle.current_mode, statemachine_handle.output_on);
+}
+#endif /* EMI_MODE_ENABLED */
 
 static void statemachine_charge_lockout(void) {
 	charge_lockout = 1;
@@ -800,6 +871,9 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 			}
 		}*/
         /* fall through */
+#ifdef EMI_MODE_ENABLED
+	case STATEMACHINE_MODE_EMI:
+#endif
 	case STATEMACHINE_MODE_60V_OUT:
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
@@ -828,7 +902,14 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	}
 	aux_io_ctrl_set_config(mode, 0);
 	input_encoder_reset(0);
-	input_encoder_clamp_reset(&encoder_setpoint_clamp, 0);
+	int32_t clamp_start = 0;
+#ifdef EMI_MODE_ENABLED
+	// EMI starts at its default setpoint instead of 0 V, so the first OUT
+	// press runs the intended test without dialling up first.
+	if (mode == STATEMACHINE_MODE_EMI)
+		clamp_start = CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV / 500;
+#endif
+	input_encoder_clamp_reset(&encoder_setpoint_clamp, clamp_start);
 	inactivity_ticks = 0;
 
 }

@@ -13,6 +13,16 @@
 
 #define STATEMACHINE_STEP_PERIOD_mS 20 //ms
 
+/* EMI test mode (both converters switching with no external load, see
+ * statemachine.c / ctrl_main.c). Built in by default; build with
+ * -DEMI_MODE_DISABLE to compile it out. The enum values and table rows below
+ * stay present either way, so the mode numbering does not depend on the flag;
+ * what the flag removes is the menu entry, the entry path and the control
+ * code. */
+#ifndef EMI_MODE_DISABLE
+#define EMI_MODE_ENABLED
+#endif
+
 typedef enum
 {
 	  STATEMACHINE_IDLE = 0,
@@ -26,6 +36,7 @@ typedef enum
 	  STATEMACHINE_MODE_SETTINGS,
 	  STATEMACHINE_MODE_SHUTDOWN,
 	  STATEMACHINE_MODE_CHARGE,
+	  STATEMACHINE_MODE_EMI,
 	  STATEMACHINE_MODE_RESERVED
 } statemachine_modes_t;
 
