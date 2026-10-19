@@ -1,6 +1,6 @@
 """
 Rasterizes ../svg/*.svg into ../png/<name>_256.png, <name>_96.png and
-<name>_64.png via Inkscape's CLI, then rebuilds ../contact_sheet.png (3x3
+<name>_64.png via Inkscape's CLI, then rebuilds ../contact_sheet.png (3-wide
 preview grid, from the 256px renders).
 
 Requires: inkscape (>=1.0, uses --export-type/--export-filename), Pillow.
@@ -17,7 +17,7 @@ PNG_DIR = os.path.join(ROOT, 'png')
 os.makedirs(PNG_DIR, exist_ok=True)
 
 ORDER = ['60v_source', '10a_source', 'milliohmmeter', 'ohmmeter', 'isolation',
-         'voltmeter', 'ampmeter', 'charge', 'settings']
+         'voltmeter', 'ampmeter', 'charge', 'settings', 'emi']
 
 def render(svg_path, png_path, size):
     subprocess.run(
@@ -29,7 +29,8 @@ def render(svg_path, png_path, size):
 
 def build_contact_sheet():
     pad, label_h, cell = 16, 22, 140
-    cols = rows = 3
+    cols = 3
+    rows = (len(ORDER) + cols - 1) // cols
     sheet = Image.new('RGB', (pad + cols * (cell + pad), pad + rows * (cell + label_h + pad)), (20, 20, 20))
     d = ImageDraw.Draw(sheet)
     for i, name in enumerate(ORDER):

@@ -1,9 +1,10 @@
 """
-Generates the 9 icon SVG masters into ../svg/.
+Generates the 10 icon SVG masters into ../svg/.
 
 Usage: python3 gen_icons.py
 (run from anywhere -- paths are relative to this script's location)
 """
+import math
 import os
 from svghelp import pt, arc_path, tick, badge_ring, write_svg
 
@@ -23,6 +24,7 @@ COLORS = {
     'ampmeter':       '#fff600',
     'charge':         '#00ff00',
     'settings':       '#dedede',
+    'emi':            '#ee82ee',
 }
 
 def gauge(cx, cy, r, color, sw_arc, sw_tick, needle_len, needle_deg, needle_w, hub_r):
@@ -100,6 +102,24 @@ def gear_icon(color):
     body += f'<circle cx="{cx}" cy="{cy}" r="16" fill="#000000"/>'
     return body
 
+def emi_icon(color):
+    """Disturbance radiating from a switching source: a sine burst flanked by
+    emission arcs, with the EMI label underneath like the source icons."""
+    cx, cy = 128, 112
+    body = badge_ring(color)
+    # 1.5 periods of sine, 72 px wide, sampled as a polyline.
+    pts = []
+    for i in range(61):
+        x = cx - 36 + i * 72 / 60
+        y = cy - 18 * math.sin(i / 60 * 3 * math.pi)
+        pts.append(f'{x:.2f},{y:.2f}')
+    body += f'<polyline points="{' '.join(pts)}" fill="none" stroke="{color}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>'
+    for r in (48, 64):
+        body += f'<path d="{arc_path(cx, cy, r, 145, 215, sweep=0)}" fill="none" stroke="{color}" stroke-width="6" stroke-linecap="round"/>'
+        body += f'<path d="{arc_path(cx, cy, r, 35, -35)}" fill="none" stroke="{color}" stroke-width="6" stroke-linecap="round"/>'
+    body += f'<text x="{cx}" y="200" font-family="{FONT}" font-weight="bold" font-size="30" fill="{color}" text-anchor="middle">EMI</text>'
+    return body
+
 ICONS = {
     '60v_source':    voltage_source_icon(COLORS['60v_source'], '60V'),
     '10a_source':    current_source_icon(COLORS['10a_source'], '10A'),
@@ -110,6 +130,7 @@ ICONS = {
     'ampmeter':      meter_icon(COLORS['ampmeter'], 'A'),
     'charge':        charge_icon(COLORS['charge']),
     'settings':      gear_icon(COLORS['settings']),
+    'emi':           emi_icon(COLORS['emi']),
 }
 
 if __name__ == '__main__':

@@ -109,7 +109,10 @@ static uint8_t wrap_index(int idx) {
 
 /* icon_seeds[]/the flash icon store are indexed in exactly the same order as
  * menu_order[] (see menu.c / icon_seed_data.c), so a carousel position's
- * index doubles as its icon_id -- no separate mapping table needed.
+ * index doubles as its icon_id -- no separate mapping table needed. Adding a
+ * mode to menu_order[] therefore needs a matching bitmap in icon_seeds[] at
+ * the same position (doc/icons/improved_icons/scripts), or every icon after
+ * it shifts by one; the assert below catches a count mismatch.
  *
  * Bitmap icons are drawn at a fixed size regardless of position; the
  * selected one is distinguished by an accent-colored ring instead of being
@@ -117,6 +120,9 @@ static uint8_t wrap_index(int idx) {
  * fallback icons do). If the flash store isn't available/seeded, falls back
  * to the original procedurally-drawn vector icon, which *does* still scale
  * with `selected`. */
+_Static_assert(ICON_STORE_ICON_COUNT == MENU_TOTAL_LENGTH,
+		"icon store must hold one icon per menu_order[] entry");
+
 static void draw_menu_icon(uint8_t icon_id, const menu_entry_t *entry,
 		int16_t cx, int16_t cy, UG_COLOR color, uint8_t selected) {
 	static uint16_t pixel_buf[ICON_STORE_ICON_WIDTH * ICON_STORE_ICON_HEIGHT];

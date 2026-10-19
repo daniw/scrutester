@@ -29,10 +29,20 @@ ORDER = [
     ('isolation', 'isolation'),
     ('voltmeter', 'voltmeter'),
     ('ampmeter', 'ampmeter'),
+    ('emi', 'emi'),
     ('settings', 'settings'),
     ('charge', 'charge'),
 ]
 SIZES = [64, 96]
+
+# Icons only built in when the firmware has the matching mode compiled in.
+# Their array and icon_seeds[] entry get wrapped in the given #ifdef, and
+# ICON_STORE_ICON_COUNT (icon_store.h) follows the same macro -- the store
+# is indexed by menu_order[] position, so a compiled-out mode must not leave
+# a gap or an extra icon behind.
+CONDITIONAL = {
+    'emi': 'EMI_MODE_ENABLED',
+}
 
 def rgb565(r, g, b):
     return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
@@ -52,15 +62,21 @@ def size_block(size):
         im = Image.open(os.path.join(PNG_DIR, f'{png_name}_{size}.png')).convert('RGB')
         assert im.size == (size, size), im.size
         pixels = [rgb565(*im.getpixel((x, y))) for y in range(size) for x in range(size)]
-        arrays.append(emit_array(f'icon_{array_stem}', pixels))
-        struct_entries.append(f'\t{{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_{array_stem}_data }},')
+        array = emit_array(f'icon_{array_stem}', pixels)
+        entry = f'\t{{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_{array_stem}_data }},'
+        guard_macro = CONDITIONAL.get(png_name)
+        if guard_macro:
+            array = f'#ifdef {guard_macro}\n{array}\n#endif'
+            entry = f'#ifdef {guard_macro}\n{entry}\n#endif'
+        arrays.append(array)
+        struct_entries.append(entry)
 
     guard = f'ICON_SIZE_{size}'
     block = f'#if ICON_STORE_ICON_SIZE == {guard}\n\n'
     block += '\n\n'.join(arrays) + '\n\n'
     block += 'const icon_seed_t icon_seeds[ICON_STORE_ICON_COUNT] = {\n'
     block += '\n'.join(struct_entries) + '\n};\n\n'
-    block += '#endif\n'
+    block += '#endif /* ' + guard + ' */\n'
     return block
 
 def main():
