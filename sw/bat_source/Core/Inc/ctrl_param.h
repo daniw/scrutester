@@ -8,6 +8,8 @@
 #ifndef INC_CTRL_PARAM_H_
 #define INC_CTRL_PARAM_H_
 
+#include "debug.h" // VOUT_SYNC_BURST_DISABLE
+
 #define CTRL_FREQ 25000.0F
 
 #define CTRL_PARAM_SW_FREQ_HIGH 1000000
@@ -47,7 +49,7 @@
 #define CTRL_PARAM_VOUT_REGION_DWELL_s 0.02F
 
 // ---- Parked-leg bootstrap sync + pulse skipping (vout_region.h) -------------
-// -DVOUT_SYNC_BURST_DISABLE restores free-running parked pulses, no skipping.
+// VOUT_SYNC_BURST_DISABLE (debug.h) restores free-running parked pulses, no skipping.
 #ifndef VOUT_SYNC_BURST_DISABLE
 #define VOUT_SYNC_BURST_ENABLED
 #endif

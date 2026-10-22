@@ -13,11 +13,9 @@
 
 #define STATEMACHINE_STEP_PERIOD_mS 20 //ms
 
-/* EMI test mode (both converters switching, live terminals). Debug only, off
- * by default: uncomment or build with -DEMI_DEBUG. The enum value and table
- * rows stay either way; the flag adds the menu entry, entry path and control
- * code. Icon store: flash_icon_seed.py --emi for an EMI_DEBUG build. */
-#define EMI_DEBUG
+// EMI_DEBUG (debug.h) adds the EMI menu entry, entry path and control code;
+// the enum value and table rows stay either way.
+#include "debug.h"
 
 typedef enum
 {

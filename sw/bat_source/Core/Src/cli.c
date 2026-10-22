@@ -121,6 +121,13 @@ void cmd_chargeStep(void);
 void cmd_chargeNext(void);
 #endif
 
+#ifdef CLI_DEBUG
+#define CLI_DEBUG_ONLY()
+#else
+// Commands that bypass the interlocks: refused unless CLI_DEBUG (debug.h).
+#define CLI_DEBUG_ONLY() do { printf("debug build only (CLI_DEBUG)\r\n"); return; } while (0)
+#endif
+
 // List of functions pointers corresponding to each command
 void (*cmd_func[])(void) = {
 	cmd_help,
@@ -861,6 +868,7 @@ void cmd_printGPIO(void) {
 }
 
 void cmd_setGPIO(void) {
+	CLI_DEBUG_ONLY();
 	uint8_t pin, value;
 	CLI_CHECK_ARG_CNT(2);
 
@@ -872,6 +880,7 @@ void cmd_setGPIO(void) {
 }
 
 void cmd_setDAC(void) {
+	CLI_DEBUG_ONLY();
 	uint8_t  pin;
 	uint16_t value;
 	CLI_CHECK_ARG_CNT(1);
@@ -980,6 +989,7 @@ void cmd_printADC() {
 }
 
 void cmd_setDuty(void){
+	CLI_DEBUG_ONLY();
 	uint8_t  channel;
 	float value;
 	CLI_CHECK_ARG_CNT(2);
@@ -998,6 +1008,7 @@ void cmd_setDuty(void){
 }
 
 void cmd_PWM_en(void){
+	CLI_DEBUG_ONLY();
 	uint8_t  channel;
 	uint16_t value;
 	uint8_t hrtim_channel;
@@ -1554,7 +1565,9 @@ void cmd_changeState(void){
 		printf("Invalid state\r\n");
 		return;
 	}
-	statemachine_switchfromIdle((statemachine_modes_t) newstate);
+	statemachine_switchtoIdle(); // stop the running mode first
+	if (newstate != STATEMACHINE_IDLE)
+		statemachine_switchfromIdle((statemachine_modes_t) newstate);
 }
 
 #ifdef CHARGE_DEBUG
@@ -1738,6 +1751,7 @@ void cmd_flashIcons(void) {
  * The control ISR keeps running meanwhile, same as in a real main-loop hang.
  */
 void cmd_wdtTest(void) {
+	CLI_DEBUG_ONLY();
 	printf("Hanging main loop, expecting a watchdog reset in ~%u ms ...\r\n", (unsigned) WATCHDOG_TIMEOUT_MS);
 	// Let the message drain before we stop servicing anything.
 	HAL_Delay(50);

@@ -41,15 +41,7 @@
 
 #include <stdint.h>
 
-/* Gates the CHARGE bench-debug surface: the periodic/peak CLI printouts in
- * statemachine.c and the `chargeStep`/`chargeNext` CLI commands (cli.c) built
- * on the single-step API below. Off by default, so none of it is compiled
- * into a normal build -- define it (e.g. here, uncommented) for bench work.
- * The single-step fields/functions themselves stay compiled in either way
- * (they're inert -- `manual` never becomes 1 -- with nothing left to set
- * them, and keeping them out of this #ifdef keeps this module buildable and
- * host-testable exactly as-is regardless of the flag). */
-//#define CHARGE_DEBUG
+#include "debug.h" // CHARGE_DEBUG
 
 typedef enum {
 	CHG_PHASE_OFF = 0,     /* CHARGE not running */

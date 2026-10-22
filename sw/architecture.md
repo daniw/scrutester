@@ -125,7 +125,7 @@ logic, and the protection interlock.
 | `STATEMACHINE_MODE_SETTINGS` | Settings menu |
 | `STATEMACHINE_MODE_SHUTDOWN` | Controlled power-down sequence |
 | `STATEMACHINE_MODE_CHARGE` | Internal battery charging — auto-entered from IDLE when a 15–24 V supply is detected, not user-selectable |
-| `STATEMACHINE_MODE_EMI` | EMI test (debug only: `EMI_DEBUG` in `statemachine.h` or `-DEMI_DEBUG`, off by default): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (2 %), LV converter regulates `OUT_LV` with the full-range voltage loop of 60V_OUT (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `PROTECTION_EMI_MAX_mV` / `PROTECTION_EMI_MAX_mA` on V_TERM / I_OUT (protection limits); exempt from the inactivity power-off while running. **Untested on hardware.** |
+| `STATEMACHINE_MODE_EMI` | EMI test (debug only: `EMI_DEBUG` in `debug.h`): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (2 %), LV converter regulates `OUT_LV` with the full-range voltage loop of 60V_OUT (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `PROTECTION_EMI_MAX_mV` / `PROTECTION_EMI_MAX_mA` on V_TERM / I_OUT (protection limits); exempt from the inactivity power-off while running. **Untested on hardware.** |
 
 Settings sub-modes (`statemachine_settings_modes_t`): `MENU`, `BMS`,
 `DISPLAY`, `CALIBRATION`, `ABOUT`.
@@ -222,7 +222,7 @@ FourSwitch gains are RAM-only: a `calibration_t` field would need a
 defaults. Gains bench-tuned at V_in ~13 V, light load; limiter untested.
 
 **Parked-leg sync and pulse skipping** (60V and 10A modes,
-`-DVOUT_SYNC_BURST_DISABLE` removes it). The parked leg's 1.5 % low pulse used
+`VOUT_SYNC_BURST_DISABLE` in `debug.h` removes it). The parked leg's 1.5 % low pulse used
 to land anywhere, including while the fast leg's high side was on, which gave
 a ≥ 2.4 A floor into a short. The master timer (in the `.ioc`) defines a 20 µs
 frame: compare 1 resets Timers B/D, compare 3 resets E half a frame later, so
@@ -288,8 +288,8 @@ The duty relations behind this (see `charge_seq.h`): boost
 charge current; the charge loop writes `D_sek = 0.985 − PI action`, bounded only
 by the PI limits (the former 0.5 SEK duty ceiling was removed).
 
-**Bench debug build** (`CHARGE_DEBUG`, defined in `charge_seq.h`, off by
-default like `LCD_TEST_DEMO_ENABLED`): gates everything below and the
+**Bench debug build** (`CHARGE_DEBUG` in `debug.h`, off by
+default): gates everything below and the
 periodic/peak CLI printouts in `statemachine.c`, so none of it is in a normal
 build. The single-step API itself (`charge_seq_set_manual()` etc.) stays
 compiled in either way — inert with nothing to call it — so `charge_seq.c`
@@ -584,7 +584,8 @@ blocks the CHARGE auto-entry. A read cycle stuck that long is restarted.
 | `lp581x.c` | LP5816/LP5817 LED driver |
 | `driver_pca9554.c` | I/O expander for hardware ID reading |
 | `w25n01gv.c` | QSPI NAND flash driver |
-| `cli.c` | UART command parser (calibration / diagnostics / keyboard control) |
+| `cli.c` | UART command parser (calibration / diagnostics / keyboard control); `setGPIO`/`setDAC`/`setDuty`/`enPWM`/`wdtTest` only with `CLI_DEBUG`, `state` goes via IDLE |
+| `debug.h` | All debug / bench flags (`CHARGE_DEBUG`, `EMI_DEBUG`, `CLI_DEBUG`, `CLI_ENABLED`, `VOUT_SYNC_BURST_DISABLE`, CLI flash test options) |
 | `aux_io_ctrl.c` | Relay and GPIO output helpers |
 
 ---
