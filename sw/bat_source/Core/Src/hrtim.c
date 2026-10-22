@@ -563,26 +563,9 @@ void hrtim_emergency_off(void) {
 static uint8_t hrtim_sek_shorted = 0;
 
 /**
- * @brief Forces the secondary-side (SEK/SEC) half-bridge into a deliberate
- *        shoot-through (both switches driven ON simultaneously) for
- *        AMPMETER mode, so current can flow through the shunt without any
- *        converter switching action in the way. Detaches
- *        CONV_CTRL_SEC_L_Pin/CONV_CTRL_SEC_H_Pin from HRTIM's alternate
- *        function and drives them as plain GPIO instead, since
- *        hrtim_set_duty()'s clamp (0x60-0xFFDF) can't reach a true static
- *        0%/100% duty.
- *
- *        CALLER MUST confirm the output is at ~0V before calling this -
- *        shoot-through is only safe here because there's no significant
- *        voltage across the half-bridge to short. Timer E's internal
- *        counter keeps running (only the physical output pins are
- *        detached), so ADC triggers tied to it are unaffected.
- *
- *        Which logic level is "ON" for these gate signals is not yet
- *        confirmed from the schematic - verify on the bench with the
- *        output current-limited/disconnected before trusting this under
- *        load.
- * @return none
+ * @brief Forces the SEK half-bridge into shoot-through (both gates ON via
+ *        GPIO) for AMPMETER and the OVP short. Timer E keeps running.
+ *        Caller must make sure CONV_CTRL_EN is set for the gates to follow.
  */
 void hrtim_sek_force_short(void) {
 	GPIO_InitTypeDef GPIO_InitStruct = { 0 };

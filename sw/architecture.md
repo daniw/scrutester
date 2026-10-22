@@ -530,6 +530,13 @@ IDLE and re-enters on its own if the supply is still present. AMPMETER and
 VOLTMETER (no controller) leave to IDLE with the banner on the idle screen;
 leaving AMPMETER also releases the SEK short.
 
+`OVP_N` low (OVP latch) is a lockout until power cycle
+(`statemachine_ovp_lockout()`): converters off, SEK half-bridge shorted
+(`hrtim_sek_force_short()`, `CONV_CTRL_EN` on, PRIM off), relays unchanged,
+all mode handling skipped. The short takes over from the crowbar thyristor if
+the internal converter caused the OVP and carries the current to blow the
+fuse if an external source did. `OVP_RESET` is not used.
+
 ---
 
 ## 6. Source Module Reference

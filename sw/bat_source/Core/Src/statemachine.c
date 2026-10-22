@@ -68,6 +68,8 @@ static uint8_t mode_error_shown;
 static const char *idle_error_pending;
 // Banner text at the last protection trip (for the CHARGE exit).
 static const char *protection_trip_text;
+// OVP tripped: SEK shorted until power cycle.
+static uint8_t ovp_lockout;
 
 #define STATEMACHINE_BUTTON_RELEASED 0
 #define STATEMACHINE_BUTTON_CLICK 1
@@ -91,6 +93,7 @@ static void statemachine_step_emi(void);
 #endif
 static void statemachine_charge_lockout(void);
 static void statemachine_clear_mode_error(void);
+static uint8_t statemachine_ovp_lockout(void);
 
 /* Settings > Calibration sub-UI state -- 0=channel list, 1=zero step,
  * 2=optional gain step (see display_calibration_enter/update()). */
@@ -241,6 +244,9 @@ void statemachine_step(void) {
 	// active) -- see balancing.c: this guarantees the balancing mask gets
 	// written back to 0 on the tick after charging stops for any reason.
 	balancing_update();
+
+	if (statemachine_ovp_lockout())
+		return;
 
 	uint8_t protection_error = protection_get_worst_level() == PROTECTION_LEVEL_ERROR;
 	if (statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode) != CTRL_MODE_OFF) {
@@ -902,6 +908,37 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	input_encoder_clamp_reset(&encoder_setpoint_clamp, clamp_start);
 	inactivity_ticks = 0;
 
+}
+
+/**
+ * @brief On an OVP latch trip: converters off, SEK half-bridge shorted until
+ *        power cycle (supports the crowbar until the fuse blows on an
+ *        external source). Relays stay as they are.
+ * @return 1 while the lockout is active (skip all mode handling).
+ */
+static uint8_t statemachine_ovp_lockout(void) {
+	static const char *const OVP_TEXT = "ERROR: OVP - power cycle to reset";
+
+	if (ovp_lockout)
+		return 1;
+	if (!(protection_get_error_mask() & PROTECTION_SRC_OVP))
+		return 0;
+
+	ovp_lockout = 1;
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+	ctrl_main_stop_control();
+	dac_sqwave_stop();
+	statemachine_handle.output_on = 0;
+	hrtim_sek_force_short();
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1); // PRIM off, SEK shorted
+	printf("OVP: SEK shorted until power cycle (mode %d)\r\n",
+			statemachine_handle.current_mode);
+	if (statemachine_handle.current_mode == STATEMACHINE_IDLE)
+		display_show_idle_error(OVP_TEXT);
+	else
+		display_show_mode_error(OVP_TEXT);
+	return 1;
 }
 
 /**
