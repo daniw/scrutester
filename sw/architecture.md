@@ -105,7 +105,7 @@ Bare-metal, **event-driven**, single-threaded. No RTOS.
 | `EVENT_EEPROM_READ` | EEPROM read complete |
 | `EVENT_EEPROM_TIMEOUT` | EEPROM no-response |
 | `EVENT_SM_STEP` | State-machine timer tick (20 ms) |
-| `EVENT_BMS_TIMER` | BMS polling timer (1 s) |
+| `EVENT_BMS_TIMER` | BMS polling timer (`BQ76905_POLL_ms`, 100 ms) |
 
 ### State Machine (`statemachine.h` / `statemachine.c`)
 Step period: **20 ms** (`STATEMACHINE_STEP_PERIOD_mS`), driven from TIM2 via the
@@ -373,7 +373,7 @@ normal charge, including the full fault check. **Bench-validated on hardware.**
 
 Once in the CV tail, the voltage PI loop (`ctrl_main_ctrl_charge_voltage()`)
 runs a deliberate fast/slow sensor blend: its P-term uses the fast internal
-ADC (`v_in`), its I-term uses an accurate but slow (~1 Hz) reading that, as
+ADC (`v_in`), its I-term uses an accurate but slow (~10 Hz) reading that, as
 of the most recent charging rework, is `4 × highest individual cell voltage`
 rather than `StackVoltage` — regulating to protect the most-charged cell
 from overshoot under cell imbalance, with a stepped (not ramped) reference.
@@ -542,6 +542,10 @@ leaving AMPMETER also releases the SEK short.
 all mode handling skipped. The short takes over from the crowbar thyristor if
 the internal converter caused the OVP and carries the current to blow the
 fuse if an external source did. `OVP_RESET` is not used.
+
+BMS data older than `BQ76905_STALE_ms` (3 s, no complete async read cycle) is
+`BMS_STALE`: ERROR in CHARGE (stops the charge), WARNING elsewhere; it also
+blocks the CHARGE auto-entry. A read cycle stuck that long is restarted.
 
 ---
 

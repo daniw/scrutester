@@ -164,6 +164,7 @@ typedef struct{
 	uint32_t battery_capacity_mAs;
 
 	BQ76905_asyncState asyncState;
+	uint32_t last_update_ms; // HAL_GetTick() of the last complete read cycle
 	uint8_t command_tx;
 	uint8_t command_tx2[4];
 
@@ -179,6 +180,8 @@ typedef struct{
      * Results will be stored in internal arrays.
      */
     void BQ76905_readAllValuesAsync(BQ76905_handle* handle);
+    uint32_t BQ76905_data_age_ms(const BQ76905_handle* handle);
+    uint8_t BQ76905_data_stale(const BQ76905_handle* handle);
     
     /**
      * Starts synchropnous read of all measurement values.

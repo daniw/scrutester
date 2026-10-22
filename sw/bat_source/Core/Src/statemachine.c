@@ -373,7 +373,8 @@ void statemachine_step(void) {
 		// (charge_lockout), or the BMS has not delivered a plausible stack
 		// voltage yet (it reads 0 before the first poll, which would pass the
 		// "below end voltage" test below).
-		if (!charge_lockout
+		uint8_t bms_fresh = !BQ76905_data_stale(&bms);
+		if (!charge_lockout && bms_fresh
 				&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)
 				&& !(bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB)
 				&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV
@@ -381,7 +382,7 @@ void statemachine_step(void) {
 				&& bms.VoltageRegisters.StackVoltage
 						< CTRL_PARAM_CHARGE_END_VOLTAGE_mV - CTRL_PARAM_CHARGE_RESTART_MARGIN_mV) {
 			statemachine_switchfromIdle(STATEMACHINE_MODE_CHARGE);
-		} else if (!charge_lockout
+		} else if (!charge_lockout && bms_fresh
 				&& (bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)
 				&& !(bms.SafetyRegisters.safetyStatusA & (uint8_t) ~BQ76905_SAFETY_STATUS_A_CUV)
 				&& !bms.SafetyRegisters.safetyStatusB

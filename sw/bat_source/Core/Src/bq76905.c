@@ -86,8 +86,12 @@ void BQ76905_init(BQ76905_handle* handle, uint8_t i2c_address){
 	}
 
 
+	if (handle->SafetyRegisters.safetyStatusA || handle->SafetyRegisters.safetyStatusB)
+		printf("BMS: clearing latched faults A=0x%02X B=0x%02X\r\n",
+				handle->SafetyRegisters.safetyStatusA, handle->SafetyRegisters.safetyStatusB);
 	BQ76905_RecoverProtection(handle, 0xFF);
-	timer_add(1000,  TIMER_TYPE_TICK, EVENT_BMS_TIMER, 0);
+	handle->last_update_ms = HAL_GetTick();
+	timer_add(BQ76905_POLL_ms, TIMER_TYPE_TICK, EVENT_BMS_TIMER, 0);
 }
 
 /**************************** Public Functions ***********************************/
@@ -123,6 +127,9 @@ void BQ76905_readAllValues(BQ76905_handle* handle) {
 
 // Initiates asynchronous read of all cell voltages
 void BQ76905_readAllValuesAsync(BQ76905_handle *handle) {
+	// A cycle that never completed: restart it (bus recovery is in i2c.c).
+	if (handle->asyncState != IDLE && BQ76905_data_stale(handle))
+		handle->asyncState = IDLE;
 	if (handle->asyncState == IDLE) {
 		handle->asyncState = READ_SAFETY;
 		handle->command_tx = BQ76905_COMMAND_ALERT_A;
@@ -133,6 +140,24 @@ void BQ76905_readAllValuesAsync(BQ76905_handle *handle) {
 	}
 }
 
+
+/**
+ * @brief Time since the last complete read cycle.
+ * @param handle BMS handle.
+ * @return Age in ms.
+ */
+uint32_t BQ76905_data_age_ms(const BQ76905_handle *handle) {
+	return HAL_GetTick() - handle->last_update_ms;
+}
+
+/**
+ * @brief Checks whether the BMS data is older than BQ76905_STALE_ms.
+ * @param handle BMS handle.
+ * @return 1 if stale.
+ */
+uint8_t BQ76905_data_stale(const BQ76905_handle *handle) {
+	return BQ76905_data_age_ms(handle) > BQ76905_STALE_ms;
+}
 
 inline void BQ76905_resetAlarmStatus(BQ76905_handle* handle){
 	writeCommand(handle, BQ76905_COMMAND_ALARM_STATUS, 0xFFFF,2 );
@@ -355,6 +380,7 @@ void BQ76905_onI2CComplete(BQ76905_handle* handle) {
 
 	case READ_PASSQ:
 		handle->asyncState = IDLE;
+		handle->last_update_ms = HAL_GetTick();
 		BQ76905_updateChargePercentage(handle);
 		break;
 	default:

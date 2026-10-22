@@ -10,6 +10,10 @@
 
 #define BQ76905_I2C_ADDRESS 0x10
 
+// Poll period of the async read cycle, and age after which the data is stale.
+#define BQ76905_POLL_ms  100
+#define BQ76905_STALE_ms 3000
+
 // Application Data
 #define BQ76905_SHUNT_RESISTANCE_mOHM 5
 #define BQ76905_USER_A 0.001007

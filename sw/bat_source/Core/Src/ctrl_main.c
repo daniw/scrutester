@@ -793,7 +793,7 @@ void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 
 /**
  * CV tail of the charge cycle: P-term from the fast internal ADC
- * (voltage_meas_mV), I-term from the accurate but slow (~1Hz) BMS
+ * (voltage_meas_mV), I-term from the accurate but slow (~10Hz) BMS
  * StackVoltage reading (voltage_meas_accurate_mV) - the PID just holds the
  * last value between BMS refreshes, same as elsewhere in this file.
  */

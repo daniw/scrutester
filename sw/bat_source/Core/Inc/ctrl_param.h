@@ -150,7 +150,7 @@
 
 // Plausibility window for bms.VoltageRegisters.StackVoltage before it is
 // trusted to gate the CC->CV transition. The BMS is read asynchronously over
-// I2C at ~1Hz, so the field reads 0 before the first successful poll and
+// I2C at ~10Hz, so the field reads 0 before the first successful poll and
 // holds its last value if the bus fails - and a 0 would sit below the end
 // voltage forever, leaving the charger stuck in constant current with the CV
 // phase that is supposed to end it never engaging. A 4-cell LiFePO4 stack
