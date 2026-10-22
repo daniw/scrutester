@@ -54,6 +54,7 @@
 #include "protection.h"
 #include "splash.h"
 #include "watchdog.h"
+#include "fault.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -354,15 +355,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-	hrtim_sync_stop(); // clears IDLES1 before the outputs go idle
-	hrtim_disable(HRTIM_CHANNEL_ALL);
-	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
-	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+	fault_halt("Error_Handler", (uint32_t) __builtin_return_address(0));
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

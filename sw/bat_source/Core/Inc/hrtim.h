@@ -71,6 +71,7 @@ void hrtim_burst_set_idle_cycles(unsigned cycles);
 void hrtim_set_prim_sek(uint32_t prim_freq, float prim_duty, uint32_t sek_freq, float sek_duty);
 void hrtim_enable(uint8_t channel);
 void hrtim_disable(uint8_t channel);
+void hrtim_emergency_off(void);
 void hrtim_sek_force_short(void);
 void hrtim_sek_restore(void);
 /* USER CODE END Prototypes */

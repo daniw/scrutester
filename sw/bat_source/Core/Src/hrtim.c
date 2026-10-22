@@ -545,6 +545,21 @@ void hrtim_disable(uint8_t channel) {
 	}
 }
 
+/**
+ * @brief Gate-driver enables off, burst/IDLES1 cleared, all HRTIM outputs
+ *        disabled. Register writes only, safe from fault handlers.
+ */
+void hrtim_emergency_off(void) {
+	CONV_CTRL_EN_GPIO_Port->BRR = CONV_CTRL_EN_Pin;
+	HV_CTRL_EN_GPIO_Port->BRR = HV_CTRL_EN_Pin;
+	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].OUTxR &= ~(HRTIM_OUTR_IDLM1
+			| HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].OUTxR &= ~(HRTIM_OUTR_IDLM1
+			| HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+	hrtim_disable(HRTIM_CHANNEL_ALL);
+}
+
 static uint8_t hrtim_sek_shorted = 0;
 
 /**
