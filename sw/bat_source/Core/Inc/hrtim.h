@@ -51,7 +51,8 @@ extern HRTIM_HandleTypeDef hhrtim1;
 /**
  * @brief Checks whether channel is a valid index into HRTIM1->sTimerxRegs[]
  *        for one of the channels this driver actually drives (PRIM/SEK/HV).*/
-#define HRTIM_CHANNEL_IS_VALID(channel) (channel == HRTIM_CHANNEL_PRIM) || (channel == HRTIM_CHANNEL_SEK) || (channel == HRTIM_CHANNEL_HV)
+#define HRTIM_CHANNEL_IS_VALID(channel) (((channel) == HRTIM_CHANNEL_PRIM) \
+		|| ((channel) == HRTIM_CHANNEL_SEK) || ((channel) == HRTIM_CHANNEL_HV))
 /* USER CODE END Private defines */
 
 void MX_HRTIM1_Init(void);

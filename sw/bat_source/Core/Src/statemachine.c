@@ -309,7 +309,7 @@ void statemachine_step(void) {
 		// Shutdown any running converters
 		statemachine_switchtoIdle();
 		gpio_power_off();
-		Inactivity_ticks = 0;
+		inactivity_ticks = 0;
 	}
 
 	// Select transition to next state
@@ -358,7 +358,8 @@ void statemachine_step(void) {
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_ISOMETER:
 		statemachine_apply_encoder_setpoint();
-		if (out_button_pressed == STATEMACHINE_BUTTON_PRESSED) {
+		// Start once on the press edge, stop on release.
+		if (out_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			statemachine_handle.output_on = 1;
 			ctrl_main_start_ctrl(
 					statemachine_mode_to_ctrl_mode(
@@ -366,8 +367,7 @@ void statemachine_step(void) {
 			aux_io_ctrl_manual_set_io(
 					mode_table[statemachine_handle.current_mode].enable_gpio,
 					1);
-		}
-		else {
+		} else if (out_button_pressed == STATEMACHINE_BUTTON_RELEASED) {
 			statemachine_handle.output_on = 0;
 			aux_io_ctrl_manual_set_io(
 					mode_table[statemachine_handle.current_mode].enable_gpio,
@@ -850,7 +850,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
-		aux_io_ctrl_set_config(mode, 0); // Must be called before
+		aux_io_ctrl_set_config(mode, 0); // relays before the converter starts
 		statemachine_enter_mode_generic(mode);
 		break;
 

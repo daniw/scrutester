@@ -42,7 +42,7 @@ static protection_level_t protection_classify_temp(int16_t temp, protection_leve
 		return PROTECTION_LEVEL_WARNING;
 	else if (prev == PROTECTION_LEVEL_WARNING && temp >= PROTECTION_TEMP_WARNING_C - PROTECTION_TEMP_HYSTERESIS_C)
 		return PROTECTION_LEVEL_WARNING;      // stays latched until it drops far enough
-	else if(temp < PROTECTION_TEMP_ERROR_OPEN_NTC)
+	else if (temp <= PROTECTION_TEMP_ERROR_OPEN_NTC) // open NTC reads the -50 °C table end
 		return PROTECTION_LEVEL_ERROR;
 	else
 		return PROTECTION_LEVEL_OK;
