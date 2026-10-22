@@ -48,6 +48,10 @@ extern HRTIM_HandleTypeDef hhrtim1;
 /* PERxR for a switching frequency (up/down counting, MUL32 prescaler:
  * 2.56 GHz / f). Not clamped -- see hrtim_set_freq(). */
 #define HRTIM_PERIOD_FROM_FREQ(freq) (0x98968000U / (uint32_t) (freq))
+/**
+ * @brief Checks whether channel is a valid index into HRTIM1->sTimerxRegs[]
+ *        for one of the channels this driver actually drives (PRIM/SEK/HV).*/
+#define HRTIM_CHANNEL_IS_VALID(channel) (channel == HRTIM_CHANNEL_PRIM) || (channel == HRTIM_CHANNEL_SEK) || (channel == HRTIM_CHANNEL_HV)
 /* USER CODE END Private defines */
 
 void MX_HRTIM1_Init(void);

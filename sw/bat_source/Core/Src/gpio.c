@@ -212,7 +212,6 @@ void gpio_turnOff(void){
 // would leave the firmware in a half-off state if power doesn't actually cut.
 void gpio_power_off(void) {
 	printf("Turning off ...\r\n");
-	//Todo: disable any controller or converter that might be running before shutdown to prevent damage!
 	HAL_Delay(10);
 	gpio_turnOff();
 	for (uint16_t i = 0; i < 100; i++){

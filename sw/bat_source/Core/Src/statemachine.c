@@ -59,18 +59,12 @@ static uint8_t charge_lockout;
 static uint8_t charge_await_notified;
 #endif
 
-// Auto power-off after this long with no user interaction, in ANY mode. In
-// ticks (STATEMACHINE_STEP_PERIOD_mS each) rather than milliseconds so it
-// doesn't need a wider type: 10 min / 20 ms = 30000, comfortably inside
-// uint16_t (max 65535, i.e. up to ~21.8 min) with room to retune.
 #define STATEMACHINE_INACTIVITY_TIMEOUT_TICKS ((10UL * 60UL * 1000UL) / STATEMACHINE_STEP_PERIOD_mS)
-
-// Ticks since the encoder last moved, a button was last pressed/held, or a
-// control loop was last actively running (see statemachine_step()'s use of
-// this). Reset on every mode entry (statemachine_switchtoIdle() and
-// statemachine_switchfromIdle()'s shared tail) so a near-expired count from
-// a previous mode doesn't carry over into a freshly entered one.
 static uint16_t inactivity_ticks;
+
+#define STATEMACHINE_BUTTON_RELEASED 0
+#define STATEMACHINE_BUTTON_CLICK 1
+#define STATEMACHINE_BUTTON_PRESSED 2
 
 // Raw encoder count as of the last tick, to detect movement independently of
 // what any given mode does with it (menu index, setpoint, calibration
@@ -173,11 +167,11 @@ static void statemachine_step_calibration(void) {
 			calibration_ensure_adc_mode(calibration_selected_channel);
 		}
 		display_calibration_update(calibration_selected_channel, 0, 0.0f);
-		if (ok_button_pressed == 1) {
+		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			calibration_ui_state = 1;
 			display_calibration_enter(calibration_selected_channel, 1);
 		}
-		if (esc_button_pressed == 1) {
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
 			adc_configure_mode(statemachine_handle.current_mode);
 			display_show_settings_list(statemachine_handle.current_menu_index);
@@ -186,13 +180,13 @@ static void statemachine_step_calibration(void) {
 	}
 	case 1: // zero step
 		display_calibration_update(calibration_selected_channel, 1, 0.0f);
-		if (ok_button_pressed == 1) {
+		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			calibration_zero(calibration_selected_channel);
 			calibration_ui_state = 2;
 			input_encoder_reset(0);
 			display_calibration_enter(calibration_selected_channel, 2);
 		}
-		if (esc_button_pressed == 1) {
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			calibration_ui_state = 0;
 			display_calibration_enter(calibration_selected_channel, 0);
 		}
@@ -212,7 +206,7 @@ static void statemachine_step_calibration(void) {
 				display_calibration_enter(calibration_selected_channel, 3);
 			}
 		}
-		if (esc_button_pressed == 1) {
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			calibration_ui_state = 0;
 			display_calibration_enter(calibration_selected_channel, 0);
 		}
@@ -231,6 +225,7 @@ void statemachine_step(void) {
 	adc_convert_data();
 	ui_ctrl_step();
 
+	display_refresh_battery_icon();
 	// Update protection and turn off if necessary
 	protection_update(statemachine_handle.current_mode);
 
@@ -242,9 +237,9 @@ void statemachine_step(void) {
 	if (statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode) != CTRL_MODE_OFF) {
 		if (protection_get_worst_level() == PROTECTION_LEVEL_ERROR) {
 			if (ctrl_main_handle.mode != CTRL_MODE_OFF) {
-				ctrl_main_stop_control();
 				aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN , 0);
 				aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+				ctrl_main_stop_control();
 			}
 			statemachine_handle.output_on = 0;
 			statemachine_handle.protection_forced_output_off = 1;
@@ -273,12 +268,14 @@ void statemachine_step(void) {
 	// Handle Buttons press
 	if (input_btn_ok())
 		ok_button_pressed += 1;
-	else if (input_btn_esc())
-		esc_button_pressed += 1;
-	else {
+	else
 		ok_button_pressed = 0;
+
+	if (input_btn_esc())
+		esc_button_pressed += 1;
+	else
 		esc_button_pressed = 0;
-	}
+
 	if ((!statemachine_handle.protection_forced_output_off)
 			&& (input_btn_out())) {
 		if (out_button_pressed < 2)
@@ -292,37 +289,12 @@ void statemachine_step(void) {
 		charge_lockout = 0;
 	}
 
-	// Battery icon, in every mode: see display_refresh_battery_icon() for why
-	// this one call replaced several per-mode ones -- it no-ops unless
-	// bms.charge_percentage actually changed, so this is cheap every tick.
-	display_refresh_battery_icon();
 
-	// Auto power-off, in every mode: reset the timer on any encoder movement,
-	// any button press/hold, or CHARGE actively running. 60V/10A/ISOMETER are
-	// hold-OUT-to-enable, so `out_button_pressed` alone already covers "stay
-	// on while OUT is held" for them -- no need to also key off
-	// ctrl_main_handle.mode there. RESISTANCE_1A/1mA are auto-started
-	// (MODE_F_AUTOSTART_CTRL, see mode_table.c) and keep running with OUT
-	// untouched, so they must NOT get a free pass from
-	// `ctrl_main_handle.mode != CTRL_MODE_OFF` the way they used to: like any
-	// other passive-readout mode, holding OUT is what keeps them on, nothing
-	// else does. CHARGE is the one mode this deliberately keeps exempt
-	// regardless of button/encoder activity, since there is no "hold OUT" (or
-	// any button) that would otherwise ever satisfy it mid-charge.
-	// Deliberately NOT statemachine_handle.output_on, which mode_table.c
-	// documents as left stale across a mode switch for passive-readout modes
-	// (VOLTMETER's entry there), unlike ctrl_main_handle.mode, which
-	// ctrl_main_stop_control() (called from statemachine_switchtoIdle())
-	// reliably clears to CTRL_MODE_OFF every time IDLE is (re-)entered.
-	// STATEMACHINE_MODE_SHUTDOWN never becomes a lasting current_mode (see
-	// statemachine_switchfromIdle()), so it needs no case here.
 	uint16_t raw_encoder = input_encoder_read();
 	uint8_t active = (raw_encoder != last_raw_encoder)
 			|| ok_button_pressed || esc_button_pressed || out_button_pressed
 			|| ctrl_main_handle.mode == CTRL_MODE_CHARGE
 #ifdef EMI_MODE_ENABLED
-			// An EMI scan runs unattended and for longer than the timeout;
-			// like CHARGE, nothing the user presses would keep it alive.
 			|| ctrl_main_handle.mode == CTRL_MODE_EMI
 #endif
 			;
@@ -334,10 +306,10 @@ void statemachine_step(void) {
 				(unsigned long) STATEMACHINE_INACTIVITY_TIMEOUT_TICKS
 						* STATEMACHINE_STEP_PERIOD_mS / 1000UL,
 				statemachine_handle.current_mode);
+		// Shutdown any running converters
+		statemachine_switchtoIdle();
 		gpio_power_off();
-		// Only reached if power didn't actually cut (see gpio_power_off()):
-		// wait out another full timeout instead of retrying every tick.
-		inactivity_ticks = 0;
+		Inactivity_ticks = 0;
 	}
 
 	// Select transition to next state
@@ -348,11 +320,11 @@ void statemachine_step(void) {
 			statemachine_handle.current_menu_index = temp;
 			display_show_idle(temp);
 		}
-		if (ok_button_pressed == 1) {
+		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			statemachine_switchfromIdle(menu_entry_at(temp)->mode);
 		}
 
-		if (esc_button_pressed == 1)
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK)
 			statemachine_switchfromIdle(STATEMACHINE_MODE_SHUTDOWN);
 
 		// CHARGE is auto-entered, not menu/button-selected: whenever idle and
@@ -386,7 +358,7 @@ void statemachine_step(void) {
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_ISOMETER:
 		statemachine_apply_encoder_setpoint();
-		if (out_button_pressed == 1) {
+		if (out_button_pressed == STATEMACHINE_BUTTON_PRESSED) {
 			statemachine_handle.output_on = 1;
 			ctrl_main_start_ctrl(
 					statemachine_mode_to_ctrl_mode(
@@ -394,13 +366,13 @@ void statemachine_step(void) {
 			aux_io_ctrl_manual_set_io(
 					mode_table[statemachine_handle.current_mode].enable_gpio,
 					1);
-		} // Second if necessary, as out_button is 2 while pressed.
-		else if (out_button_pressed == 0) {
+		}
+		else {
 			statemachine_handle.output_on = 0;
-			ctrl_main_stop_control();
 			aux_io_ctrl_manual_set_io(
 					mode_table[statemachine_handle.current_mode].enable_gpio,
 					0);
+			ctrl_main_stop_control();
 		}
 		/* fall through to update display !! */
 	case STATEMACHINE_MODE_RESISTANCE_1A:
@@ -429,7 +401,7 @@ void statemachine_step(void) {
 				statemachine_handle.current_menu_index = temp;
 				display_show_settings_list(temp);
 			}
-			if (ok_button_pressed == 1) {
+			if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 				statemachine_handle.settings_mode =
 						(statemachine_settings_modes_t) statemachine_handle.current_menu_index;
 				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
@@ -447,10 +419,10 @@ void statemachine_step(void) {
 		} else {
 			display_update_settings_detail(statemachine_handle.settings_mode);
 			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
-					&& ok_button_pressed == 1) {
+					&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 				balancing_toggle_manual_override();
 			}
-			if (esc_button_pressed == 1) {
+			if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {
 					balancing_clear_manual_override();
 				}
@@ -465,7 +437,7 @@ void statemachine_step(void) {
 	default:
 		break;
 	}
-	if (esc_button_pressed == 1) {
+	if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 		if (statemachine_handle.current_mode == STATEMACHINE_MODE_CHARGE) {
 			printf("CHARGE exit: ESC pressed by user\r\n");
 			statemachine_charge_lockout();
@@ -481,9 +453,9 @@ void statemachine_step(void) {
  * ctrl_main_stop_control()), then the gate-driver enables. */
 static void statemachine_emi_stop(void) {
 	statemachine_handle.output_on = 0;
-	ctrl_main_stop_control();
 	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
 	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+	ctrl_main_stop_control();
 }
 
 /* Per-tick EMI handling. Unlike 60V/10A/ISOMETER this is not hold-to-enable:
@@ -823,8 +795,8 @@ static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
 	// Must run after adc_configure_mode(mode): every pre-refactor case that
 	// auto-starts the control loop configured the ADC first.
 	if (d->flags & MODE_F_AUTOSTART_CTRL) {
-		ctrl_main_start_ctrl(d->ctrl_mode);
 		aux_io_ctrl_manual_set_io(d->enable_gpio, 1);
+		ctrl_main_start_ctrl(d->ctrl_mode);
 	}
 	if (d->flags & MODE_F_DAC_SQWAVE)
 		dac_sqwave_start(DAC_CHANNEL_2, config_store.calibration.i_1a_ref_dac_value);
@@ -878,6 +850,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
+		aux_io_ctrl_set_config(mode, 0); // Must be called before
 		statemachine_enter_mode_generic(mode);
 		break;
 
@@ -916,12 +889,12 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 
 void statemachine_switchtoIdle(void) {
 
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
 	ctrl_main_stop_control();
 	printf("Switch to Idle\r\n");
 	aux_io_ctrl_set_config(STATEMACHINE_IDLE, bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV);
 
-	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
-	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
 	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
 	dac_sqwave_stop(); // no-op unless RESISTANCE_1A left the DAC square wave running
 	input_encoder_reset(63+statemachine_handle.current_mode);

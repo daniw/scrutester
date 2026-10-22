@@ -103,7 +103,7 @@
 // HV flyback runs open-loop at a fixed duty while the LV converter regulates
 // OUT_LV with the 60V full-range loop; the LV loop pushes the flyback's energy
 // back into the battery. All placeholders pending bench bring-up.
-#define CTRL_PARAM_EMI_HV_DUTY 0.02F
+#define CTRL_PARAM_EMI_HV_DUTY 0.01F
 // Encoder-adjustable LV setpoint: starts at ..._DEFAULT_mV, resolution 500 mV
 // (same as 60V), clamped to ..._MAX_mV.
 #define CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV 40000

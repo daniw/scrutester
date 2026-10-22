@@ -417,20 +417,6 @@ void hrtim_start_timer(void) {
 			| HRTIM_MCR_TDCEN | HRTIM_MCR_MCEN);
 }
 
-/**
- * @brief Checks whether channel is a valid index into HRTIM1->sTimerxRegs[]
- *        for one of the channels this driver actually drives (PRIM/SEK/HV).
- *        Deliberately excludes HRTIM_CHANNEL_ALL (a software-only sentinel
- *        meaningful only to hrtim_disable()) and any other timer index, so
- *        callers can never make hrtim_set_freq()/hrtim_set_duty() write an
- *        unintended timer's registers.
- * @param channel Channel to validate.
- * @return 1 if valid, 0 otherwise.
- */
-static uint8_t hrtim_channel_is_valid(uint8_t channel) {
-	return (channel == HRTIM_CHANNEL_PRIM) || (channel == HRTIM_CHANNEL_SEK)
-			|| (channel == HRTIM_CHANNEL_HV);
-}
 
 /**
  * Clamps a PERxR value to what the HRTIM can actually use.
@@ -480,7 +466,7 @@ static uint32_t hrtim_duty_to_compare(uint32_t period, float value) {
 void hrtim_set_freq(uint8_t channel, uint32_t freq) {
 	uint32_t period;
 
-	if (!hrtim_channel_is_valid(channel))
+	if (!HRTIM_CHANNEL_IS_VALID(channel))
 		return;
 
 	// freq == 0 has no valid period (division by zero); there is no sane
@@ -501,7 +487,7 @@ void hrtim_set_freq(uint8_t channel, uint32_t freq) {
  */
 
 void hrtim_set_duty(uint8_t channel, float value) {
-	if (!hrtim_channel_is_valid(channel))
+	if (!HRTIM_CHANNEL_IS_VALID(channel))
 		return;
 
 	HRTIM1->sTimerxRegs[channel].CMP1xR = hrtim_duty_to_compare(
@@ -595,7 +581,6 @@ void hrtim_sek_force_short(void) {
 	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 	// Drive both gates to the same ON level - deliberate shoot-through.
-	// TODO: confirm ON polarity on the bench before relying on this under load.
 	HAL_GPIO_WritePin(CONV_CTRL_SEC_L_GPIO_Port, CONV_CTRL_SEC_L_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(CONV_CTRL_SEC_H_GPIO_Port, CONV_CTRL_SEC_H_Pin, GPIO_PIN_SET);
 
@@ -623,8 +608,6 @@ void hrtim_sek_restore(void) {
 	GPIO_InitStruct.Alternate = GPIO_AF3_HRTIM1;
 	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-	hrtim_enable(HRTIM_CHANNEL_SEK);
-
 	hrtim_sek_shorted = 0;
 }
 /*
@@ -645,8 +628,7 @@ static void hrtim_sync_init(void) {
 #ifdef VOUT_SYNC_BURST_ENABLED
 	const uint8_t timers[2] = { HRTIM_CHANNEL_PRIM, HRTIM_CHANNEL_SEK };
 	for (unsigned i = 0; i < 2; i++) {
-		HRTIM1->sTimerxRegs[timers[i]].OUTxR |= HRTIM_OUTR_IDLES1
-				| HRTIM_OUTR_DIDL1 | HRTIM_OUTR_DIDL2;
+		HRTIM1->sTimerxRegs[timers[i]].OUTxR |= HRTIM_OUTR_DIDL1 | HRTIM_OUTR_DIDL2;
 		HRTIM1->sTimerxRegs[timers[i]].OUTxR &= ~(HRTIM_OUTR_IDLES2
 				| HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2);
 	}
@@ -672,7 +654,7 @@ void hrtim_burst_select_leg(uint8_t fast_channel) {
 
 	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
 	HRTIM1->sTimerxRegs[parked].OUTxR &= ~idlm;
-	HRTIM1->sTimerxRegs[fast_channel].OUTxR |= idlm;
+	HRTIM1->sTimerxRegs[fast_channel].OUTxR |= (idlm | HRTIM_OUTR_IDLES1);
 	HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BME;
 #else
 	(void) fast_channel;
@@ -700,8 +682,8 @@ void hrtim_sync_start(uint8_t fast_channel) {
 void hrtim_sync_stop(void) {
 #ifdef VOUT_SYNC_BURST_ENABLED
 	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
-	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].OUTxR &= ~(HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2);
-	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].OUTxR &= ~(HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].OUTxR &= ~(HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].OUTxR &= ~(HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
 	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].RSTxR = 0;
 	HRTIM1->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_D].RSTxR = 0;
 	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].RSTxR = 0;
