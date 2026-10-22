@@ -51,6 +51,10 @@ static charge_seq_t charge_seq;
  * otherwise restart CHARGE on the very next tick while the charger is still
  * connected. Cleared once the charger is removed (see statemachine_step()). */
 static uint8_t charge_lockout;
+// Charge finished or timed out: converter off, finished screen shown.
+static uint8_t charge_done;
+static uint32_t charge_ticks;
+static uint32_t charge_balance_ticks;
 
 #ifdef CHARGE_DEBUG
 /* One-shot "precharge is done, waiting for chargeNext" notice, since the
@@ -92,6 +96,8 @@ static void statemachine_step_charge(void);
 static void statemachine_step_emi(void);
 #endif
 static void statemachine_charge_lockout(void);
+static void statemachine_charge_reset_timers(void);
+static void statemachine_charge_finish(const char *msg, uint8_t error);
 static void statemachine_clear_mode_error(void);
 static uint8_t statemachine_ovp_lockout(void);
 
@@ -558,6 +564,9 @@ uint8_t statemachine_charge_test_advance(void) {
 /* Per-tick CHARGE handling: phase sequencing (charge_seq.h), debug output and
  * the exit conditions. Runs from statemachine_step()'s CHARGE case. */
 static void statemachine_step_charge(void) {
+	if (charge_done)
+		return; // finished screen is static, ESC / auto power-off end it
+
 	display_update_mode(statemachine_handle.current_mode,
 			statemachine_handle.output_on);
 
@@ -671,10 +680,17 @@ static void statemachine_step_charge(void) {
 
 	// Exit conditions. End of charge only counts once current is actually
 	// flowing (CC_RAMP/CV); everything else applies in every phase.
-	uint8_t charge_completed = charge_seq_may_complete(&charge_seq)
+	uint8_t at_end = charge_seq_may_complete(&charge_seq)
 			&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
-			&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA
-			&& (cell_max - cell_min <= 50);
+			&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA;
+	uint8_t balanced = (cell_max - cell_min <= CTRL_PARAM_CHARGE_CELL_SPREAD_mV);
+	if (at_end && !balanced)
+		charge_balance_ticks++;
+	uint8_t balance_timeout = charge_balance_ticks
+			>= CTRL_PARAM_CHARGE_BALANCE_TIMEOUT_s * 1000UL / STATEMACHINE_STEP_PERIOD_mS;
+	uint8_t charge_completed = at_end && (balanced || balance_timeout);
+	uint8_t charge_timeout = ++charge_ticks
+			>= CTRL_PARAM_CHARGE_MAX_TIME_s * 1000UL / STATEMACHINE_STEP_PERIOD_mS;
 	// While recovering from a deep-discharge CUV fault, CUV is exactly the
 	// condition this run exists to clear -- it must not itself abort the
 	// charge that's trying to recover from it (see
@@ -687,12 +703,16 @@ static void statemachine_step_charge(void) {
 	uint8_t bms_fault = fault_mask_a || bms.SafetyRegisters.safetyStatusB;
 	uint8_t supply_low = adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV;
 
-	if (charge_completed || bms_fault || supply_low) {
+	if (charge_completed || charge_timeout || bms_fault || supply_low) {
 		if (charge_completed) {
 			printf("CHARGE exit: end voltage reached and current tapered off "
-					"(stack=%umV >= end=%dmV, i_out=%ldmA <= taper=%dmA)\r\n",
+					"(stack=%umV >= end=%dmV, i_out=%ldmA <= taper=%dmA, spread=%umV)\r\n",
 					bms.VoltageRegisters.StackVoltage, CTRL_PARAM_CHARGE_END_VOLTAGE_mV,
-					-adc_data.converted.i_out_ext_mA, CTRL_PARAM_CHARGE_TAPER_CURRENT_mA);
+					-adc_data.converted.i_out_ext_mA, CTRL_PARAM_CHARGE_TAPER_CURRENT_mA,
+					cell_max - cell_min);
+		}
+		if (charge_timeout && !charge_completed) {
+			printf("CHARGE exit: timeout after %lus\r\n", CTRL_PARAM_CHARGE_MAX_TIME_s);
 		}
 		if (fault_mask_a) {
 			printf("CHARGE exit: BMS safetyStatusA=0x%02X\r\n", fault_mask_a);
@@ -711,11 +731,41 @@ static void statemachine_step_charge(void) {
 			bms.Accumulator.accumulatedCharge = 0;
 			bms.charge_percentage = 100;
 		}
-		if (bms_fault) {
-			statemachine_charge_lockout();
+		if (bms_fault || supply_low) {
+			if (bms_fault)
+				statemachine_charge_lockout();
+			statemachine_switchtoIdle();
+		} else if (charge_completed) {
+			statemachine_charge_finish(balanced ? "Charging finished"
+					: "Finished, cells unbalanced", 0);
+		} else {
+			statemachine_charge_finish("ERROR: Charge timeout", 1);
 		}
-		statemachine_switchtoIdle();
 	}
+}
+
+static void statemachine_charge_reset_timers(void) {
+	charge_done = 0;
+	charge_ticks = 0;
+	charge_balance_ticks = 0;
+}
+
+/**
+ * @brief Ends a charge but stays in CHARGE: converter off, IDLE relay
+ *        configuration, finished screen. Inactivity power-off applies again.
+ * @param msg Text for the finished screen.
+ * @param error 1 = shown as error (red).
+ */
+static void statemachine_charge_finish(const char *msg, uint8_t error) {
+	aux_io_ctrl_manual_set_io(mode_table[STATEMACHINE_MODE_CHARGE].enable_gpio, 0);
+	ctrl_main_stop_control();
+	aux_io_ctrl_set_config(STATEMACHINE_IDLE,
+			bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV);
+	statemachine_handle.output_on = 0;
+	ui_ctrl_ledOutOff();
+	charge_done = 1;
+	inactivity_ticks = 0;
+	display_show_charge_done(msg, error);
 }
 
 /* CHARGE entry, called from statemachine_switchfromIdle(). Unlike the other
@@ -737,6 +787,7 @@ static uint8_t statemachine_enter_charge(void) {
 
 	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE, 0);   // relays open, before any PWM
 	charge_seq_init(&charge_seq);
+	statemachine_charge_reset_timers();
 #ifdef CHARGE_DEBUG
 	charge_await_notified = 0;
 #endif
@@ -772,6 +823,7 @@ static uint8_t statemachine_enter_charge_low_current(void) {
 
 	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE,1); // K1 stays closed
 	charge_seq_init_low_current_recovery(&charge_seq);
+	statemachine_charge_reset_timers();
 #ifdef CHARGE_DEBUG
 	charge_await_notified = 0;
 #endif

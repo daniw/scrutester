@@ -383,8 +383,14 @@ from overshoot under cell imbalance, with a stepped (not ramped) reference.
 these two quantities diverge, which is untested. The cycle terminates once
 `StackVoltage` ≥ end voltage, output current has tapered below
 `CTRL_PARAM_CHARGE_TAPER_CURRENT_mA`, **and** the cell-voltage spread
-(`max(cell) - min(cell)`) is ≤ 50 mV — or immediately on a BMS safety fault
-or on the supply dropping below `CTRL_PARAM_CHARGE_STOP_VIN_mV`. Live ADC
+(`max(cell) - min(cell)`) is ≤ `CTRL_PARAM_CHARGE_CELL_SPREAD_mV` (50 mV), or
+after `CTRL_PARAM_CHARGE_BALANCE_TIMEOUT_s` (1 h) at end voltage/taper with a
+larger spread ("Finished, cells unbalanced"). `CTRL_PARAM_CHARGE_MAX_TIME_s`
+(5 h) ends it as "Charge timeout". These three stay in CHARGE on a static
+finished screen (converter off, IDLE relay configuration), where the
+inactivity power-off applies again; ESC goes to IDLE with the lockout. A BMS
+safety fault or the supply dropping below `CTRL_PARAM_CHARGE_STOP_VIN_mV` exits
+to IDLE immediately. Live ADC
 values are printed on the CLI (~10 Hz, from `statemachine_step()`, not the ISR) throughout
 charging for bench visibility, plus once the peak |`I_OUT`| in the 0.4 s after the
 relay-close command, for tuning `PRECHARGE_RATIO` and `RELAY_SETTLE_ms`.

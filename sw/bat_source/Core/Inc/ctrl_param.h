@@ -141,6 +141,12 @@
 // C/20 for the 4.5Ah pack. Placeholder needing bench tuning, like the other
 // charge params.
 #define CTRL_PARAM_CHARGE_TAPER_CURRENT_mA 100
+// Max cell spread for a regular end of charge.
+#define CTRL_PARAM_CHARGE_CELL_SPREAD_mV 50
+// End of charge despite a larger spread after this long at end voltage/taper.
+#define CTRL_PARAM_CHARGE_BALANCE_TIMEOUT_s (60UL * 60UL)
+// Overall charge time limit.
+#define CTRL_PARAM_CHARGE_MAX_TIME_s (5UL * 60UL * 60UL)
 
 // Plausibility window for bms.VoltageRegisters.StackVoltage before it is
 // trusted to gate the CC->CV transition. The BMS is read asynchronously over

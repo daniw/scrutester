@@ -31,6 +31,8 @@ void display_show_idle(uint8_t menu_index);
 void display_show_idle_error(const char *msg);
 /* Red error text in the footer of a mode screen, until display_enter_mode(). */
 void display_show_mode_error(const char *msg);
+/* Charge finished screen: charge icon and msg (red if error). */
+void display_show_charge_done(const char *msg, uint8_t error);
 
 /* Static chrome (title, labels, units, footer) for a mode's detail screen -- call once on entry. */
 void display_enter_mode(statemachine_modes_t mode);

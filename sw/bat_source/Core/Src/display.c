@@ -437,6 +437,28 @@ static void enter_charge(void) {
 	LCD_PutStr(16, SECOND_Y + 36, "Cells", FONT_TINY, C_WHITE_63, C_BLACK);
 }
 
+void display_show_charge_done(const char *msg, uint8_t error) {
+	const menu_entry_t *entry = menu_entry_for_mode(STATEMACHINE_MODE_CHARGE);
+	if (entry == NULL)
+		return;
+	UG_COLOR color = error ? C_RED : entry->accent;
+	int16_t cx = LCD_WIDTH / 2;
+	int16_t cy = STATUS_H + 12 + ICON_STORE_ICON_HEIGHT / 2;
+	int16_t y = cy + ICON_STORE_ICON_HEIGHT / 2 + 8;
+
+	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
+	draw_menu_icon((uint8_t) (entry - menu_order), entry, cx, cy, color, 0);
+	int16_t w = (int16_t) (strlen(msg) * UG_GetFontWidth(FONT_SMALL));
+	LCD_PutStr(cx - w / 2, y, (char*) msg, FONT_SMALL, error ? C_RED : C_WHITE,
+			C_BLACK);
+	snprintf(text, sizeof(text), "%u.%03u V   %u%%",
+			bms.VoltageRegisters.StackVoltage / 1000,
+			bms.VoltageRegisters.StackVoltage % 1000, bms.charge_percentage);
+	w = (int16_t) (strlen(text) * UG_GetFontWidth(FONT_TINY));
+	LCD_PutStr(cx - w / 2, y + 22, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	draw_footer("ESC: Back", 0);
+}
+
 static void update_charge(uint8_t output_active) {
 	const menu_entry_t *entry = menu_entry_for_mode(STATEMACHINE_MODE_CHARGE);
 	if (entry == NULL)
