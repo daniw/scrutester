@@ -824,6 +824,7 @@ void cmd_setSerial(void) {
 }
 
 void cmd_turnOff(void) {
+	statemachine_switchtoIdle(); // converters off before the power cut
 	gpio_power_off();
 }
 
