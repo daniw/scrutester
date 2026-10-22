@@ -683,7 +683,7 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 
 	ctrl_PID_controller_execute(pi, v_out_V, v_acc_V, 0);
 	ctrl_PID_controller_execute(&ctrl_pi_boost_iout_limit,
-			meas->i_out_ext_mA / 1000.0F, meas->i_out_ext_mA / 1000.0F, 0);
+			meas->i_out / 1000.0F, meas->i_out / 1000.0F, 0);
 
 	float duty = pi->action;
 	if (ctrl_pi_boost_iout_limit.action < duty) {

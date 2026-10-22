@@ -214,7 +214,7 @@ low-passed (`VOUT_VIN_FILTER_s`, 10 ms) and each region is held at least
 `VOUT_REGION_DWELL_s` (20 ms); with the raw sample it toggled at the 1.25 edge.
 A region change preloads the incoming PI with the duty that gives the same
 ideal ratio and writes both frequencies and duties together
-(`hrtim_set_prim_sek()`). The 1 A limiter caps the duty in every region; it
+(`hrtim_set_prim_sek()`). The 1 A limiter (fast internal `i_out`) caps the duty in every region; it
 starts at its ceiling and the voltage PI's integrator tracks the applied duty
 while it is capped (from 0 it caused a 5 V -> 9 V start-up overshoot). The
 FourSwitch gains are RAM-only: a `calibration_t` field would need a
