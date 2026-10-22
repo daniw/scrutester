@@ -319,8 +319,9 @@ void ctrl_main_start_ctrl_charge_low_current(void) {
 void ctrl_main_stop_control(void) {
 	ctrl_main_handle.mode = CTRL_MODE_OFF;
 	ctrl_main_handle.charge_phase = CHG_PHASE_OFF;
-	hrtim_disable(HRTIM_CHANNEL_ALL);
+	// sync_stop first: clears IDLES1, else a disabled leg idles low side ON.
 	hrtim_sync_stop();
+	hrtim_disable(HRTIM_CHANNEL_ALL);
 }
 
 /**

@@ -644,7 +644,7 @@ static void hrtim_sync_init(void) {
 /**
  * Puts only the fast leg (HRTIM_CHANNEL_PRIM or _SEK) under burst idle control
  * and enables the burst. IDLM is changed with BME = 0, as changing it during a
- * burst is not confirmed safe.
+ * burst is not confirmed safe. IDLES1 (low side on in idle) only on the fast leg.
  */
 void hrtim_burst_select_leg(uint8_t fast_channel) {
 #ifdef VOUT_SYNC_BURST_ENABLED
@@ -653,7 +653,7 @@ void hrtim_burst_select_leg(uint8_t fast_channel) {
 			: HRTIM_CHANNEL_PRIM;
 
 	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
-	HRTIM1->sTimerxRegs[parked].OUTxR &= ~idlm;
+	HRTIM1->sTimerxRegs[parked].OUTxR &= ~(idlm | HRTIM_OUTR_IDLES1);
 	HRTIM1->sTimerxRegs[fast_channel].OUTxR |= (idlm | HRTIM_OUTR_IDLES1);
 	HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BME;
 #else
