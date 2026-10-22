@@ -41,7 +41,7 @@ SIZES = [64, 96]
 # is indexed by menu_order[] position, so a compiled-out mode must not leave
 # a gap or an extra icon behind.
 CONDITIONAL = {
-    'emi': 'EMI_MODE_ENABLED',
+    'emi': 'EMI_DEBUG',
 }
 
 def rgb565(r, g, b):

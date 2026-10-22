@@ -56,7 +56,7 @@ CFLAGS=(
     -Wall
     -Wextra
     -fsyntax-only
-    ${EXTRA_CFLAGS:-}   # e.g. EXTRA_CFLAGS=-DEMI_MODE_DISABLE, to check a build variant
+    ${EXTRA_CFLAGS:-}   # e.g. EXTRA_CFLAGS=-DEMI_DEBUG, to check a build variant
 )
 
 INCLUDES=()

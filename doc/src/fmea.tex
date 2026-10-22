@@ -127,6 +127,11 @@ severity:
         {\texttt{protection.c} only evaluates \texttt{OCP\_N} while ISOMETER is active (``it trips spuriously in other modes'', per the code comment); the \texttt{OCP\_N} circuit is the high-voltage flyback's current limiter (\secref{sec_ocp}, \autoref{fig_hv_conv_i_lim}), not a general converter latch. A separate analog limiter exists on the primary/output current path (\autoref{fig_i_ctrl_feedforward}) but its fault behaviour is not yet written up in \secref{sec_i_ctrl}.}
         {In 60V\_OUT/10A\_OUT/RESISTANCE modes, output overcurrent is caught by the untuned \texttt{BoostIoutLimit} software loop and, ultimately, by \ac{BMS} pack-level protection -- not by a dedicated fast local latch as in ISOMETER.}
         {\ac{BMS} pack overcurrent-discharge protection remains the backstop.}
+    \FMEAItemCritical
+        {[HW+FW] Live output terminals in EMI test mode}
+        {EMI mode closes both output relays while the \ac{HV} flyback runs open loop and the LV converter regulates \texttt{OUT\_LV} (default \qty{40}{\volt}); the terminals carry the LV output plus the \ac{HV} converter on the same node.}
+        {Electric shock or damage to a connected load; the firmware abort on \texttt{V\_TERM}/\texttt{I\_OUT} uses the external \ac{ADC} polled every \qty{20}{\milli\second} (about \qty{40}{}--\qty{60}{\milli\second} reaction time).}
+        {EMI mode is debug-only (\texttt{EMI\_DEBUG}, not in a normal build); per-mode protection limits stop both converters with an on-screen banner; \ac{OVP} crowbar and secondary short as hardware backstop (\secref{sec_ovp}). Use only on the bench with nothing connected to the terminals.}
     \end{FMEATable}
     \caption{FMEA -- Power conversion}
 \end{table}

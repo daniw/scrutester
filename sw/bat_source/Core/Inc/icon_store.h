@@ -12,7 +12,7 @@
 
 #include "stdint.h"
 #include "ugui.h"
-#include "statemachine.h" // for EMI_MODE_ENABLED, see below
+#include "statemachine.h" // for EMI_DEBUG, see below
 
 #define ICON_SIZE_64 64
 #define ICON_SIZE_96 96
@@ -29,7 +29,7 @@
  * including the EMI icon only when that mode is built in. The store header's
  * icon_count check rejects a store seeded by the other variant -- the
  * carousel then falls back to the vector icons until `flashIcons` is rerun. */
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 #define ICON_STORE_ICON_COUNT  10
 #else
 #define ICON_STORE_ICON_COUNT  9

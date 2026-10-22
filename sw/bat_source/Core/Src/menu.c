@@ -86,7 +86,7 @@ static void icon_charge(int16_t cx, int16_t cy, int16_t r, UG_COLOR color) {
 	UG_DrawLine(x0 + 3, cy, x1 - 3, cy, color);
 }
 
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 static void icon_emi(int16_t cx, int16_t cy, int16_t r, UG_COLOR color) {
 	icon_draw_letter(cx, cy, r, color, "E");
 }
@@ -120,7 +120,7 @@ const menu_entry_t menu_order[MENU_TOTAL_LENGTH] = {
 	{ STATEMACHINE_MODE_ISOMETER,       C_RED,             icon_isometer },
 	{ STATEMACHINE_MODE_VOLTMETER,      C_SKY_BLUE,        icon_voltmeter },
 	{ STATEMACHINE_MODE_AMPMETER,       C_GOLD,            icon_ampmeter },
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	{ STATEMACHINE_MODE_EMI,            C_VIOLET,          icon_emi },
 #endif
 	{ STATEMACHINE_MODE_SETTINGS,       C_SILVER,          icon_settings },

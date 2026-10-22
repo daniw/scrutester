@@ -99,7 +99,7 @@
 #define CTRL_PARAM_HV_CURRENT_P 0.001F
 #define CTRL_PARAM_HV_CURRENT_I (0.1F/CTRL_FREQ)
 
-// ---- EMI test mode (see EMI_MODE_ENABLED in statemachine.h) ---------------
+// ---- EMI test mode (see EMI_DEBUG in statemachine.h) ---------------
 // HV flyback runs open-loop at a fixed duty while the LV converter regulates
 // OUT_LV with the 60V full-range loop; the LV loop pushes the flyback's energy
 // back into the battery. All placeholders pending bench bring-up.

@@ -2430,7 +2430,7 @@ static const uint16_t icon_ampmeter_data[4096] = {
 	0x0000, 0x0000, 0x0000, 0x0000,
 };
 
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 static const uint16_t icon_emi_data[4096] = {
 	0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 	0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
@@ -3475,7 +3475,7 @@ const icon_seed_t icon_seeds[ICON_STORE_ICON_COUNT] = {
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_isolation_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_voltmeter_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_ampmeter_data },
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_emi_data },
 #endif
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_settings_data },
@@ -8883,7 +8883,7 @@ static const uint16_t icon_ampmeter_data[9216] = {
 	0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 };
 
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 static const uint16_t icon_emi_data[9216] = {
 	0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 	0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
@@ -11206,7 +11206,7 @@ const icon_seed_t icon_seeds[ICON_STORE_ICON_COUNT] = {
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_isolation_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_voltmeter_data },
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_ampmeter_data },
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_emi_data },
 #endif
 	{ ICON_STORE_ICON_WIDTH, ICON_STORE_ICON_HEIGHT, icon_settings_data },

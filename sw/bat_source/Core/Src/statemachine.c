@@ -92,7 +92,7 @@ static void statemachine_enter_mode_generic(statemachine_modes_t mode);
 static uint8_t statemachine_enter_charge(void);
 static uint8_t statemachine_enter_charge_low_current(void);
 static void statemachine_step_charge(void);
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 static void statemachine_step_emi(void);
 #endif
 static void statemachine_charge_lockout(void);
@@ -143,7 +143,7 @@ static input_encoder_clamp_t encoder_setpoint_clamp;
 
 static void statemachine_apply_encoder_setpoint(void) {
 	int32_t max = (statemachine_handle.current_mode == STATEMACHINE_MODE_ISOMETER) ? 3 : 127;
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	if (statemachine_handle.current_mode == STATEMACHINE_MODE_EMI)
 		max = CTRL_PARAM_EMI_VOLTAGE_MAX_mV / 500; // 500 mV per count, see ctrl_main_apply_reference()
 #endif
@@ -329,7 +329,7 @@ void statemachine_step(void) {
 	uint8_t active = (raw_encoder != last_raw_encoder)
 			|| ok_button_pressed || esc_button_pressed || out_button_pressed
 			|| ctrl_main_handle.mode == CTRL_MODE_CHARGE
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 			|| ctrl_main_handle.mode == CTRL_MODE_EMI
 #endif
 			;
@@ -427,7 +427,7 @@ void statemachine_step(void) {
 		statemachine_step_charge();
 		break;
 
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	case STATEMACHINE_MODE_EMI:
 		statemachine_step_emi();
 		break;
@@ -488,7 +488,7 @@ void statemachine_step(void) {
 
 }
 
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 /* Stops both converters and drops both enables. Same order as the other
  * stop paths: control first (clears ctrl mode before the PWM goes away, see
  * ctrl_main_stop_control()), then the gate-driver enables. */
@@ -527,7 +527,7 @@ static void statemachine_step_emi(void) {
 
 	display_update_mode(statemachine_handle.current_mode, statemachine_handle.output_on);
 }
-#endif /* EMI_MODE_ENABLED */
+#endif /* EMI_DEBUG */
 
 static void statemachine_charge_lockout(void) {
 	charge_lockout = 1;
@@ -919,7 +919,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 			}
 		}*/
         /* fall through */
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	case STATEMACHINE_MODE_EMI:
 #endif
 	case STATEMACHINE_MODE_60V_OUT:
@@ -952,7 +952,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	aux_io_ctrl_set_config(mode, 0);
 	input_encoder_reset(0);
 	int32_t clamp_start = 0;
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	// EMI starts at its default setpoint instead of 0 V, so the first OUT
 	// press runs the intended test without dialling up first.
 	if (mode == STATEMACHINE_MODE_EMI)

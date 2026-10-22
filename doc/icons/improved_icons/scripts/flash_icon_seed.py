@@ -16,8 +16,8 @@ On-flash layout (see icon_store.c for the authoritative source):
     block 1..N          : one icon's raw RGB565 pixel bytes each, padded
                           with 0xFF (NAND erased state) to the full block
 
-N is 10 with the EMI icon (default firmware build) or 9 with
---emi-disabled (firmware built with -DEMI_MODE_DISABLE); the firmware's
+N is 9 (default firmware build) or 10 with the EMI icon via --emi
+(firmware built with -DEMI_DEBUG); the firmware's
 ICON_STORE_ICON_COUNT follows the same switch and rejects a store seeded
 for the other variant.
 
@@ -30,7 +30,7 @@ Requires: Python 3 standard library only.
 Usage:
     python3 flash_icon_seed.py                  # -> icon_seed.bin, 96x96 (matches the default firmware build)
     python3 flash_icon_seed.py --size 64 --out icon_seed_64.bin
-    python3 flash_icon_seed.py --emi-disabled   # for a -DEMI_MODE_DISABLE build
+    python3 flash_icon_seed.py --emi            # for a -DEMI_DEBUG build
     python3 flash_icon_seed.py --src /path/to/icon_seed_data.c
 
 Flashing (STM32CubeProgrammer CLI, external loader already built in this
@@ -178,9 +178,9 @@ def main():
                      help='icon resolution to package - must match '
                           'ICON_STORE_ICON_SIZE in the firmware build '
                           '(default: 96, the firmware default)')
-    ap.add_argument('--emi-disabled', action='store_true',
-                     help='leave out the EMI icon, for a firmware built '
-                          'with -DEMI_MODE_DISABLE')
+    ap.add_argument('--emi', action='store_true',
+                     help='include the EMI icon, for a firmware built '
+                          'with -DEMI_DEBUG')
     ap.add_argument('--out', default='icon_seed.bin',
                      help='output binary path (default: icon_seed.bin)')
     args = ap.parse_args()
@@ -188,7 +188,7 @@ def main():
     with open(args.src, 'r') as f:
         src = f.read()
 
-    undefined = {'EMI_MODE_ENABLED'} if args.emi_disabled else set()
+    undefined = set() if args.emi else {'EMI_DEBUG'}
     block = strip_conditionals(extract_block(src, args.size), undefined)
     icons = parse_icon_seeds(block)
     image, header, index_entries = build_image(icons, args.size)

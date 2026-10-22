@@ -238,7 +238,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		hrtim_enable(HRTIM_CHANNEL_HV);
 		break;
 
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	case CTRL_MODE_EMI:
 		// LV side as in 60V; HV flyback open loop at a constant duty.
 		ctrl_main_start_voltage_wide();
@@ -339,7 +339,7 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 	switch (ctrl_main_handle.mode) {
 
 	case CTRL_MODE_60V:
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	case CTRL_MODE_EMI: // HV runs open loop
 #endif
 		ctrl_main_ctrl_voltage_wide(meas);
@@ -507,7 +507,7 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 	switch (mode) {
 
 	case CTRL_MODE_60V:
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 	case CTRL_MODE_EMI:
 #endif
 		ctrl_main_handle.voltage_reference_mV = reference_poti_count * 500; // 500mV Resolution, Max range 63V
@@ -826,7 +826,7 @@ void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 
 	float duty_limited = ctrl_pi_voltage_hv.action;
 	if (ctrl_pi_hv_iout_limit.action < duty_limited) {
-		duty_limited = ctrl_pi_hv_iout_limit.action;
+		//duty_limited = ctrl_pi_hv_iout_limit.action;
 	}
 
 	// Apply Duty

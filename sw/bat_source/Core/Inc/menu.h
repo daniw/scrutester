@@ -17,7 +17,7 @@
 /* Total number of entries in menu_order[], including ones (like CHARGE)
  * that aren't shown in the home carousel but still need their
  * accent/icon looked up by mode elsewhere. */
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 #define MENU_TOTAL_LENGTH 10
 #else
 #define MENU_TOTAL_LENGTH 9
@@ -28,7 +28,7 @@
  * is auto-entered rather than user-selected) are unreachable via
  * menu_entry_at()/encoder navigation but still found by
  * menu_entry_for_mode(). */
-#ifdef EMI_MODE_ENABLED
+#ifdef EMI_DEBUG
 #define MENU_ORDER_LENGTH 9
 #else
 #define MENU_ORDER_LENGTH 8

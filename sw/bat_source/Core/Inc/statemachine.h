@@ -13,15 +13,11 @@
 
 #define STATEMACHINE_STEP_PERIOD_mS 20 //ms
 
-/* EMI test mode (both converters switching with no external load, see
- * statemachine.c / ctrl_main.c). Built in by default; build with
- * -DEMI_MODE_DISABLE to compile it out. The enum values and table rows below
- * stay present either way, so the mode numbering does not depend on the flag;
- * what the flag removes is the menu entry, the entry path and the control
- * code. */
-#ifndef EMI_MODE_DISABLE
-#define EMI_MODE_ENABLED
-#endif
+/* EMI test mode (both converters switching, live terminals). Debug only, off
+ * by default: uncomment or build with -DEMI_DEBUG. The enum value and table
+ * rows stay either way; the flag adds the menu entry, entry path and control
+ * code. Icon store: flash_icon_seed.py --emi for an EMI_DEBUG build. */
+#define EMI_DEBUG
 
 typedef enum
 {
