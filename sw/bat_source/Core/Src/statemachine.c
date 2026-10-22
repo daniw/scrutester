@@ -62,6 +62,13 @@ static uint8_t charge_await_notified;
 #define STATEMACHINE_INACTIVITY_TIMEOUT_TICKS ((10UL * 60UL * 1000UL) / STATEMACHINE_STEP_PERIOD_mS)
 static uint16_t inactivity_ticks;
 
+// Error banner shown on the current mode screen (cleared on restart).
+static uint8_t mode_error_shown;
+// Banner to draw after the next idle redraw.
+static const char *idle_error_pending;
+// Banner text at the last protection trip (for the CHARGE exit).
+static const char *protection_trip_text;
+
 #define STATEMACHINE_BUTTON_RELEASED 0
 #define STATEMACHINE_BUTTON_CLICK 1
 #define STATEMACHINE_BUTTON_PRESSED 2
@@ -83,6 +90,7 @@ static void statemachine_step_charge(void);
 static void statemachine_step_emi(void);
 #endif
 static void statemachine_charge_lockout(void);
+static void statemachine_clear_mode_error(void);
 
 /* Settings > Calibration sub-UI state -- 0=channel list, 1=zero step,
  * 2=optional gain step (see display_calibration_enter/update()). */
@@ -234,8 +242,15 @@ void statemachine_step(void) {
 	// written back to 0 on the tick after charging stops for any reason.
 	balancing_update();
 
+	uint8_t protection_error = protection_get_worst_level() == PROTECTION_LEVEL_ERROR;
 	if (statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode) != CTRL_MODE_OFF) {
-		if (protection_get_worst_level() == PROTECTION_LEVEL_ERROR) {
+		if (protection_error) {
+			if (!statemachine_handle.protection_forced_output_off) {
+				protection_trip_text = protection_error_text();
+				printf("Output stopped: %s\r\n", protection_trip_text);
+				display_show_mode_error(protection_trip_text);
+				mode_error_shown = 1;
+			}
 			if (ctrl_main_handle.mode != CTRL_MODE_OFF) {
 				aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN , 0);
 				aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
@@ -247,23 +262,31 @@ void statemachine_step(void) {
 		} else if (statemachine_handle.protection_forced_output_off) {
 			statemachine_handle.protection_forced_output_off = 0;
 			if (statemachine_handle.current_mode == STATEMACHINE_MODE_CHARGE) {
-				static const protection_source_t PROTECTION_SOURCES[] = {
-						PROTECTION_SRC_TEMP_SEC, PROTECTION_SRC_TEMP_TRAFO,
-						PROTECTION_SRC_TEMP_CURRENT, PROTECTION_SRC_TEMP_PRIM,
-						PROTECTION_SRC_OVP, PROTECTION_SRC_OCP };
 				printf("CHARGE exit: protection cleared, was forced off by:");
-				for (unsigned i = 0; i < sizeof(PROTECTION_SOURCES) / sizeof(PROTECTION_SOURCES[0]); i++) {
-					if (charge_protection_exit_mask & PROTECTION_SOURCES[i])
-						printf(" %s", protection_source_name(PROTECTION_SOURCES[i]));
+				for (uint16_t bit = 1; bit; bit <<= 1) {
+					if (charge_protection_exit_mask & bit)
+						printf(" %s", protection_source_name((protection_source_t) bit));
 				}
 				printf(" (mask=0x%04X)\r\n", charge_protection_exit_mask);
 				statemachine_charge_lockout();
 				statemachine_switchtoIdle();
+				idle_error_pending = protection_trip_text;
 			}
 		}
 	} else {
 		statemachine_handle.protection_forced_output_off = 0;
+		// No controller to stop (AMPMETER shorts SEK): leave the mode.
+		if (protection_error
+				&& (statemachine_handle.current_mode == STATEMACHINE_MODE_AMPMETER
+						|| statemachine_handle.current_mode == STATEMACHINE_MODE_VOLTMETER)) {
+			printf("Mode left: %s\r\n", protection_error_text());
+			statemachine_switchtoIdle();
+			idle_error_pending = protection_error_text();
+		}
 	}
+	// Latched limit trips are released with OUT, so a restart needs a new press.
+	if (!input_btn_out())
+		protection_clear_limits();
 
 	// Handle Buttons press
 	if (input_btn_ok())
@@ -319,6 +342,10 @@ void statemachine_step(void) {
 		if (temp != statemachine_handle.current_menu_index) {
 			statemachine_handle.current_menu_index = temp;
 			display_show_idle(temp);
+			if (idle_error_pending) {
+				display_show_idle_error(idle_error_pending);
+				idle_error_pending = NULL;
+			}
 		}
 		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			statemachine_switchfromIdle(menu_entry_at(temp)->mode);
@@ -360,6 +387,7 @@ void statemachine_step(void) {
 		statemachine_apply_encoder_setpoint();
 		// Start once on the press edge, stop on release.
 		if (out_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			statemachine_clear_mode_error();
 			statemachine_handle.output_on = 1;
 			ctrl_main_start_ctrl(
 					statemachine_mode_to_ctrl_mode(
@@ -465,18 +493,6 @@ static void statemachine_emi_stop(void) {
 static void statemachine_step_emi(void) {
 	statemachine_apply_encoder_setpoint();
 
-	if (statemachine_handle.output_on) {
-		int32_t i_abs = adc_data.converted.i_out_ext_mA;
-		if (i_abs < 0)
-			i_abs = -i_abs;
-		if (adc_data.converted.v_term_ext_mv > CTRL_PARAM_EMI_OVERVOLTAGE_mV
-				|| i_abs > CTRL_PARAM_EMI_OVERCURRENT_mA) {
-			printf("EMI stopped: limit exceeded (V_TERM=%ldmV, I_OUT=%ldmA)\r\n",
-					adc_data.converted.v_term_ext_mv, adc_data.converted.i_out_ext_mA);
-			statemachine_emi_stop();
-		}
-	}
-
 	// out_button_pressed is 1 only on the tick the button goes down (2 while
 	// held), so a held button toggles once. It is also forced to 0 while a
 	// protection fault holds the converters off, and output_on is already 0
@@ -485,6 +501,7 @@ static void statemachine_step_emi(void) {
 		if (statemachine_handle.output_on) {
 			statemachine_emi_stop();
 		} else if (!statemachine_handle.protection_forced_output_off) {
+			statemachine_clear_mode_error();
 			statemachine_handle.output_on = 1;
 			// Both converters at once: LV ramps to the setpoint, HV starts at
 			// its fixed duty, so the LV loop absorbs the HV energy from the
@@ -887,6 +904,16 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 
 }
 
+/**
+ * @brief Redraws the mode screen if a protection banner is shown.
+ */
+static void statemachine_clear_mode_error(void) {
+	if (mode_error_shown) {
+		mode_error_shown = 0;
+		display_enter_mode(statemachine_handle.current_mode);
+	}
+}
+
 void statemachine_switchtoIdle(void) {
 
 	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
@@ -904,4 +931,5 @@ void statemachine_switchtoIdle(void) {
 	ui_ctrl_ledOutOff();
 	ui_ctrl_ledSenseOff();
 	inactivity_ticks = 0;
+	mode_error_shown = 0;
 }

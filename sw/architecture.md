@@ -125,7 +125,7 @@ logic, and the protection interlock.
 | `STATEMACHINE_MODE_SETTINGS` | Settings menu |
 | `STATEMACHINE_MODE_SHUTDOWN` | Controlled power-down sequence |
 | `STATEMACHINE_MODE_CHARGE` | Internal battery charging — auto-entered from IDLE when a 15–24 V supply is detected, not user-selectable |
-| `STATEMACHINE_MODE_EMI` | EMI test (compiled in by default, `-DEMI_MODE_DISABLE` removes it): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (2 %), LV converter regulates `OUT_LV` with the full-range voltage loop of 60V_OUT (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `CTRL_PARAM_EMI_OVERVOLTAGE_mV` / `CTRL_PARAM_EMI_OVERCURRENT_mA` on V_TERM / I_OUT; exempt from the inactivity power-off while running. **Untested on hardware.** |
+| `STATEMACHINE_MODE_EMI` | EMI test (compiled in by default, `-DEMI_MODE_DISABLE` removes it): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (2 %), LV converter regulates `OUT_LV` with the full-range voltage loop of 60V_OUT (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `PROTECTION_EMI_MAX_mV` / `PROTECTION_EMI_MAX_mA` on V_TERM / I_OUT (protection limits); exempt from the inactivity power-off while running. **Untested on hardware.** |
 
 Settings sub-modes (`statemachine_settings_modes_t`): `MENU`, `BMS`,
 `DISPLAY`, `CALIBRATION`, `ABOUT`.
@@ -516,12 +516,19 @@ the Settings > Calibration screen and the CLI (`zeroCal`, `gainCal`,
 Polled once per state-machine tick. Classifies the four external NTC
 temperatures into OK / WARNING / ERROR with hysteresis, and latches the `OVP_N`
 and `OCP_N` hardware fault pins as ERROR. `OCP_N` is only evaluated in ISOMETER
-mode, where it is meaningful.
+mode, where it is meaningful. An open NTC (-50 °C table end) is an ERROR.
+Per-mode limits on |V_TERM|, |I_OUT| and I_ISO (external ADC,
+`PROTECTION_<mode>_MAX_*` in `protection_param.h`, debounced over
+`PROTECTION_LIMIT_DEBOUNCE_TICKS`) trip as `LIMIT_V`/`LIMIT_I` ERRORs, latched
+until OUT is released or the mode changes.
 
 An ERROR-level fault forces the converter output off from `statemachine_step()`
-regardless of mode. Button-gated modes require the OUT button to be released
-and pressed again before resuming; CHARGE drops back to IDLE and re-enters on
-its own if the supply is still present.
+and shows a red banner in the mode screen footer (cleared on the next start).
+Button-gated modes require the OUT button to be released and pressed again
+before resuming; RESISTANCE stays off until re-entered; CHARGE drops back to
+IDLE and re-enters on its own if the supply is still present. AMPMETER and
+VOLTMETER (no controller) leave to IDLE with the banner on the idle screen;
+leaving AMPMETER also releases the SEK short.
 
 ---
 

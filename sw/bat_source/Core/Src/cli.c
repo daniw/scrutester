@@ -1753,7 +1753,8 @@ void cmd_printProtection(void) {
 	static const protection_source_t all_sources[] = {
 		PROTECTION_SRC_TEMP_SEC, PROTECTION_SRC_TEMP_TRAFO,
 		PROTECTION_SRC_TEMP_CURRENT, PROTECTION_SRC_TEMP_PRIM,
-		PROTECTION_SRC_OVP, PROTECTION_SRC_OCP
+		PROTECTION_SRC_OVP, PROTECTION_SRC_OCP,
+		PROTECTION_SRC_LIMIT_V, PROTECTION_SRC_LIMIT_I
 	};
 	uint16_t warning_mask = protection_get_warning_mask();
 	uint16_t error_mask = protection_get_error_mask();

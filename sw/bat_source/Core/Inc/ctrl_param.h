@@ -108,10 +108,7 @@
 // (same as 60V), clamped to ..._MAX_mV.
 #define CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV 40000
 #define CTRL_PARAM_EMI_VOLTAGE_MAX_mV 50000
-// Abort (both converters off) above these, measured on the terminals. The
-// overvoltage limit must stay above ..._MAX_mV.
-#define CTRL_PARAM_EMI_OVERVOLTAGE_mV 55000
-#define CTRL_PARAM_EMI_OVERCURRENT_mA 3000
+// Abort limits: PROTECTION_EMI_MAX_* (protection_param.h).
 
 #define CTRL_PARAM_IDLE_VOLTAGE_1A_mV 2000
 #define CTRL_PARAM_IDLE_VOLTAGE_1mA_mV 3000

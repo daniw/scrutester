@@ -185,6 +185,14 @@ void display_show_idle_error(const char *msg) {
 	C_BLACK);
 }
 
+void display_show_mode_error(const char *msg) {
+	int16_t w = (int16_t) (strlen(msg) * UG_GetFontWidth(FONT_TINY));
+
+	UG_FillFrame(0, FOOTER_Y, LCD_WIDTH - 1, LCD_HEIGHT - 1, C_BLACK);
+	LCD_PutStr(LCD_WIDTH / 2 - w / 2, FOOTER_Y + 4, (char*) msg, FONT_TINY,
+			C_RED, C_BLACK);
+}
+
 /* ---------------------------------------------------------------------- */
 /* Active-output template (60V / 10A): big measured value, secondary row,  */
 /* setpoint row, hold-to-enable border.                                    */

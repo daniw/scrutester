@@ -5,12 +5,14 @@
  * fault-latch pins and the 4 external NTC temperatures once per
  * statemachine tick and classifies each into OK/WARNING/ERROR
  * (temperatures only -- OVP/OCP are ERROR-only, no warning tier).
+ * Per-mode voltage/current limits are ERROR-only and latched.
  */
 
 #include "protection.h"
 #include "protection_param.h"
 #include "adc.h"
 #include "main.h"
+#include <stdlib.h>
 
 extern ADC_MEAS_DATA adc_data;
 
@@ -33,6 +35,29 @@ static protection_level_t protection_temp_level[PROTECTION_TEMP_IDX_COUNT];
 static uint16_t protection_warning_mask;
 static uint16_t protection_error_mask;
 
+typedef struct {
+	int32_t v_max_mV;   // |V_TERM|
+	int32_t i_max_mA;   // |I_OUT|
+	int32_t iso_max_uA; // I_ISO
+} protection_limit_t;
+
+static const protection_limit_t protection_limits[STATEMACHINE_MODE_RESERVED] = {
+	[STATEMACHINE_MODE_60V_OUT]         = { PROTECTION_60V_MAX_mV, PROTECTION_60V_MAX_mA, 0 },
+	[STATEMACHINE_MODE_10A_OUT]         = { PROTECTION_10A_MAX_mV, PROTECTION_10A_MAX_mA, 0 },
+	[STATEMACHINE_MODE_RESISTANCE_1A]   = { PROTECTION_RES_1A_MAX_mV, PROTECTION_RES_1A_MAX_mA, 0 },
+	[STATEMACHINE_MODE_RESISTANCE_1mA]  = { PROTECTION_RES_1mA_MAX_mV, PROTECTION_RES_1mA_MAX_mA, 0 },
+	[STATEMACHINE_MODE_ISOMETER]        = { PROTECTION_ISO_MAX_mV, 0, PROTECTION_ISO_MAX_uA },
+	[STATEMACHINE_MODE_VOLTMETER]       = { PROTECTION_VOLTMETER_MAX_mV, 0, 0 },
+	[STATEMACHINE_MODE_AMPMETER]        = { 0, PROTECTION_AMPMETER_MAX_mA, 0 },
+	[STATEMACHINE_MODE_CHARGE]          = { PROTECTION_CHARGE_MAX_mV, PROTECTION_CHARGE_MAX_mA, 0 },
+	[STATEMACHINE_MODE_EMI]             = { PROTECTION_EMI_MAX_mV, PROTECTION_EMI_MAX_mA, 0 },
+};
+
+static uint16_t protection_limit_latch;
+static uint8_t protection_limit_ticks_v;
+static uint8_t protection_limit_ticks_i;
+static statemachine_modes_t protection_limit_mode;
+
 static protection_level_t protection_classify_temp(int16_t temp, protection_level_t prev) {
 	if (temp >= PROTECTION_TEMP_ERROR_C)
 		return PROTECTION_LEVEL_ERROR;
@@ -54,6 +79,52 @@ void protection_init(void) {
 	}
 	protection_warning_mask = 0;
 	protection_error_mask = 0;
+	protection_clear_limits();
+}
+
+/**
+ * @brief Releases the latched per-mode limit errors. A limit that is still
+ *        exceeded trips again on the next update.
+ */
+void protection_clear_limits(void) {
+	protection_limit_latch = 0;
+}
+
+static uint8_t protection_debounce(uint8_t *ticks, uint8_t over) {
+	if (!over)
+		*ticks = 0;
+	else if (*ticks < PROTECTION_LIMIT_DEBOUNCE_TICKS)
+		(*ticks)++;
+	return *ticks >= PROTECTION_LIMIT_DEBOUNCE_TICKS;
+}
+
+/**
+ * @brief Checks the limits of the given mode and latches a trip.
+ * @param mode Current statemachine mode.
+ * @return Latched PROTECTION_SRC_LIMIT_* bits.
+ */
+static uint16_t protection_check_limits(statemachine_modes_t mode) {
+	if (mode != protection_limit_mode) {
+		protection_limit_mode = mode;
+		protection_limit_latch = 0;
+		protection_limit_ticks_v = 0;
+		protection_limit_ticks_i = 0;
+	}
+	if (mode >= STATEMACHINE_MODE_RESERVED)
+		return 0;
+
+	const protection_limit_t *l = &protection_limits[mode];
+	int32_t v = labs(adc_data.converted.v_term_ext_mv);
+	int32_t i = labs(adc_data.converted.i_out_ext_mA);
+	uint8_t over_v = l->v_max_mV && v > l->v_max_mV;
+	uint8_t over_i = (l->i_max_mA && i > l->i_max_mA)
+			|| (l->iso_max_uA && adc_data.converted.i_iso_ext_uA > l->iso_max_uA);
+
+	if (protection_debounce(&protection_limit_ticks_v, over_v))
+		protection_limit_latch |= PROTECTION_SRC_LIMIT_V;
+	if (protection_debounce(&protection_limit_ticks_i, over_i))
+		protection_limit_latch |= PROTECTION_SRC_LIMIT_I;
+	return protection_limit_latch;
 }
 
 void protection_update(statemachine_modes_t mode) {
@@ -87,6 +158,8 @@ void protection_update(statemachine_modes_t mode) {
 		error_mask |= (uint16_t) PROTECTION_SRC_OCP;
 	}
 
+	error_mask |= protection_check_limits(mode);
+
 	protection_warning_mask = warning_mask;
 	protection_error_mask = error_mask;
 }
@@ -115,6 +188,27 @@ const char *protection_source_name(protection_source_t src) {
 	case PROTECTION_SRC_TEMP_PRIM:    return "TEMP_PRIM";
 	case PROTECTION_SRC_OVP:          return "OVP";
 	case PROTECTION_SRC_OCP:          return "OCP";
+	case PROTECTION_SRC_LIMIT_V:      return "LIMIT_V";
+	case PROTECTION_SRC_LIMIT_I:      return "LIMIT_I";
 	default:                          return "?";
 	}
+}
+
+/**
+ * @brief Banner text for the most relevant active error.
+ * @return Text, or NULL if no error is active.
+ */
+const char *protection_error_text(void) {
+	uint16_t e = protection_error_mask;
+	if (e & PROTECTION_SRC_OVP)
+		return "ERROR: Overvoltage (OVP latch)";
+	if (e & PROTECTION_SRC_OCP)
+		return "ERROR: HV overcurrent";
+	if (e & PROTECTION_SRC_LIMIT_V)
+		return "ERROR: Voltage limit exceeded";
+	if (e & PROTECTION_SRC_LIMIT_I)
+		return "ERROR: Current limit exceeded";
+	if (e)
+		return "ERROR: Temperature / NTC";
+	return NULL;
 }
