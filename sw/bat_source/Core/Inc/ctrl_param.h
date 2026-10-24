@@ -83,13 +83,11 @@
 #define CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH 0.985F
 #define CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW 0.0F
 
-// CV tail of the charge cycle, once CTRL_PARAM_CHARGE_END_VOLTAGE_mV has
-// been reached. Sat limits are placeholders reusing the charge-current
-// loop's, pending real bench tuning.
-#define CTRL_PARAM_CHARGE_VOLTAGE_P 0.001F
-#define CTRL_PARAM_CHARGE_VOLTAGE_I (0.1F/CTRL_FREQ)
-#define CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_HIGH CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH
-#define CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_LOW CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW
+// CV tail of the charge cycle: outer loop on 4 x max cell voltage, run at
+// the statemachine tick, sets the CC loop's current (A per V). Untuned.
+#define CTRL_PARAM_CHARGE_CV_RATE_HZ 50
+#define CTRL_PARAM_CHARGE_VOLTAGE_P 0.5F
+#define CTRL_PARAM_CHARGE_VOLTAGE_I (2.0F/CTRL_PARAM_CHARGE_CV_RATE_HZ)
 
 
 #define CTRL_PARAM_HV_VOLTAGE_P 0.001F

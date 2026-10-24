@@ -38,6 +38,13 @@ PID_controller_t ctrl_pi_voltage_4sw;
 // config_store_read() overwrite the stored calibration with defaults.
 static float ctrl_pi_voltage_4sw_p;
 static float ctrl_pi_voltage_4sw_i;
+// Also RAM-only: the CV loop's units changed (A/V at 50 Hz), the old
+// calibration_t charge_voltage_p/i fields are unused.
+static float ctrl_pi_charge_cv_p;
+static float ctrl_pi_charge_cv_i;
+
+_Static_assert(CTRL_PARAM_CHARGE_CV_RATE_HZ * STATEMACHINE_STEP_PERIOD_mS == 1000,
+		"CV loop runs at the statemachine tick");
 
 // Full-range 60V mode state, ISR-owned (ctrl_main_ctrl_voltage_wide()).
 static vout_region_t vout_region;
@@ -57,56 +64,52 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = { {
 		&config_store.calibration.voltage_buck_i,
 		CTRL_PARAM_VOLTAGE_BUCK_P, CTRL_PARAM_VOLTAGE_BUCK_I,
 		CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH,
-		CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_LOW, "Buck" }, {
+		CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_LOW, "Buck", CTRL_FREQ }, {
 		&ctrl_pi_voltage_boost, &config_store.calibration.voltage_boost_p,
 		&config_store.calibration.voltage_boost_i,
 		CTRL_PARAM_VOLTAGE_BOOST_P, CTRL_PARAM_VOLTAGE_BOOST_I,
 		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH,
-		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, "Boost" }, { &ctrl_pi_current,
+		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, "Boost", CTRL_FREQ }, { &ctrl_pi_current,
 		&config_store.calibration.current_p,
 		&config_store.calibration.current_i,
 		CTRL_PARAM_CURRENT_P, CTRL_PARAM_CURRENT_I,
 		CTRL_PARAM_CURRENT_DUTY_SAT_HIGH, CTRL_PARAM_CURRENT_DUTY_SAT_LOW,
-		"Current" }, { &ctrl_pi_boost_iout_limit,
+		"Current", CTRL_FREQ }, { &ctrl_pi_boost_iout_limit,
 		&config_store.calibration.boost_iout_limit_p,
 		&config_store.calibration.boost_iout_limit_i,
 		CTRL_PARAM_BOOST_IOUT_LIMIT_P, CTRL_PARAM_BOOST_IOUT_LIMIT_I,
 		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH,
-		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, "BoostIoutLimit" }, {
+		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, "BoostIoutLimit", CTRL_FREQ }, {
 		&ctrl_pi_charge_current, &config_store.calibration.charge_current_p,
 		&config_store.calibration.charge_current_i,
 		CTRL_PARAM_CHARGE_CURRENT_P, CTRL_PARAM_CHARGE_CURRENT_I,
 		CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH,
-		CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW, "ChargeCurrent" }, {
-		&ctrl_pi_charge_voltage, &config_store.calibration.charge_voltage_p,
-		&config_store.calibration.charge_voltage_i,
+		CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW, "ChargeCurrent", CTRL_FREQ }, {
+		&ctrl_pi_charge_voltage, &ctrl_pi_charge_cv_p, &ctrl_pi_charge_cv_i,
 		CTRL_PARAM_CHARGE_VOLTAGE_P, CTRL_PARAM_CHARGE_VOLTAGE_I,
-		CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_HIGH,
-		CTRL_PARAM_CHARGE_VOLTAGE_DUTY_SAT_LOW, "ChargeVoltage" }, {
+		CTRL_PARAM_CHARGE_CURRENT_mA / 1000.0F, 0.0F, "ChargeVoltage", CTRL_PARAM_CHARGE_CV_RATE_HZ }, {
 		&ctrl_pi_voltage_hv, &config_store.calibration.voltage_hv_p,
 		&config_store.calibration.voltage_hv_i,
 		CTRL_PARAM_HV_VOLTAGE_P, CTRL_PARAM_HV_VOLTAGE_I,
 		CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW,
-		"HVVoltage" }, { &ctrl_pi_hv_iout_limit,
+		"HVVoltage", CTRL_FREQ }, { &ctrl_pi_hv_iout_limit,
 		&config_store.calibration.flyback_current_p,
 		&config_store.calibration.flyback_current_i,
 		CTRL_PARAM_HV_CURRENT_P, CTRL_PARAM_HV_CURRENT_I,
 		CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW,
-		"HVCurrent" }, { &ctrl_pi_voltage_4sw, &ctrl_pi_voltage_4sw_p,
+		"HVCurrent", CTRL_FREQ }, { &ctrl_pi_voltage_4sw, &ctrl_pi_voltage_4sw_p,
 		&ctrl_pi_voltage_4sw_i,
 		CTRL_PARAM_VOLTAGE_4SW_P, CTRL_PARAM_VOLTAGE_4SW_I,
 		CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_HIGH,
-		CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW, "FourSwitch" }, };
+		CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW, "FourSwitch", CTRL_FREQ }, };
 
 /******************* Function Prototypes **************************/
 void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate);
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate);
-void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
-		int16_t current_meas_accurate);
-void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
-		int32_t voltage_meas_accurate_mV);
+void ctrl_main_ctrl_charge_current(uint32_t target_mA,
+		int16_t current_meas_mA, int16_t current_meas_accurate);
 void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
 static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas);
@@ -414,24 +417,22 @@ static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas) {
 
 		if (ctrl_main_handle.charge_phase == CHG_PHASE_CC_RAMP&& stack_valid
 		&& stack_mV >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV) {
-			ctrl_pi_charge_voltage.prev_I_action =
-					ctrl_pi_charge_current.action;
+			// Hand the CV loop (main context from here on) the present
+			// current, so the switch-over has no step.
+			float ref_A = ctrl_pi_charge_current.ref;
+			ctrl_main_handle.charge_cv_current_mA = (uint32_t) (ref_A * 1000.0F);
+			ctrl_pi_charge_voltage.prev_I_action = ref_A;
+			ctrl_pi_charge_voltage.sat_flag = 0;
 			ctrl_main_handle.charge_cv_phase = 1;
 			ctrl_main_handle.charge_phase = CHG_PHASE_CV;
 		}
 
-		if (ctrl_main_handle.charge_phase == CHG_PHASE_CC_RAMP) {
-			ctrl_main_ctrl_charge_current(-meas->i_out, -meas->i_out_ext_mA);
-		} else {
-			uint16_t cell_max = 0;
-			for (uint8_t i = 0; i < BQ76905_PACK_CELL_COUNT; i++) {
-				if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
-					cell_max = bms.CellVoltageRegisters.CellVoltages[i];
-				}
-			}
-			ctrl_main_ctrl_charge_voltage(meas->v_in,
-			BQ76905_PACK_CELL_COUNT * cell_max);
-		}
+		// The CC loop runs in CV too, its target set by the CV loop.
+		ctrl_main_ctrl_charge_current(
+				ctrl_main_handle.charge_phase == CHG_PHASE_CV ?
+						ctrl_main_handle.charge_cv_current_mA :
+						ctrl_main_handle.current_reference_mA,
+				-meas->i_out, -meas->i_out_ext_mA);
 		break;
 	}
 
@@ -564,28 +565,6 @@ static float ctrl_apply_ramped_ref(PID_controller_t *c, float target, float div)
 		multiplier = ctrl_main_handle.ramp;
 		c->ref = target * multiplier;
 	}
-	return multiplier;
-}
-
-/*
- * Startup step shared by every ctrl_main_ctrl_*() control loop below.
- *
- * ctrl_main_handle.ramp is a SINGLE field, not one per controller: it is
- * zeroed once by ctrl_main_start_ctrl() and from then on incremented by
- * whichever ctrl_main_ctrl_*() function ctrl_main_ctrl()'s switch calls that
- * tick. Exactly one of those functions runs per control-loop tick, so a
- * shared counter is correct -- do NOT change this into a per-controller
- * ramp, and do not call this helper more than once per tick.
- *
- * Returns the multiplier just applied to `target` (1.0F once the ramp has
- * saturated past 1.0F, otherwise the freshly-incremented
- * ctrl_main_handle.ramp).
- */
-static float ctrl_apply_stepped_ref(PID_controller_t *c, float target) {
-	float multiplier;
-	multiplier = 1.0F;
-	c->ref = target;
-	ctrl_main_handle.ramp = 1.1F;
 	return multiplier;
 }
 
@@ -780,14 +759,13 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 	ctrl_apply_buck_burst(ctrl_pi_current.action);
 }
 
-void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
-		int16_t current_meas_accurate) {
+void ctrl_main_ctrl_charge_current(uint32_t target_mA,
+		int16_t current_meas_mA, int16_t current_meas_accurate) {
 
 	// Reference 0 -> setpoint over CTRL_PARAM_CHARGE_RAMP_s (ramp starts at 0,
 	// see ctrl_main_charge_start_ramp()); once the ramp has passed 1.0 the
 	// helper latches the full setpoint.
-	ctrl_apply_ramped_ref(&ctrl_pi_charge_current,
-			ctrl_main_handle.current_reference_mA / 1000.0F,
+	ctrl_apply_ramped_ref(&ctrl_pi_charge_current, target_mA / 1000.0F,
 			1.0F / CTRL_PARAM_CHARGE_RAMP_s);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_current,
@@ -798,24 +776,20 @@ void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
 
 }
 
-/**
- * CV tail of the charge cycle: P-term from the fast internal ADC
- * (voltage_meas_mV), I-term from the accurate but slow (~10Hz) BMS
- * StackVoltage reading (voltage_meas_accurate_mV) - the PID just holds the
- * last value between BMS refreshes, same as elsewhere in this file.
- */
-void ctrl_main_ctrl_charge_voltage(uint32_t voltage_meas_mV,
-		int32_t voltage_meas_accurate_mV) {
+/* See ctrl_main.h. The upper limit follows current_reference_mA, so the
+ * deep-discharge stepper and the normal target both cap the CV current. */
+void ctrl_main_charge_cv_step(uint16_t cell_max_mV) {
+	if (ctrl_main_handle.mode != CTRL_MODE_CHARGE
+			|| ctrl_main_handle.charge_phase != CHG_PHASE_CV)
+		return;
 
-	ctrl_apply_stepped_ref(&ctrl_pi_charge_voltage,
-			ctrl_main_handle.voltage_reference_mV / 1000.0F);
-
-	ctrl_PID_controller_execute(&ctrl_pi_charge_voltage,
-			voltage_meas_mV / 1000.0F, voltage_meas_accurate_mV / 1000.0F, 0);
-
-	// Apply Duty inverted, as the secondary Duty is inversed
-	ctrl_apply_inverted_sek_duty(ctrl_pi_charge_voltage.action);
-
+	float v_V = (BQ76905_PACK_CELL_COUNT * (uint32_t) cell_max_mV) / 1000.0F;
+	ctrl_pi_charge_voltage.ref = ctrl_main_handle.voltage_reference_mV / 1000.0F;
+	ctrl_pi_charge_voltage.sat_limit_high =
+			ctrl_main_handle.current_reference_mA / 1000.0F;
+	ctrl_PID_controller_execute(&ctrl_pi_charge_voltage, v_V, v_V, 0);
+	ctrl_main_handle.charge_cv_current_mA =
+			(uint32_t) (ctrl_pi_charge_voltage.action * 1000.0F);
 }
 
 void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,

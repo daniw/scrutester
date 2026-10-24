@@ -1603,7 +1603,7 @@ void cmd_setCtrlGain(void) {
 	I = strtof(arg_locs[3], &end);
 	if (id < CTRL_PID_TABLE_LEN) {
 		ctrl_pid_table[id].ctrl->P_gain = P;
-		ctrl_pid_table[id].ctrl->I_gain = I / CTRL_FREQ;
+		ctrl_pid_table[id].ctrl->I_gain = I / ctrl_pid_table[id].rate_hz;
 	} else {
 		printf("Invalid ID\r\n");
 	}

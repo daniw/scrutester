@@ -36,6 +36,8 @@ typedef struct{
 	// One-way latch: set once CHARGE's CC phase reaches end-voltage and
 	// switches to CV, cleared only when CHARGE is (re-)started.
 	uint8_t charge_cv_phase;
+	// CC loop target in CV, set by ctrl_main_charge_cv_step().
+	volatile uint32_t charge_cv_current_mA;
 
 	// CHARGE sub-phase, see charge_seq.h. Written by the control ISR
 	// (PRECHARGE -> CLOSE -> ... CC_RAMP -> CV) and, while the ISR is parked
@@ -69,6 +71,7 @@ typedef struct {
 	float sat_high;
 	float sat_low;
 	const char *name;
+	float rate_hz;    // execution rate, I gains are stored per call
 } ctrl_pid_entry_t;
 
 #define CTRL_PID_TABLE_LEN 9
@@ -99,6 +102,9 @@ void ctrl_main_charge_handover(int32_t v_in_mV, int32_t v_term_mV);
 /* Called once the relay has settled: the current reference starts ramping
  * from 0 A. */
 void ctrl_main_charge_start_ramp(void);
+/* CV outer loop, main context, every statemachine tick while the ISR is in
+ * CHG_PHASE_CV: sets the CC loop's current from 4 x max cell voltage. */
+void ctrl_main_charge_cv_step(uint16_t cell_max_mV);
 /* 60V mode bench diagnostics: region (0 buck, 1 4sw, 2 boost), number of
  * region changes, last V_ref/V_in ratio. */
 void ctrl_main_vout_diag(uint8_t *region, uint32_t *changes, float *ratio);

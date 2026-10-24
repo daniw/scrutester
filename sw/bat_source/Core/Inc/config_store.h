@@ -86,8 +86,8 @@ typedef struct
 	float boost_iout_limit_i;
 	float charge_current_p;
 	float charge_current_i;
-	float charge_voltage_p;
-	float charge_voltage_i;
+	float charge_voltage_p;  // unused (CV gains RAM-only, see ctrl_main.c)
+	float charge_voltage_i;  // unused
 	float voltage_hv_p;
 	float voltage_hv_i;
 	float flyback_current_p;

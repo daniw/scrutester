@@ -191,7 +191,7 @@ fields, its defaults and its duty saturation limits. `ctrl_main_init()`,
 | 2 | Current | 10 A output |
 | 3 | BoostIoutLimit | Output current limiter of the voltage source (all regions) |
 | 4 | ChargeCurrent | CC phase of charging |
-| 5 | ChargeVoltage | CV tail of charging |
+| 5 | ChargeVoltage | CV tail of charging: outer loop at 50 Hz, output = charge current (A/V). **RAM-only** like FourSwitch (the old `charge_voltage_p/i` EEPROM fields are unused) |
 | 6 | HVVoltage | ISOMETER HV flyback voltage |
 | 7 | HVCurrent | ISOMETER leakage-current limiter |
 | 8 | FourSwitch | 4-switch region of the voltage source. **RAM-only**: no EEPROM field (see below), `setPI` works, `saveEEPROM` does not persist it |
@@ -379,12 +379,14 @@ second, independent step applied directly to `current_reference_mA`); no
 relay recycle or restart. From there the run is indistinguishable from a
 normal charge, including the full fault check. **Bench-validated on hardware.**
 
-Once in the CV tail, the voltage PI loop (`ctrl_main_ctrl_charge_voltage()`)
-runs a deliberate fast/slow sensor blend: its P-term uses the fast internal
-ADC (`v_in`), its I-term uses an accurate but slow (~10 Hz) reading that, as
-of the most recent charging rework, is `4 × highest individual cell voltage`
-rather than `StackVoltage` — regulating to protect the most-charged cell
-from overshoot under cell imbalance, with a stepped (not ramped) reference.
+The CV tail is a cascade: the CC loop keeps running in the ISR, and the CV
+PI (`ctrl_main_charge_cv_step()`, main context, every 50 Hz tick) regulates
+`4 × highest cell voltage` (BMS, 10 Hz) and sets the CC loop's target
+(`charge_cv_current_mA`), clamped to [0, `current_reference_mA`]. So the
+current stays limited in CV (charger steps, load changes), and CV turns into
+the taper on its own. At the CC→CV latch the ISR preloads the CV integrator
+with the present current reference (no step). `setPI` uses each table row's
+`rate_hz` (CTRL_FREQ, 50 Hz for ChargeVoltage).
 **Residual concern**: the latch/termination logic still gates on real
 `StackVoltage`, while the CV loop itself now regulates towards an
 *extrapolated* `4 × max-cell` target — under significant cell imbalance

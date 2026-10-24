@@ -658,6 +658,7 @@ static void statemachine_step_charge(void) {
 			cell_min = bms.CellVoltageRegisters.CellVoltages[i];
 		}
 	}
+	ctrl_main_charge_cv_step(cell_max);
 
 #ifdef CHARGE_DEBUG
 	// Debug output. It used to be printed from the control ISR, where the
