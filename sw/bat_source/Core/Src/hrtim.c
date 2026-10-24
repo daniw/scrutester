@@ -609,7 +609,7 @@ void hrtim_sek_restore(void) {
 	hrtim_sek_shorted = 0;
 }
 /*
- * Parked-leg sync and pulse skipping (60V and 10A modes).
+ * Parked-leg sync and pulse skipping (60V, 10A and RESISTANCE modes).
  *
  * The parked (50 kHz) leg's low pulse must fall where the fast leg's low side
  * is on. The master timer (configured in the .ioc) defines a 20 us frame:

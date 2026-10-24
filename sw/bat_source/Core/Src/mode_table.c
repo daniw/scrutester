@@ -42,13 +42,15 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .adc_trigger = ADC_TRIGGER_HRTIM_FIXED,
     },
 
-    /* Same shape as 60V_OUT -- hold-OUT-to-enable, output_on forced to 0. */
+    /* Same shape as 60V_OUT -- hold-OUT-to-enable, output_on forced to 0.
+     * Timer D trigger: fixed sample point in the sync frame, outside the
+     * idle block (Timer B's post-scaler phase depends on mode history). */
     [STATEMACHINE_MODE_10A_OUT] = {
         .ctrl_mode   = CTRL_MODE_10A,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
         .enable_gpio = GPIO_CONV_CTRL_EN,
         .flags       = MODE_F_LED_OUT_ON | MODE_F_OUTPUT_ON_ZERO,
-        .adc_trigger = ADC_TRIGGER_HRTIM_PRIM,
+        .adc_trigger = ADC_TRIGGER_HRTIM_FIXED,
     },
 
     /* Auto-starts the control loop and the ~1A DAC test pulse immediately on
@@ -61,22 +63,20 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .flags       = MODE_F_LED_OUT_ON | MODE_F_LED_SENSE_ON
                      | MODE_F_AUTOSTART_CTRL | MODE_F_DAC_SQWAVE
 					 | MODE_F_OUTPUT_ON_ONE,
-        .adc_trigger = ADC_TRIGGER_HRTIM_PRIM,
+        .adc_trigger = ADC_TRIGGER_HRTIM_FIXED, /* as 10A_OUT */
     },
 
-    /* Auto-starts like RESISTANCE_1A, but no DAC pulse/sense LED. adc_trigger
-     * Triggers off PRIM, same as RESISTANCE_1A: ctrl_main_start_ctrl() puts
-     * both resistance modes on the same buck path with PRIM at
-     * CTRL_PARAM_SW_FREQ_HIGH, and the loop regulates converted.v_out. At
-     * 1 MHz with TRG1's post-scaler of 20 and the halving in
-     * HAL_ADC_ConvCpltCallback(), that is 25 kHz -- exactly CTRL_FREQ, which
-     * is what this mode's PI gains and ramp are scaled by. */
+    /* Auto-starts like RESISTANCE_1A, but no DAC pulse/sense LED. Same
+     * synced buck path and Timer D trigger as RESISTANCE_1A: 1 MHz with
+     * TRG7's post-scaler of 20 and the halving in HAL_ADC_ConvCpltCallback()
+     * gives 25 kHz -- exactly CTRL_FREQ, which this mode's PI gains and ramp
+     * are scaled by. */
     [STATEMACHINE_MODE_RESISTANCE_1mA] = {
         .ctrl_mode   = CTRL_MODE_RESISTANCE_1mA,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_DISCHARGE,
         .enable_gpio = GPIO_CONV_CTRL_EN,
         .flags       = MODE_F_LED_OUT_ON | MODE_F_AUTOSTART_CTRL | MODE_F_OUTPUT_ON_ONE,
-        .adc_trigger = ADC_TRIGGER_HRTIM_PRIM,
+        .adc_trigger = ADC_TRIGGER_HRTIM_FIXED,
     },
 
     /* Hold-OUT-to-enable via GPIO_HV_CTRL_EN, output_on forced to 0.

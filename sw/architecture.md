@@ -221,7 +221,7 @@ FourSwitch gains are RAM-only: a `calibration_t` field would need a
 `CONFIG_STORE_PSVN` bump, which overwrites the stored calibration with
 defaults. Gains bench-tuned at V_in ~13 V, light load; limiter untested.
 
-**Parked-leg sync and pulse skipping** (60V and 10A modes,
+**Parked-leg sync and pulse skipping** (60V, 10A and RESISTANCE_1A/1mA modes,
 `VOUT_SYNC_BURST_DISABLE` in `debug.h` removes it). The parked leg's 1.5 % low pulse used
 to land anywhere, including while the fast leg's high side was on, which gave
 a ≥ 2.4 A floor into a short. The master timer (in the `.ioc`) defines a 20 µs
@@ -234,8 +234,12 @@ a 50 kHz leg in up/down mode only enters/leaves burst idle at its roll-over
 `CTRL_PARAM_VOUT_SYNC_CYCLES` (3: ~100 nC bootstrap charge at 100 mA = 1 µs,
 plus margin; master compares 2/3 in the `.ioc` assume 3). Below the HRTIM
 compare floor (3.75 % at 1 MHz) the block grows and the run duty is held at
-`CTRL_PARAM_VOUT_MIN_RUN_DUTY` (`vout_burst_plan()`, host-tested; buck and
-10A only). The 4-switch region runs without the burst. Bench-checked in 10A,
+`CTRL_PARAM_VOUT_MIN_RUN_DUTY` (`vout_burst_plan()`, host-tested; buck, 10A
+and RESISTANCE only). These modes trigger the ADC from Timer D, so the sample
+sits at a fixed frame time (~19.5 µs, outside the idle block); Timer B's
+post-scaler phase depends on the mode history. CHARGE (SEK fast, PRIM parked)
+still runs free: there the idle block (SEC_L on) would cap the high-side
+share at ~0.81 and need a charger ≥ ~17 V. The 4-switch region runs without the burst. Bench-checked in 10A,
 buck and boost.
 
 **Key parameters** (`ctrl_param.h`):
@@ -413,8 +417,8 @@ ADC5 uses 256× hardware oversampling with 4-bit right shift (effective 16-bit r
 `adc_configure_mode()` re-points triggers and channels per operating mode.
 HRTIM ADC triggers: TRG1 ← Timer B (PRIM, ÷20), TRG2 ← Timer C (HV, ÷15),
 TRG3 ← Timer E (SEK, ÷20), TRG7 ← Timer D (fixed 1 MHz, no outputs, ÷20 —
-`ADC_TRIGGER_HRTIM_FIXED`, used by the voltage source because PRIM/SEK change
-frequency there; configured in `bat_source.ioc`).
+`ADC_TRIGGER_HRTIM_FIXED`, used by 60V/EMI, 10A and RESISTANCE: fixed phase in
+the sync frame; configured in `bat_source.ioc`).
 
 **Concurrency**: `adc_data.raw` is DMA-written and declared `volatile`.
 `adc_data.converted` is computed in the ISR into a private instance and copied

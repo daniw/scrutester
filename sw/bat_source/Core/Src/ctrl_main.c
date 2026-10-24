@@ -221,12 +221,10 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW); // Needs to be low!!
 		hrtim_set_duty(HRTIM_CHANNEL_PRIM, 0);
-		// 10A only (RESISTANCE_* falls through): parked-SEK sync and pulse
-		// skipping, else a shorted output sits on the minimum pulse (>= 2.4 A).
-		if (mode == CTRL_MODE_10A) {
-			hrtim_burst_set_idle_cycles(CTRL_PARAM_VOUT_SYNC_CYCLES);
-			hrtim_sync_start(HRTIM_CHANNEL_PRIM);
-		}
+		// Parked-SEK sync and pulse skipping, else a shorted output sits on
+		// the minimum pulse (>= 2.4 A).
+		hrtim_burst_set_idle_cycles(CTRL_PARAM_VOUT_SYNC_CYCLES);
+		hrtim_sync_start(HRTIM_CHANNEL_PRIM);
 		hrtim_enable(HRTIM_CHANNEL_PRIM);
 		hrtim_enable(HRTIM_CHANNEL_SEK);
 		break;
@@ -604,6 +602,24 @@ static void ctrl_apply_inverted_sek_duty(float action) {
 	ctrl_main_handle.duty = duty * 1000;
 }
 
+/**
+ * Writes a frame-average PRIM duty in buck (SEK parked), split into run duty
+ * and idle cycles as in the voltage mode's buck region.
+ * @param duty Frame-average PRIM duty (0..1).
+ */
+static void ctrl_apply_buck_burst(float duty) {
+	float duty_run = duty;
+#ifdef VOUT_SYNC_BURST_ENABLED
+	vout_burst_t bp = vout_burst_plan(duty, CTRL_PARAM_VOUT_FRAME_CYCLES,
+			CTRL_PARAM_VOUT_SYNC_CYCLES, 1, CTRL_PARAM_VOUT_MIN_RUN_DUTY,
+			CTRL_PARAM_VOUT_MAX_RUN_DUTY);
+	hrtim_burst_set_idle_cycles(bp.idle_cycles);
+	duty_run = bp.duty_run;
+#endif
+	hrtim_set_duty(HRTIM_CHANNEL_PRIM, duty_run);
+	ctrl_main_handle.duty = duty * 1000;
+}
+
 void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
@@ -612,9 +628,7 @@ void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_buck,
 			voltage_meas_mV / 1000.0F, voltage_meas_accurate_mV / 1000.0F, 0);
 
-	// Apply Duty
-	hrtim_set_duty(HRTIM_CHANNEL_PRIM, ctrl_pi_voltage_buck.action);
-	ctrl_main_handle.duty = ctrl_pi_voltage_buck.action * 1000;
+	ctrl_apply_buck_burst(ctrl_pi_voltage_buck.action);
 }
 
 /*
@@ -758,19 +772,7 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 	ctrl_PID_controller_execute(&ctrl_pi_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);
 
-	// action is the average PRIM duty over a frame, split as in the voltage
-	// mode's buck region.
-	float duty_run = ctrl_pi_current.action;
-#ifdef VOUT_SYNC_BURST_ENABLED
-	vout_burst_t bp = vout_burst_plan(ctrl_pi_current.action,
-	CTRL_PARAM_VOUT_FRAME_CYCLES, CTRL_PARAM_VOUT_SYNC_CYCLES, 1,
-	CTRL_PARAM_VOUT_MIN_RUN_DUTY, CTRL_PARAM_VOUT_MAX_RUN_DUTY);
-	hrtim_burst_set_idle_cycles(bp.idle_cycles);
-	duty_run = bp.duty_run;
-#endif
-	hrtim_set_duty(HRTIM_CHANNEL_PRIM, duty_run);
-	ctrl_main_handle.duty = ctrl_pi_current.action * 1000;
-
+	ctrl_apply_buck_burst(ctrl_pi_current.action);
 }
 
 void ctrl_main_ctrl_charge_current(int16_t current_meas_mA,
