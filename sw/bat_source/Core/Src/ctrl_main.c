@@ -708,14 +708,19 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 
 	// `duty` is the average over a 20 us frame; the burst plan splits it into
 	// run duty and idle cycles (sync block; buck also skips below the HRTIM
-	// minimum duty). The 4-switch region parks nothing.
+	// minimum duty). The 4-switch region parks nothing. In boost the idle
+	// block holds SEC_L on, i.e. counts as SEK duty 1.
 	vout_burst_t bp = { 0, duty };
 #ifdef VOUT_SYNC_BURST_ENABLED
-	bp = vout_burst_plan(duty, CTRL_PARAM_VOUT_FRAME_CYCLES,
-			vout_region == VOUT_REGION_FOUR_SWITCH ?
-					0 : CTRL_PARAM_VOUT_SYNC_CYCLES,
-			vout_region == VOUT_REGION_BUCK,
-			CTRL_PARAM_VOUT_MIN_RUN_DUTY, CTRL_PARAM_VOUT_MAX_RUN_DUTY);
+	if (vout_region == VOUT_REGION_BOOST)
+		bp = vout_burst_plan_low_side(duty, CTRL_PARAM_VOUT_FRAME_CYCLES,
+				CTRL_PARAM_VOUT_SYNC_CYCLES, CTRL_PARAM_VOUT_MAX_RUN_DUTY);
+	else
+		bp = vout_burst_plan(duty, CTRL_PARAM_VOUT_FRAME_CYCLES,
+				vout_region == VOUT_REGION_FOUR_SWITCH ?
+						0 : CTRL_PARAM_VOUT_SYNC_CYCLES,
+				vout_region == VOUT_REGION_BUCK,
+				CTRL_PARAM_VOUT_MIN_RUN_DUTY, CTRL_PARAM_VOUT_MAX_RUN_DUTY);
 	// Only the fast leg follows the burst: PRIM in buck, SEK in boost.
 	if (changed) {
 		if (vout_region == VOUT_REGION_FOUR_SWITCH)

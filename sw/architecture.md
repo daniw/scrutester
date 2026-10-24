@@ -239,7 +239,11 @@ and RESISTANCE only). These modes trigger the ADC from Timer D, so the sample
 sits at a fixed frame time (~19.5 µs, outside the idle block); Timer B's
 post-scaler phase depends on the mode history. CHARGE (SEK fast, PRIM parked)
 still runs free: there the idle block (SEC_L on) would cap the high-side
-share at ~0.81 and need a charger ≥ ~17 V. The 4-switch region runs without the burst. Bench-checked in 10A,
+share at ~0.81 and need a charger ≥ ~17 V. In boost the idle block holds SEC_L
+on, so it counts as SEK duty 1: `vout_burst_plan_low_side()` plans the
+high-side share instead (before, the real SEK average was ~0.15 above the
+command). The boost duty range is therefore ~0.19 (floor from
+`CTRL_PARAM_VOUT_MAX_RUN_DUTY`) to `CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH`. The 4-switch region runs without the burst. Bench-checked in 10A,
 buck and boost.
 
 **Key parameters** (`ctrl_param.h`):

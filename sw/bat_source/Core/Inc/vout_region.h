@@ -65,4 +65,13 @@ vout_burst_t vout_burst_plan(float duty_avg, unsigned frame_cycles,
 		unsigned sync_cycles, int allow_skip, float min_run_duty,
 		float max_run_duty);
 
+/*
+ * Same split for a leg whose idle state is its low side ON (SEK in boost):
+ * an idle cycle counts as duty 1, so the high-side share (1 - duty) is
+ * planned. max_run_duty caps that share, i.e. duty_run >= 1 - max_run_duty.
+ * No skipping.
+ */
+vout_burst_t vout_burst_plan_low_side(float duty_avg, unsigned frame_cycles,
+		unsigned sync_cycles, float max_run_duty);
+
 #endif /* INC_VOUT_REGION_H_ */

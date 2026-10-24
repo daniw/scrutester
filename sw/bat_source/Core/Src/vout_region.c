@@ -88,3 +88,13 @@ vout_burst_t vout_burst_plan(float duty_avg, unsigned frame_cycles,
 	b.duty_run = duty;
 	return b;
 }
+
+vout_burst_t vout_burst_plan_low_side(float duty_avg, unsigned frame_cycles,
+		unsigned sync_cycles, float max_run_duty) {
+	if (duty_avg > 1.0F)
+		duty_avg = 1.0F;
+	vout_burst_t b = vout_burst_plan(1.0F - duty_avg, frame_cycles,
+			sync_cycles, 0, 0.0F, max_run_duty);
+	b.duty_run = 1.0F - b.duty_run;
+	return b;
+}

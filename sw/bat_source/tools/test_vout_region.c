@@ -107,6 +107,18 @@ static void test_burst_plan(void) {
 		CHECK(F - b.idle_cycles >= prev);
 		prev = F - b.idle_cycles;
 	}
+
+	// Low-side idle (boost): idle cycles count as duty 1, average kept.
+	for (float d = CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW + 0.2F;
+			d <= CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH; d += 0.05F) {
+		b = vout_burst_plan_low_side(d, F, N, hi);
+		CHECK(b.idle_cycles == N);
+		CHECK(fabsf((b.duty_run * (F - N) + N) / F - d) < 1e-4F);
+	}
+	// Low demand: run duty floored, never below the HRTIM minimum.
+	b = vout_burst_plan_low_side(CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, F, N, hi);
+	CHECK(b.idle_cycles == N && fabsf(b.duty_run - (1.0F - hi)) < 1e-6F);
+	CHECK(b.duty_run >= lo);
 }
 
 int main(void) {
