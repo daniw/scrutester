@@ -196,7 +196,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		// Starts as the open-loop PRECHARGE boost (relay open, OUT_LV not
 		// measurable): the ISR ramps PRIM/SEK from here.
 		charge_precharge_start(&ctrl_main_handle.precharge,
-				adc_data.converted.v_term_ext_mv_filt);
+				adc_data.converted.v_term_ext_mv);
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
 		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH * 0.2F);
@@ -281,7 +281,7 @@ void ctrl_main_start_ctrl_charge_low_current(void) {
 	// treats a non-positive v_term_mV as "least-current duty", so this is
 	// the same safe-minimum starting point either way.
 	float d0 = charge_seq_zero_current_duty(0,
-			adc_data.converted.v_term_ext_mv_filt);
+			adc_data.converted.v_term_ext_mv);
 	ctrl_pi_charge_current.ref = 0.0F;
 	ctrl_pi_charge_current.prev_I_action = charge_seq_cc_preload_action(d0);
 	hrtim_set_duty(HRTIM_CHANNEL_SEK, d0);

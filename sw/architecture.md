@@ -432,6 +432,13 @@ readers never see a torn mix of two sample instants. `ctrl_main_ctrl()` takes
 `const ADC_CONVERTED_DATA *` so it cannot reach for raw or calibration fields
 that the ISR-side instance does not populate.
 
+**Ext ADC filtering**: `v_term_ext_mv`, `i_out_ext_mA`, `v_sens_ext_uv` and
+`i_iso_ext_uA` each have a `*_filt` copy, low-passed at ~2 Hz
+(`ADC_EXT_FILT_ALPHA`) right after the snapshot, at the fixed 50 Hz tick (the
+ISR rate depends on the mode). Only displayed or printed readouts use
+`*_filt`; control, protection, charge decisions/latches and calibration use
+the unfiltered values.
+
 ### Interrupt Priorities (`irq_priority.h`)
 `HAL_Init()` sets `NVIC_PRIORITYGROUP_4` and `__NVIC_PRIO_BITS` is 4, so all
 four bits are preemption priority (range 0–15, no subpriority). Lower = more

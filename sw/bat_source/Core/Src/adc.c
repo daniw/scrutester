@@ -1122,14 +1122,34 @@ void adc_convert_fast_data(void){
 	adc_converted_isr.i_out  = (adc_data.raw.i_out  - adc_data.i_out_offset ) * adc_data.i_out_gain;
 	adc_converted_isr.i_iso  = (adc_data.raw.i_iso  - adc_data.i_iso_offset ) * adc_data.i_iso_gain;
 	adc_converted_isr.v_term_ext_mv = (adc_data.ext_adc_data[0] - adc_data.v_term_ext_offset) * adc_data.v_term_ext_gain;
-	// v_term_ext_mv_filt was previously never assigned (the only write to it was
-	// inside a commented-out legacy callback using a pre-refactor field name),
-	// so Voltmeter/60V readouts that display this field always read zero.
-	adc_converted_isr.v_term_ext_mv_filt = (int32_t) ((1.0f - ADC_R_MOHM_FILT_ALPHA)* adc_converted_isr.v_term_ext_mv_filt
-			+ ADC_R_MOHM_FILT_ALPHA * adc_converted_isr.v_term_ext_mv);
 	adc_converted_isr.i_out_ext_mA  = (adc_data.ext_adc_data[1] - adc_data.i_out_ext_offset) * adc_data.i_out_ext_gain;
 	adc_converted_isr.v_sens_ext_uv = (adc_data.ext_adc_data[2] - adc_data.v_sens_ext_offset) * adc_data.v_sens_ext_gain;
 	adc_converted_isr.i_iso_ext_uA  = (adc_data.ext_adc_data[3] - adc_data.i_iso_ext_offset) * adc_data.i_iso_ext_gain;
+}
+
+/**
+ * Low-pass (ADC_EXT_FILT_ALPHA) of the ext ADC values into the *_filt fields.
+ * Runs once per statemachine_step() tick (fixed 50 Hz), seeded on the first
+ * call. The ISR never writes the *_filt fields.
+ */
+static void adc_filter_ext(void) {
+	static float f[4];
+	static uint8_t seeded = 0;
+	ADC_CONVERTED_DATA *c = &adc_data.converted;
+	const int32_t in[4] = { c->v_term_ext_mv, c->i_out_ext_mA,
+			c->v_sens_ext_uv, c->i_iso_ext_uA };
+
+	for (unsigned i = 0; i < 4; i++) {
+		if (seeded)
+			f[i] += ADC_EXT_FILT_ALPHA * ((float) in[i] - f[i]);
+		else
+			f[i] = (float) in[i];
+	}
+	seeded = 1;
+	c->v_term_ext_mv_filt = (int32_t) f[0];
+	c->i_out_ext_mA_filt = (int32_t) f[1];
+	c->v_sens_ext_uv_filt = (int32_t) f[2];
+	c->i_iso_ext_uA_filt = (int32_t) f[3];
 }
 
 // Copies the ISR-private "converted" fields (adc_converted_isr, see
@@ -1139,7 +1159,7 @@ void adc_convert_fast_data(void){
 // before adc_convert_data(), so main context always sees a self-consistent
 // set of fields from the same sample instant instead of a torn mix of two.
 //
-// Critical section cost: sizeof(ADC_CONVERTED_DATA) is 68 bytes (measured
+// Critical section cost: sizeof(ADC_CONVERTED_DATA) is 80 bytes (measured
 // with the project's arm-none-eabi-gcc, including struct padding), copied as
 // a straight struct assignment with interrupts fully disabled and nothing
 // else in the section. At -Os that's on the order of 20-30 word/halfword
@@ -1151,6 +1171,7 @@ void adc_snapshot_converted(void) {
 	__disable_irq();
 	adc_data.converted = adc_converted_isr;
 	__set_PRIMASK(primask);
+	adc_filter_ext();
 }
 
 void adc_convert_data(void){

@@ -55,6 +55,9 @@ extern ADC_HandleTypeDef hadc5;
 // statemachine_step() tick rate the gated samples arrive at (Ts = 20ms):
 // alpha = 1 - exp(-2*pi*fc*Ts) = 1 - exp(-2*pi*2*0.02) ~= 0.2222
 #define ADC_R_MOHM_FILT_ALPHA 0.2222f
+// One-pole low-pass for the displayed/printed ext ADC values (*_filt), run
+// in adc_snapshot_converted() at 50 Hz: fc ~= 2 Hz, same alpha as above.
+#define ADC_EXT_FILT_ALPHA 0.2222f
 #define ADC_R_MOHMX10_MAX_VALUE 5000
 
 								// Empirical Value	// Calculated Value 	// Calculation
@@ -171,10 +174,14 @@ typedef struct {
 	uint16_t v_bat;             // ADC5
 	uint16_t v_ref_int;         // ADC5
     int32_t  v_term_ext_mv;		// Extern ADC 1
-    int32_t  v_term_ext_mv_filt; // Extern ADC 1
     int32_t  i_out_ext_mA;		// Extern ADC 2
     int32_t  v_sens_ext_uv;      // Extern ADC 3
     int32_t  i_iso_ext_uA;		// Extern ADC 4
+    // ~2 Hz filtered, for display/print only (adc_snapshot_converted()).
+    int32_t  v_term_ext_mv_filt;
+    int32_t  i_out_ext_mA_filt;
+    int32_t  v_sens_ext_uv_filt;
+    int32_t  i_iso_ext_uA_filt;
 } ADC_CONVERTED_DATA;
 
 typedef struct {

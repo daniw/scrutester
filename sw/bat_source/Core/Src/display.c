@@ -348,22 +348,22 @@ static void update_resistance(statemachine_modes_t mode) {
 	if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: Take V_sense */
 		snprintf(text, sizeof(text), "V_sense = %d uV     ",
-				(int) adc_data.converted.v_sens_ext_uv);
+				(int) adc_data.converted.v_sens_ext_uv_filt);
 	} else {
 		/* Ohmmeter: take V_term*/
 		snprintf(text, sizeof(text), "V_term = %d mV     ",
-				(int) adc_data.converted.v_term_ext_mv);
+				(int) adc_data.converted.v_term_ext_mv_filt);
 	}
 	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, C_WHITE_63, C_BLACK);
 
 	if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: Take V_sense */
 		snprintf(text, sizeof(text), "I_meas = %d mA    ",
-				(int) adc_data.converted.i_out_ext_mA);
+				(int) adc_data.converted.i_out_ext_mA_filt);
 	} else {
 		/* Ohmmeter: take V_term*/
 		snprintf(text, sizeof(text), "I_meas= %d mA     ",
-				(int) adc_data.converted.i_out_ext_mA);
+				(int) adc_data.converted.i_out_ext_mA_filt);
 	}
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
 }
@@ -392,15 +392,15 @@ static void update_isometer(uint8_t output_active) {
 			ctrl_main_handle.voltage_iso_reference_V);
 	LCD_PutStr(16, SECOND_Y, text, FONT_TINY, C_WHITE_63, C_BLACK);
 
-	if (adc_data.converted.i_iso_ext_uA > 0) {
+	if (adc_data.converted.i_iso_ext_uA_filt > 0) {
 		/* R[Mohm] = V / I[uA] (since Mohm = V/uA algebraically); keep one
 		 * decimal digit of precision via a x10 fixed-point intermediate. */
 //		int32_t r_megaohm_x10 =
 //				(int32_t) adc_data.converted.v_term_ext_mv / 100
 //						/ adc_data.converted.i_iso_ext_uA;
 		int32_t r_megaohm_x10 =
-				(int32_t) adc_data.converted.v_term_ext_mv / 1
-						/ adc_data.converted.i_iso_ext_uA;
+				(int32_t) adc_data.converted.v_term_ext_mv_filt / 1
+						/ adc_data.converted.i_iso_ext_uA_filt;
 		snprintf(text, sizeof(text), "%3d.%03d", (int) (r_megaohm_x10 / 1000),
 				(int) (r_megaohm_x10 % 1000));
 	} else {
@@ -408,7 +408,7 @@ static void update_isometer(uint8_t output_active) {
 	}
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
 
-	snprintf(text, sizeof(text), "Ileak = %d uA     ", (int) adc_data.converted.i_iso_ext_uA);
+	snprintf(text, sizeof(text), "Ileak = %d uA     ", (int) adc_data.converted.i_iso_ext_uA_filt);
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
 
 	snprintf(text, sizeof(text), "Vterm = %d V     ", (int) adc_data.converted.v_term_ext_mv_filt/1000);
@@ -546,12 +546,12 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 	case STATEMACHINE_MODE_60V_OUT:
 		update_active_output(mode, output_active,
 				adc_data.converted.v_term_ext_mv_filt / 10,
-				adc_data.converted.i_out_ext_mA,
+				adc_data.converted.i_out_ext_mA_filt,
 				ctrl_main_handle.voltage_reference_mV, ctrl_main_handle.duty);
 		break;
 	case STATEMACHINE_MODE_10A_OUT:
 		update_active_output(mode, output_active,
-				adc_data.converted.i_out_ext_mA / 10,
+				adc_data.converted.i_out_ext_mA_filt / 10,
 				adc_data.converted.v_term_ext_mv_filt,
 				ctrl_main_handle.current_reference_mA, ctrl_main_handle.duty);
 		break;
@@ -566,7 +566,7 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 		update_passive_readout(adc_data.converted.v_term_ext_mv_filt / 10);
 		break;
 	case STATEMACHINE_MODE_AMPMETER:
-		update_passive_readout(adc_data.converted.i_out_ext_mA / 10);
+		update_passive_readout(adc_data.converted.i_out_ext_mA_filt / 10);
 		break;
 	case STATEMACHINE_MODE_CHARGE:
 		update_charge(output_active);
@@ -575,7 +575,7 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 	case STATEMACHINE_MODE_EMI:
 		update_active_output(mode, output_active,
 				adc_data.converted.v_term_ext_mv_filt / 10,
-				adc_data.converted.i_out_ext_mA,
+				adc_data.converted.i_out_ext_mA_filt,
 				ctrl_main_handle.voltage_reference_mV, ctrl_main_handle.duty);
 		break;
 #endif
@@ -720,13 +720,13 @@ static void update_settings_adc1(void) {
 	snprintf(text, sizeof(text),"i_iso      : %8u : %7d mA",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
 	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, C_WHITE, C_BLACK);
 
-	snprintf(text, sizeof(text),"Ext V_Term : %8li : %7li mV", adc_data.ext_adc_data[0], adc_data.converted.v_term_ext_mv);
+	snprintf(text, sizeof(text),"Ext V_Term : %8li : %7li mV", adc_data.ext_adc_data[0], adc_data.converted.v_term_ext_mv_filt);
 	LCD_PutStr(16, STATUS_H + 128, text, FONT_TINY, C_WHITE, C_BLACK);
-	snprintf(text, sizeof(text),"Ext I_Out  : %8li : %7li mA", adc_data.ext_adc_data[1], adc_data.converted.i_out_ext_mA );
+	snprintf(text, sizeof(text),"Ext I_Out  : %8li : %7li mA", adc_data.ext_adc_data[1], adc_data.converted.i_out_ext_mA_filt );
 	LCD_PutStr(16, STATUS_H + 143, text, FONT_TINY, C_WHITE, C_BLACK);
-	snprintf(text, sizeof(text),"Ext V_Sns  : %8li : %7li uV", adc_data.ext_adc_data[2], adc_data.converted.v_sens_ext_uv);
+	snprintf(text, sizeof(text),"Ext V_Sns  : %8li : %7li uV", adc_data.ext_adc_data[2], adc_data.converted.v_sens_ext_uv_filt);
 	LCD_PutStr(16, STATUS_H + 158, text, FONT_TINY, C_WHITE, C_BLACK);
-	snprintf(text, sizeof(text),"Ext I_Iso  : %8li : %7li uA", adc_data.ext_adc_data[3], adc_data.converted.i_iso_ext_uA );
+	snprintf(text, sizeof(text),"Ext I_Iso  : %8li : %7li uA", adc_data.ext_adc_data[3], adc_data.converted.i_iso_ext_uA_filt );
 	LCD_PutStr(16, STATUS_H + 173, text, FONT_TINY, C_WHITE, C_BLACK);
 }
 

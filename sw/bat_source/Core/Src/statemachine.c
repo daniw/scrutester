@@ -589,10 +589,10 @@ static void statemachine_step_charge(void) {
 			// meet (and the current loop starts from ~0 A).
 			aux_io_ctrl_manual_set_io(GPIO_OUT_SEL_HV, 0);
 			ctrl_main_charge_handover(adc_data.converted.v_in,
-					adc_data.converted.v_term_ext_mv_filt);
+					adc_data.converted.v_term_ext_mv);
 #ifdef CHARGE_DEBUG
 			printf("CHARGE: precharge done (V_IN=%ldmV, V_TERM=%ldmV), relay closing\r\n",
-					adc_data.converted.v_in, adc_data.converted.v_term_ext_mv_filt);
+					adc_data.converted.v_in, adc_data.converted.v_term_ext_mv);
 #endif
 			break;
 		case CHG_ACT_START_RAMP:
@@ -672,9 +672,9 @@ static void statemachine_step_charge(void) {
 		printf("Charging: %s, I_OUT: %5d, I_OUT_ext_mA: %5ld, V_IN: %5ld, V_OUT: %5ld, "
 				"V_TERM: %5ld, Stack: %5u, max(cell): %4u\r\n",
 				charge_seq_phase_name(ctrl_main_handle.charge_phase),
-				-adc_data.converted.i_out, -adc_data.converted.i_out_ext_mA,
+				-adc_data.converted.i_out, -adc_data.converted.i_out_ext_mA_filt,
 				adc_data.converted.v_in, adc_data.converted.v_out,
-				adc_data.converted.v_term_ext_mv,
+				adc_data.converted.v_term_ext_mv_filt,
 				bms.VoltageRegisters.StackVoltage, cell_max);
 	}
 #endif /* CHARGE_DEBUG */
