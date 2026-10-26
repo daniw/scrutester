@@ -390,12 +390,12 @@
 {}
 {}
 
-\ModItemOpen
+\ModItemDone
 {Swapped supply pins of U17 and U20}
 {The supply pins of the operational amplifiers U17 and U20 are swapped, which leads to them being reverse-polarity powered. }
 {The supply pins of U17 and U20 must be swapped. \newline Additionally, renaming the supply pins of all operational amplifiers to V+ and V- is highly recommended for easier recognition of swapped supply pins during schematic review. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
 \ModItemOpen
 {Insufficient \ac{I2C} level}
@@ -404,47 +404,47 @@
 {}
 {}
 
-\ModItemOpen
+\ModItemDone
 {Inaccurate voltage reference buffer output}
 {The voltage reference buffer output is inaccurate. The buffer requires an output capacity in the range of \qty{0.5}{\micro\farad} $\ldots$ \qty{1.5}{\micro\farad}. }
 {A \qty{1}{\micro\farad} capacitor should be added to the signal VREF\_UC. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {On/off controller unable to turn on}
 {While precharging V\_IN, Q12 turns the prescharge off due to the pull-up resistor R37 before the comparator U3 is operating, which stops the precharge from continuing. }
 {A \qty{47}{\kilo\ohm} resistor should be added from the gate of Q12 to GND. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {On/off controller does not activate main discharge MOSFET}
 {The precharge detection MOSFET Q11 is unable to detect the completion of the precharge due to the still too high voltage at its gate. }
-{Change R40 to \qty{1}{\kilo\ohm} or add a \qty{1.1}{\kilo\ohm} resistor parallel to R40. }
-{}
-{}
+{Change R40 to \qty{1}{\kilo\ohm}. }
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {Overvoltage protection latch reset}
 {The overvoltage protection latch reset does not work due to insufficient voltage at the positive input of the latch comparator. }
 {Change R82 to \qty{2.4}{\kilo\ohm}. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {Overcurrent protection always active}
 {The overcurrent protection is always active because the threshold does not account for the offset $\frac{VREF}{2}$ on the current mesurement. }
 {Change R105 to \qty{1}{\mega\ohm} and R106 to \qty{330}{\kilo\ohm}. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {Offset in isolation current measurement}
 {The isolation current measurement has an offset of \qty{129}{\micro\ampere} due to the current introduced by U14A. }
 {Remove R135. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
 \ModItemOpen
 {Ringing in current controller at turn-on}
@@ -453,33 +453,33 @@
 {}
 {}
 
-\ModItemOpen
+\ModItemDone
 {Current measurement noise}
 {The noise of the current measurement is aproximately \qty{100}{\milli\ampere}, which is caused by the input noise of the instrumentation amplifier. }
 {The instrumentation amplifier should be replaced by a current sense amplifier such as INA181. The battery current measurement and isolation current measurement should also be changed to using an INA181. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {Unreliable QSPI operation}
 {The level of the pins QSPI.IO2 and QSPI.IO3 is undefined in single and dual SPI mode, which can lead to the flash entering hold or write protect mode. }
 {Pull- up resistors should be added to the QSPI.IO2 and QSPI.IO3 pins. It is recommended to add a pull-up resistor fo CS/ as well. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {No detection of open SENS wires}
 {The device is unable to detect if the SENS wires are connected to the \ac{DUT}. }
 {A pull-up resistor should be added to SENS+ and a pull-down resistor should be added to SENS-. Due to the high voltage that can be present at the terminals, the resistors must likely be implemented using multiple resistors in series. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {Incomplete precharge}
 {With the LEDs and the LCD running, the current consumption is too high (\qty{115}{\milli\ampere}) for the precharge to complete. }
 {The precharge current should be increased to $\geq$ \qty{180}{\milli\ampere}. This can be achieved by reducing the value of the precharge current resistors R22 \ldots R25 to \qty{15}{\ohm}. This results in a precharge current of ???. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
 \ModItemDone
 {Display unreliable at maximum speed}
@@ -488,19 +488,19 @@
 {daniw}
 {2026-06-21}
 
-\ModItemOpen
+\ModItemDone
 {High voltage converter relay coil polarity}
 {The relay K2 does not operate due to incorrect polarity of the coil. }
 {The polarity of the coil of K2 must be switched. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
-\ModItemOpen
+\ModItemDone
 {Insufficient current for isolation resistance measurement}
 {The current limiter for the isolation resistance measurement is set to a value of \qty{1}{\milli\ampere}. The lowest allowed isolation resistance is \qty{500}{\ohm\per\volt}, which results in a current of \qty{2}{\milli\ampere}. }
 {Change R74 to \qty{3.6}{\kilo\ohm}. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
 \end{ModTable}
 
@@ -585,12 +585,12 @@
 {}
 {}
 
-\ModItemOpen
+\ModItemDone
 {Display not working}
 {The IM1 and IM2 pins of the display have an internal \qty{10}{\kilo\ohm} pull-down resistor. The external pull-up resistors are \qty{10}{\kilo\ohm}, which is not low enough to set the communication mode of the display to 4-wire \ac{SPI}. }
 {The value of the pull-up resistors R30 and R31 should be reduced to \qty{1}{\kilo\ohm}. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
 \end{ModTable}
 
@@ -621,12 +621,12 @@
 {}
 {}
 
-\ModItemOpen
+\ModItemDone
 {Display not working}
 {The IM1 and IM2 pins of the display have an internal \qty{10}{\kilo\ohm} pull-down resistor. The external pull-up resistors are \qty{10}{\kilo\ohm}, which is not low enough to set the communication mode of the display to 4-wire \ac{SPI}. }
 {The value of the pull-up resistors R30 and R31 should be reduced to \qty{1}{\kilo\ohm}. }
-{}
-{}
+{daniw}
+{2026-10-26}
 
 \ModItemOpen
 {Missmatched component size}
