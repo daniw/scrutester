@@ -33,6 +33,7 @@ PID_controller_t ctrl_pi_charge_voltage;
 PID_controller_t ctrl_pi_voltage_hv;
 PID_controller_t ctrl_pi_hv_iout_limit;
 PID_controller_t ctrl_pi_voltage_4sw;
+PID_controller_t ctrl_pi_10a_vlimit;
 
 // RAM-only gains: a calibration_t field would need a PSVN bump, which makes
 // config_store_read() overwrite the stored calibration with defaults.
@@ -42,6 +43,8 @@ static float ctrl_pi_voltage_4sw_i;
 // calibration_t charge_voltage_p/i fields are unused.
 static float ctrl_pi_charge_cv_p;
 static float ctrl_pi_charge_cv_i;
+static float ctrl_pi_10a_vlimit_p;
+static float ctrl_pi_10a_vlimit_i;
 
 _Static_assert(CTRL_PARAM_CHARGE_CV_RATE_HZ * STATEMACHINE_STEP_PERIOD_mS == 1000,
 		"CV loop runs at the statemachine tick");
@@ -64,7 +67,7 @@ static uint32_t vout_freq_sek;
 
 const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
-// CLI setPI IDs are positional: 0=Buck,1=Boost,2=Current,3=BoostIoutLimit,4=ChargeCurrent.
+// CLI setPI IDs are positional (row index), see `help setPI`.
 const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = { {
 		&ctrl_pi_voltage_buck, &config_store.calibration.voltage_buck_p,
 		&config_store.calibration.voltage_buck_i,
@@ -107,13 +110,17 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = { {
 		&ctrl_pi_voltage_4sw_i,
 		CTRL_PARAM_VOLTAGE_4SW_P, CTRL_PARAM_VOLTAGE_4SW_I,
 		CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_HIGH,
-		CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW, "FourSwitch", CTRL_FREQ }, };
+		CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW, "FourSwitch", CTRL_FREQ }, {
+		&ctrl_pi_10a_vlimit, &ctrl_pi_10a_vlimit_p, &ctrl_pi_10a_vlimit_i,
+		CTRL_PARAM_10A_VLIMIT_P, CTRL_PARAM_10A_VLIMIT_I,
+		CTRL_PARAM_CURRENT_DUTY_SAT_HIGH, CTRL_PARAM_CURRENT_DUTY_SAT_LOW,
+		"10AVoltLimit", CTRL_FREQ }, };
 
 /******************* Function Prototypes **************************/
 void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate);
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
-		int16_t current_meas_accurate);
+		int16_t current_meas_accurate, int32_t voltage_meas_mV);
 void ctrl_main_ctrl_charge_current(uint32_t target_mA,
 		int16_t current_meas_mA, int16_t current_meas_accurate);
 void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
@@ -138,6 +145,7 @@ void ctrl_main_init(void) {
 
 	ctrl_pi_boost_iout_limit.ref = CTRL_PARAM_BOOST_IOUT_LIMIT_mA / 1000.0F;
 	ctrl_pi_hv_iout_limit.ref = CTRL_PARAM_HV_IOUT_LIMIT_mA / 1000.0F;
+	ctrl_pi_10a_vlimit.ref = CTRL_PARAM_10A_COMPLIANCE_mV / 1000.0F;
 }
 
 /**
@@ -231,6 +239,9 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	case CTRL_MODE_10A:
 		ctrl_PID_reset(&ctrl_pi_voltage_buck);
 		ctrl_PID_reset(&ctrl_pi_current);
+		ctrl_PID_reset(&ctrl_pi_10a_vlimit);
+		// Limiter starts at its ceiling (as the 60V current limiter).
+		ctrl_pi_10a_vlimit.prev_I_action = ctrl_pi_10a_vlimit.sat_limit_high;
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_HIGH);
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW); // Needs to be low!!
@@ -361,7 +372,7 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 		ctrl_main_ctrl_voltage_buck(meas->v_out, meas->v_out);
 		break;
 	case CTRL_MODE_10A:
-		ctrl_main_ctrl_current(meas->i_out, meas->i_out_ext_mA);
+		ctrl_main_ctrl_current(meas->i_out, meas->i_out_ext_mA, meas->v_out);
 
 		break;
 	case CTRL_MODE_ISOMETER:
@@ -791,16 +802,32 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 	ctrl_main_handle.duty = duty * 1000;
 }
 
+/**
+ * 10A current source with a compliance limit: a PI on v_out caps the duty at
+ * CTRL_PARAM_10A_COMPLIANCE_mV, so open terminals do not wind the current
+ * PI up to its duty ceiling.
+ * @param current_meas_mA Fast internal i_out.
+ * @param current_meas_accurate External ADC current (I part).
+ * @param voltage_meas_mV Fast internal v_out.
+ */
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
-		int16_t current_meas_accurate) {
+		int16_t current_meas_accurate, int32_t voltage_meas_mV) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_current,
 			ctrl_main_handle.current_reference_mA / 1000.0F, 10.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_current, current_meas_mA / 1000.0F,
 			current_meas_accurate / 1000.0F, 0);
+	ctrl_PID_controller_execute(&ctrl_pi_10a_vlimit, voltage_meas_mV / 1000.0F,
+			voltage_meas_mV / 1000.0F, 0);
 
-	ctrl_apply_buck_burst(ctrl_pi_current.action);
+	float duty = ctrl_pi_current.action;
+	if (ctrl_pi_10a_vlimit.action < duty) {
+		duty = ctrl_pi_10a_vlimit.action;
+		// Anti-windup against the limiter's cap.
+		ctrl_pi_current.prev_I_action = duty - ctrl_pi_current.P_action;
+	}
+	ctrl_apply_buck_burst(duty);
 }
 
 void ctrl_main_ctrl_charge_current(uint32_t target_mA,

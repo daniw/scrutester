@@ -195,6 +195,7 @@ fields, its defaults and its duty saturation limits. `ctrl_main_init()`,
 | 6 | HVVoltage | ISOMETER HV flyback voltage |
 | 7 | HVCurrent | ISOMETER leakage-current limiter |
 | 8 | FourSwitch | 4-switch region of the voltage source. **RAM-only**: no EEPROM field (see below), `setPI` works, `saveEEPROM` does not persist it |
+| 9 | 10AVoltLimit | 10 A compliance limiter: PI on the fast `v_out` (target `CTRL_PARAM_10A_COMPLIANCE_mV`, 5 V) caps the Current PI's duty, whose integrator then tracks the applied duty, so open terminals no longer wind it up to the 0.5 ceiling (~V_IN/2). Starts at its ceiling; gains = buck voltage loop, untuned. **RAM-only** |
 
 ### Full-range voltage source (60V_OUT)
 
@@ -422,7 +423,7 @@ relay-close command, for tuning `PRECHARGE_RATIO` and `RELAY_SETTLE_ms`.
 | ADC1 | DMA1_Channel2 | `I_OUT` — **carries the control loop** |
 | ADC2 | DMA1_Channel3 | `V_TERM` |
 | ADC3 | DMA1_Channel4 | `V_IN` |
-| ADC4 | DMA1_Channel5 | `V_OUT` / `V_HV` (channel switched per mode) |
+| ADC4 | DMA1_Channel5 | `V_OUT` / `V_HV` (channel switched per mode; `V_OUT` also in 10A for the compliance limiter) |
 | ADC5 | DMA1_Channel1 | 12-channel scan: rails, NTCs, VBAT, VREFINT; plus an injected group for `I_ISO` / `I_BAT` |
 
 ADC5 uses 256× hardware oversampling with 4-bit right shift (effective 16-bit result).
