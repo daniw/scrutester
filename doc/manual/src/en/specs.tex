@@ -1,0 +1,41 @@
+\section{Technical data}
+\label{sec:specs}
+
+Values marked \tbc{} are design values and not yet verified.
+
+\begin{longtable}{p{5.5cm}p{10cm}}
+    \rowcolor{gray} \textbf{Parameter} & \textbf{Value} \\ \endhead
+    \multicolumn{2}{l}{\textbf{Voltage Source}} \\
+    Voltage range                 & \qtyrange{0}{60}{\volt}, steps \qty{0.5}{\volt} \\
+    Output current                & max. \qty{1}{\ampere} \\
+    Accuracy                      & \tbc{\qty{1}{\percent}} \\
+    \multicolumn{2}{l}{\textbf{Current Source}} \\
+    Current range                 & \qtyrange{0}{10}{\ampere}, steps \qty{0.1}{\ampere} \\
+    Compliance voltage            & max. \qty{5}{\volt} \\
+    Accuracy                      & \tbc{\qty{1}{\percent}} \\
+    \multicolumn{2}{l}{\textbf{Milliohmmeter (4-wire)}} \\
+    Range / resolution            & \tbc{\qtyrange{0}{1000}{\milli\ohm}} / \tbc{\qty{1}{\milli\ohm}} \\
+    Measurement current           & \qty{1}{\ampere} \\
+    Update rate                   & \tbc{\qty{5}{S\per\second}} \\
+    \multicolumn{2}{l}{\textbf{Ohmmeter (2-wire)}} \\
+    Range / resolution            & \tbc{\qtyrange{0}{10}{\mega\ohm}} / \tbc{\qty{0.1}{\ohm}} \\
+    Measurement current           & \qty{1}{\milli\ampere} \\
+    \multicolumn{2}{l}{\textbf{Isolation Test}} \\
+    Test voltages                 & \qtylist{125;250;500;1000}{\volt} \\
+    Range                         & \tbc{} \\
+    \multicolumn{2}{l}{\textbf{Voltmeter / Ampmeter}} \\
+    Voltage range                 & \qty{\pm1000}{\volt} \\
+    Current range                 & \qty{\pm10}{\ampere} \\
+    \multicolumn{2}{l}{\textbf{General}} \\
+    Battery                       & \ac{LiFePO4}, 4 cells in series, \qty{12.8}{\volt}, \qty{4.5}{\ampere\hour}, \qty{57}{\watt\hour} \\
+    Charging                      & \qtyrange{15}{24}{\volt} DC via terminals, \qty{1}{\ampere} \\
+    Runtime                       & \tbc{\qty{\ge30}{\minute}} at maximum output power \\
+    Terminals                     & shrouded \qty{4}{\milli\meter} safety jacks \\
+    Measurement category          & \tbc{CAT III \qty{600}{\volt}} \\
+    Operating / storage temp.     & \tbc{\qtyrange{0}{50}{\celsius}} \\
+    Ingress protection            & \tbc{IP54} \\
+    Display                       & 320 x 240 pixel colour TFT, automatic brightness \\
+    Dimensions / weight           & \tbc{} \\
+    Auto power-off                & \qty{10}{\minute} \\
+\end{longtable}
+\todo[inline]{Measure and fill in all accuracy values after calibration; dimensions and weight}

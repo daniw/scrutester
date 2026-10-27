@@ -1,0 +1,43 @@
+\section{Device overview}
+\label{sec:overview}
+
+\subsection{Scope of delivery}
+\todo[inline]{Scope of delivery: device, test leads (which?), Kelvin clips, charger / charging cable, case, manual}
+
+\subsection{Controls and terminals}
+
+\begin{figure}[h!]
+    \centering
+    \imgph[0.8\textwidth]{Photo of the front panel with numbered callouts}
+    \caption{Front panel}
+    \label{fig:front}
+\end{figure}
+\todo[inline]{Front panel photo with callouts; labels of the jacks (which jack is used in which mode, sense jacks for 4-wire)}
+
+\begin{tabular}{lp{11cm}}
+    \rowcolor{gray} \textbf{Element} & \textbf{Function} \\
+    \enc       & Select the mode in the menu; set the setpoint in the source modes and the test voltage in \disp{Isolation Test}. \\
+    \btn{OK}   & Open the selected mode / menu entry, confirm. \\
+    \btn{ESC}  & Back to the menu. In the main menu: switch off. \\
+    \btn{OUT}  & Enable the output (hold or press, depending on the mode, see \autoref{sec:modes}). \\
+    Jacks      & Shrouded \qty{4}{\milli\meter} safety jacks for test leads and charging. \\
+    Display    & Colour display, brightness adapts to the ambient light. \\
+    LEDs       & \tbc{Status LEDs} \\
+\end{tabular}
+\todo[inline]{Power-on: which button? Function of the status LEDs?}
+
+\subsection{Display}
+All screens have the same layout:
+\begin{itemize}
+    \item Status bar (top): name of the mode.
+    \item Main value (large): measured value or output value.
+    \item Second line: further values, e.g. setpoint (\disp{SET}), current or voltage.
+    \item Footer (bottom): assignment of \btn{ESC} and \btn{OK}/\btn{OUT}. Error messages are shown here in red.
+\end{itemize}
+\begin{figure}[h!]
+    \centering
+    \imgph[0.6\textwidth]{Screenshot: main menu}
+    \caption{Main menu}
+    \label{fig:idle}
+\end{figure}
+\todo[inline]{Screenshots of all screens (main menu, each mode, settings, charging)}

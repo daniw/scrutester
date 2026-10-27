@@ -1,0 +1,35 @@
+\section{Inbetriebnahme}
+\label{sec:start}
+
+\subsection{Einschalten}
+\begin{steps}
+    \item Alle Prüfleitungen von den Buchsen entfernen.
+    \item \tbc{Ein-Taste} drücken. Der Startbildschirm mit dem \ST{}-Logo erscheint.
+    \item Nach dem Start wird das Hauptmenü angezeigt (\autoref{fig:idle}).
+\end{steps}
+\todo[inline]{Genauer Einschaltvorgang (Taste, Haltezeit) für die finale Hardware}
+
+\begin{note}
+    Liegt an den Buchsen eine Versorgung mit \qtyrange{15}{24}{\volt} an, beginnt das Gerät
+    automatisch zu laden (\autoref{sec:charging}).
+\end{note}
+
+\subsection{Betriebsart wählen}
+\begin{steps}
+    \item \enc{} drehen, um eine Betriebsart zu wählen. Ihr Name wird unter dem Symbol angezeigt.
+    \item \btn{OK} drücken, um die Betriebsart zu öffnen.
+    \item \btn{ESC} drücken, um ins Hauptmenü zurückzukehren. Der Ausgang wird ausgeschaltet.
+\end{steps}
+
+\subsection{Ausschalten}
+\begin{itemize}
+    \item Im Hauptmenü \btn{ESC} drücken (\disp{ESC: Shutdown}).
+    \item Das Gerät schaltet nach \qty{10}{\minute} ohne Bedienung (\enc{} drehen oder Taste drücken)
+          automatisch aus. Gehaltenes \btn{OUT} zählt als Bedienung. Beim Laden gilt dies nicht.
+\end{itemize}
+
+\subsection{Batterie}
+Das Gerät wird von einer internen \ac{LiFePO4}-Batterie versorgt
+(4 Zellen, \qty{12.8}{\volt}, \tbc{\qty{4.5}{\ampere\hour}}).
+\todo[inline]{Wo wird der Ladezustand im normalen Betrieb angezeigt? (Anforderung R:Bat\_Status)}
+\todo[inline]{Erwartete Laufzeit je Betriebsart}

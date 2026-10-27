@@ -1,0 +1,146 @@
+\section{Operating modes}
+\label{sec:modes}
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{llll}
+        \rowcolor{gray} \textbf{Mode (display)} & \textbf{Function} & \textbf{Output enable} & \textbf{Section} \\
+        \disp{Voltage Source} & DC voltage \qtyrange{0}{60}{\volt}, max. \qty{1}{\ampere} & hold \btn{OUT} & \ref{sec:mode_vsrc} \\
+        \disp{Current Source} & DC current \qtyrange{0}{10}{\ampere}, max. \qty{5}{\volt} & hold \btn{OUT} & \ref{sec:mode_isrc} \\
+        \disp{Milliohmmeter}  & 4-wire resistance, \qty{1}{\ampere} & automatic & \ref{sec:mode_mohm} \\
+        \disp{Ohmmeter}       & 2-wire resistance, \qty{1}{\milli\ampere} & automatic & \ref{sec:mode_ohm} \\
+        \disp{Isolation Test} & Insulation resistance, \qtyrange{125}{1000}{\volt} & hold \btn{OUT} & \ref{sec:mode_iso} \\
+        \disp{Voltmeter}      & DC voltage up to \qty{\pm1000}{\volt} & -- & \ref{sec:mode_volt} \\
+        \disp{Ampmeter}       & DC current up to \qty{\pm10}{\ampere} & -- & \ref{sec:mode_amp} \\
+        \disp{Settings}       & Settings and diagnostics & -- & \ref{sec:settings} \\
+    \end{tabular}
+    \caption{Overview of the modes}
+    \label{tab:modes}
+\end{table}
+
+\begin{note}
+    If a limit is exceeded or a fault occurs, the output is switched off and a red message is
+    shown in the footer (\autoref{sec:messages}). In the modes with ``hold \btn{OUT}'',
+    release \btn{OUT} and press it again to restart.
+\end{note}
+
+%-----------------------------------------------------------------
+\subsection{Voltage Source}
+\label{sec:mode_vsrc}
+Supplies a regulated DC voltage, e.g. to power vehicle electronics or to test a \ac{DUT}.
+\begin{itemize}
+    \item Setpoint: \qtyrange{0}{60}{\volt} in steps of \qty{0.5}{\volt}, set with \enc.
+    \item Output current: max. \qty{1}{\ampere}.
+    \item Display: output voltage (large), output current \disp{IOUT}, setpoint \disp{SET}.
+\end{itemize}
+\begin{steps}
+    \item Select \disp{Voltage Source} and press \btn{OK}.
+    \item Set the voltage with \enc.
+    \item Connect the \ac{DUT} to \tbc{the output jacks}.
+    \item Hold \btn{OUT}. The output is on as long as \btn{OUT} is held.
+\end{steps}
+\begin{caution}
+    The output switches off at \tbc{\qty{65}{\volt}} or \tbc{\qty{1.5}{\ampere}} (\disp{ERROR: Voltage limit exceeded} / \disp{ERROR: Current limit exceeded}).
+\end{caution}
+\todo[inline]{Firmware allows setpoints up to 63.5 V (127 x 0.5 V). Limit to 60 V or document 63.5 V?}
+\todo[inline]{Is there a current limit setting, or only the fixed protection limit?}
+
+%-----------------------------------------------------------------
+\subsection{Current Source}
+\label{sec:mode_isrc}
+Supplies a regulated DC current, e.g. to test the \ac{FS} BSPD (brake system plausibility device)
+current threshold.
+\begin{itemize}
+    \item Setpoint: \qtyrange{0}{10}{\ampere} in steps of \qty{0.1}{\ampere}, set with \enc.
+    \item Output voltage (compliance): max. \qty{5}{\volt}.
+    \item Display: output current (large), output voltage \disp{VOUT}, setpoint \disp{SET}.
+\end{itemize}
+\begin{steps}
+    \item Select \disp{Current Source} and press \btn{OK}.
+    \item Set the current with \enc.
+    \item Connect the \ac{DUT}.
+    \item Hold \btn{OUT}.
+\end{steps}
+\todo[inline]{Firmware setpoint goes up to 12.7 A (127 x 100 mA), protection trips at 13 A. Clamp to 10 A?}
+\todo[inline]{Typical BSPD test procedure as an example}
+
+%-----------------------------------------------------------------
+\subsection{Milliohmmeter}
+\label{sec:mode_mohm}
+Measures low resistances (\qtyrange{0}{1000}{\milli\ohm}) in 4-wire (Kelvin) connection with a
+measurement current of \qty{1}{\ampere}, e.g. for equipotential bonding measurements.
+\begin{steps}
+    \item Select \disp{Milliohmmeter} and press \btn{OK}. The measurement starts automatically.
+    \item Connect the current leads (\tbc{source jacks}) and the sense leads (\tbc{sense jacks}) to the \ac{DUT}.
+          The sense leads must be connected inside the current leads.
+    \item Read the resistance.
+\end{steps}
+\begin{figure}[h!]
+    \centering
+    \imgph[0.6\textwidth]{Connection diagram 4-wire measurement}
+    \caption{4-wire connection}
+\end{figure}
+\todo[inline]{Resolution, accuracy, update rate; display of open leads / missing sense connection (R:mOhm\_OL)}
+
+%-----------------------------------------------------------------
+\subsection{Ohmmeter}
+\label{sec:mode_ohm}
+Measures resistances in 2-wire connection with a measurement current of \qty{1}{\milli\ampere}
+(open-circuit voltage max. \tbc{\qty{3}{\volt}}).
+\begin{steps}
+    \item Select \disp{Ohmmeter} and press \btn{OK}. The measurement starts automatically.
+    \item Connect the \ac{DUT} to \tbc{the output jacks}.
+\end{steps}
+\todo[inline]{Measurement range (requirement up to 10 MOhm with 1 mA?), resolution, accuracy}
+
+%-----------------------------------------------------------------
+\subsection{Isolation Test}
+\label{sec:mode_iso}
+Measures the insulation resistance between two points, e.g. between the tractive system and the
+vehicle chassis.
+\begin{itemize}
+    \item Test voltage: \qtylist{125;250;500;1000}{\volt}, selected with \enc.
+    \item Display: insulation resistance in \unit{\mega\ohm} (large), test voltage, leakage
+          current \disp{Ileak}, terminal voltage \disp{Vterm}.
+\end{itemize}
+\begin{danger}
+    Up to \qty{1000}{\volt} at the terminals while \btn{OUT} is held. Only use suitable test leads
+    and do not touch the \ac{DUT} during the test.
+\end{danger}
+\begin{steps}
+    \item Make sure the \ac{DUT} is de-energised (check with \disp{Voltmeter}).
+    \item Select \disp{Isolation Test} and press \btn{OK}.
+    \item Select the test voltage with \enc.
+    \item Connect the test leads to \tbc{the HV jacks}.
+    \item Hold \btn{OUT} until the reading is stable (\tbc{a few seconds}).
+    \item Release \btn{OUT}. Wait \tbc{until the DUT is discharged} before removing the leads.
+\end{steps}
+\todo[inline]{Measurement range and accuracy; maximum test current; stabilisation time}
+\todo[inline]{Test voltage 1000 V vs. design target 500 V (concept/requirements): confirm 1000 V is released}
+\todo[inline]{Remove the debug line \disp{Duty} from the isolation screen before release?}
+
+%-----------------------------------------------------------------
+\subsection{Voltmeter}
+\label{sec:mode_volt}
+Measures DC voltages up to \qty{\pm1000}{\volt}. No output is active.
+\begin{steps}
+    \item Select \disp{Voltmeter} and press \btn{OK}.
+    \item Connect the test leads to \tbc{the measurement jacks}.
+\end{steps}
+\todo[inline]{Resolution, accuracy, input resistance, AC behaviour}
+
+%-----------------------------------------------------------------
+\subsection{Ampmeter}
+\label{sec:mode_amp}
+Measures DC currents up to \qty{\pm10}{\ampere} (switches off at \tbc{\qty{12}{\ampere}}).
+\begin{steps}
+    \item Remove all external voltages from the terminals.
+    \item Select \disp{Ampmeter} and press \btn{OK}. If a voltage is present at the terminals,
+          the device refuses the mode and shows \disp{ERROR: Remove external Voltage}.
+    \item Connect the device in series with the circuit.
+\end{steps}
+\begin{warning}
+    In this mode the terminals are short-circuited internally. Never connect it in parallel to a
+    voltage source.
+\end{warning}
+\todo[inline]{Max. permissible voltage in the circuit; fuse rating; resolution and accuracy}

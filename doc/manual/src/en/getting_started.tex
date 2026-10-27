@@ -1,0 +1,36 @@
+\section{Getting started}
+\label{sec:start}
+
+\subsection{Switching on}
+\begin{steps}
+    \item Remove all test leads from the terminals.
+    \item Press \tbc{the power button}. The start screen with the \ST{} logo appears.
+    \item After the start-up, the main menu is shown (\autoref{fig:idle}).
+\end{steps}
+\todo[inline]{Exact power-on procedure (button, hold time) for the final hardware}
+
+\begin{note}
+    If a supply with \qtyrange{15}{24}{\volt} is connected to the terminals, the device starts
+    charging automatically (\autoref{sec:charging}).
+\end{note}
+
+\subsection{Selecting a mode}
+\begin{steps}
+    \item Turn \enc{} to select a mode. Its name is shown below the icon.
+    \item Press \btn{OK} to open the mode.
+    \item Press \btn{ESC} to return to the main menu. The output is switched off.
+\end{steps}
+
+\subsection{Switching off}
+\begin{itemize}
+    \item In the main menu, press \btn{ESC} (\disp{ESC: Shutdown}).
+    \item The device switches off automatically after \qty{10}{\minute} without any operation
+          (turning \enc{} or pressing a button). Holding \btn{OUT} counts as operation.
+          This does not apply while charging.
+\end{itemize}
+
+\subsection{Battery}
+The device is powered by an internal \ac{LiFePO4} battery
+(4 cells, \qty{12.8}{\volt}, \tbc{\qty{4.5}{\ampere\hour}}).
+\todo[inline]{Where is the state of charge shown during normal operation? (requirement R:Bat\_Status)}
+\todo[inline]{Expected runtime per mode}

@@ -1,0 +1,73 @@
+\section{Service}
+\label{sec:service}
+
+This section is intended for trained service personnel.
+
+\begin{warning}
+    Service work with an open enclosure may only be done by qualified persons.
+    Remove all test leads and the charger before opening the device.
+\end{warning}
+
+%-----------------------------------------------------------------
+\subsection{Calibration}
+\label{sec:calibration}
+Seven measurement channels can be calibrated. Each channel has a zero (offset) step and an
+optional gain step. Every step is saved in the device immediately.
+
+\begin{tabular}{llp{8cm}}
+    \rowcolor{gray} \textbf{Channel} & \textbf{Reference step} & \textbf{Description} \\
+    \texttt{V\_TERM} & \qty{0.5}{\volt}           & Voltage at the terminals \\
+    \texttt{V\_SENS} & \qty{50}{\milli\volt}      & 4-wire sense voltage \\
+    \texttt{V\_OUT}  & \qty{0.5}{\volt}           & Converter output voltage \\
+    \texttt{V\_HV}   & \qty{10}{\volt}            & Isolation test voltage \\
+    \texttt{I\_OUT}  & \qty{100}{\milli\ampere}   & Output current \\
+    \texttt{I\_ISO}  & \qty{100}{\micro\ampere}   & Isolation leakage current \\
+    \texttt{V\_IN}   & \qty{0.5}{\volt}           & Battery voltage \\
+\end{tabular}
+
+\begin{steps}
+    \item Open \disp{Settings > Calibration}, select the channel with \enc{} and press \btn{OK}.
+    \item \disp{Set input to 0}: apply zero (short or open, depending on the channel) and press \btn{OK} (\disp{OK: Zero}).
+          \btn{ESC} cancels.
+    \item \disp{Apply known reference}: apply a reference, set its value with \enc{} and press
+          \btn{OK} (\disp{OK: Set gain}). \btn{ESC} skips the gain step.
+    \item If \disp{Gain calibration failed!} is shown, check the reference and retry.
+\end{steps}
+\todo[inline]{Per channel: required reference source, connection, recommended reference value, mode in which the channel is active}
+\todo[inline]{Required calibration equipment (calibrator, reference resistors, HV divider)}
+\todo[inline]{Calibration report / acceptance limits after calibration}
+
+%-----------------------------------------------------------------
+\subsection{Service interface (CLI)}
+\label{sec:cli}
+The device has a serial command line on the programming connector.
+\begin{itemize}
+    \item Connection: \tbc{programming adapter ST1-3AA}, UART, \qty{115200}{Bd}, 8N1.
+    \item \texttt{help} lists all commands.
+\end{itemize}
+
+\begin{longtable}{p{4cm}p{11.5cm}}
+    \rowcolor{gray} \textbf{Command} & \textbf{Function} \\ \endhead
+    \texttt{help}                 & List of commands \\
+    \texttt{pADC}, \texttt{pBMS}, \texttt{pGPIO}, \texttt{pProt} & Print measurements, \ac{BMS} data, IO states, protection states \\
+    \texttt{zeroCal}, \texttt{gainCal} & Zero / gain calibration of a channel \\
+    \texttt{setOffset}, \texttt{setGain} & Write calibration values directly \\
+    \texttt{setSerial}            & Set the serial number \\
+    \texttt{saveEEPROM}, \texttt{readEEPROM} & Save / read the configuration \\
+    \texttt{state}                & Change the mode \\
+    \texttt{control}              & Operate encoder and buttons from the terminal \\
+    \texttt{pRTC}, \texttt{setRTC} & Read / set the real-time clock \\
+    \texttt{flashIcons}           & Write the menu icons to the flash memory \\
+    \texttt{turnOff}              & Switch the device off \\
+\end{longtable}
+\todo[inline]{Confirm which commands are in the release build (CLI\_ENABLED / CLI\_DEBUG) and document their arguments}
+
+%-----------------------------------------------------------------
+\subsection{Firmware update}
+\label{sec:fwupdate}
+\todo[inline]{Firmware update procedure: tools (ST-Link, STM32CubeProgrammer), connector, file, steps; is the configuration (calibration) kept?}
+\todo[inline]{Menu icons: when is \texttt{flashIcons} / flash\_icon\_seed.py needed after an update?}
+
+%-----------------------------------------------------------------
+\subsection{Repair}
+\todo[inline]{Contact for repairs, spare parts, schematic references (doc/appendix)}

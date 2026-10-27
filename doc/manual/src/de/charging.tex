@@ -1,0 +1,33 @@
+\section{Laden}
+\label{sec:charging}
+
+Das Gerät wird über seine Buchsen aus einer Gleichspannungsversorgung mit \qtyrange{15}{24}{\volt} geladen.
+\todo[inline]{Welche Buchsen und Polarität? Benötigter Versorgungsstrom? Wird ein bestimmtes Ladegerät mitgeliefert?}
+
+\begin{steps}
+    \item Gerät einschalten (Hauptmenü).
+    \item Versorgung (\qtyrange{15}{24}{\volt}, mindestens \tbc{\qty{2}{\ampere}}) an \tbc{die Ausgangsbuchsen} anschliessen.
+    \item Das Gerät beginnt automatisch zu laden und zeigt die Anzeige \disp{Charge}.
+    \item Das Laden endet automatisch (\disp{Charging finished}).
+\end{steps}
+
+Die Ladeanzeige zeigt die Batteriespannung (gross), die Zellspannungen (\disp{Cells}), den
+Ladestrom, den Ladezustand, die Ladezeit und die Phase (\disp{PRECHARGE}, \disp{CLOSE},
+\disp{CC}, \disp{CV}). \btn{ESC} bricht das Laden ab. Das Laden startet erst wieder, wenn die
+Versorgung getrennt \tbc{und wieder angeschlossen} wurde.
+
+\begin{itemize}
+    \item Ladestrom: \qty{1}{\ampere}, danach Konstantspannung bis \qty{14.0}{\volt} (\qty{3.5}{\volt} pro Zelle).
+    \item Ladezeit: max. \qty{5}{\hour} (\disp{ERROR: Charge timeout}).
+    \item Das Laden endet erst, wenn die Zellen ausgeglichen sind (Differenz \qty{\le50}{\milli\volt}).
+          Sonst wird \disp{Finished, cells unbalanced} angezeigt; die Zellen können unter
+          \disp{Settings > BMS Diagnostics} ausgeglichen werden.
+    \item Tiefentladene Batterie: das Gerät lädt automatisch mit reduziertem Strom
+          (\qty{100}{\milli\ampere}), bis sich die Batterie erholt hat.
+\end{itemize}
+
+\begin{caution}
+    Keine Versorgung über \qty{24}{\volt} anschliessen. Nicht ausserhalb \tbc{\qtyrange{0}{45}{\celsius}} laden.
+\end{caution}
+\todo[inline]{Ladezeit ab leer (Anforderung: max. 4 h; 4.5 Ah bei 1 A ergibt ca. 4.5 h)}
+\todo[inline]{Kann das Gerät ausgeschaltet geladen werden? Schaltet es nach dem Laden aus?}

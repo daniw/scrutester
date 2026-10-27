@@ -1,0 +1,76 @@
+% Manual-only settings, loaded after ../layout/layout.sty
+
+\usepackage{tcolorbox}
+\usepackage{pifont}
+\usepackage{enumitem}
+
+\graphicspath{{img/}{../documentation/img/}}
+
+% Language dependent names (English default, see \ManualGerman)
+\newcommand{\DangerName}{DANGER}
+\newcommand{\WarningName}{WARNING}
+\newcommand{\CautionName}{CAUTION}
+\newcommand{\NoteName}{NOTE}
+\newcommand{\ManualName}{User manual}
+\newcommand{\TbcName}{to be confirmed}
+
+% German: babel if installed, else German captions by hand
+\newcommand{\ManualGerman}{%
+    \IfFileExists{ngerman.ldf}{\usepackage[ngerman]{babel}}{%
+        \AtBeginDocument{%
+            \renewcommand{\contentsname}{Inhaltsverzeichnis}%
+            \renewcommand{\listfigurename}{Abbildungsverzeichnis}%
+            \renewcommand{\listtablename}{Tabellenverzeichnis}%
+            \renewcommand{\figurename}{Abbildung}%
+            \renewcommand{\tablename}{Tabelle}%
+            \renewcommand{\appendixname}{Anhang}%
+            \renewcommand{\today}{\number\day.\,\number\month.\,\number\year}%
+        }%
+    }%
+    \AtBeginDocument{%
+        \def\sectionautorefname{Abschnitt}%
+        \def\subsectionautorefname{Abschnitt}%
+        \def\figureautorefname{Abbildung}%
+        \def\tableautorefname{Tabelle}%
+    }%
+    \renewcommand{\DangerName}{GEFAHR}%
+    \renewcommand{\WarningName}{WARNUNG}%
+    \renewcommand{\CautionName}{VORSICHT}%
+    \renewcommand{\NoteName}{HINWEIS}%
+    \renewcommand{\ManualName}{Bedienungsanleitung}%
+    \renewcommand{\TbcName}{zu bestätigen}%
+}
+
+% Product name
+\newcommand{\ST}{ScruTester}
+
+% Button on the device, e.g. \btn{OUT}
+\newcommand{\btn}[1]{\tikz[baseline=(k.base)]\node[draw,rounded corners=2pt,inner sep=2pt,font=\scriptsize\sffamily\bfseries](k){#1};}
+% Encoder
+\newcommand{\enc}{\tikz[baseline=-0.6ex]\draw[-latex,thick](0.12,0) arc (0:300:0.12);~\textsf{Encoder}}
+% Text shown on the display, e.g. \disp{Voltage Source}
+\newcommand{\disp}[1]{\texttt{\small #1}}
+
+% Value not yet confirmed (unmeasured / design value)
+\newcommand{\tbc}[1]{\textcolor{orange}{#1}\textsuperscript{\textcolor{orange}{\,?}}}
+
+% Safety notices
+\newtcolorbox{danger}{colback=red!8,colframe=red!75!black,fonttitle=\bfseries,
+    title={\ding{56}\ \DangerName}}
+\newtcolorbox{warning}{colback=orange!10,colframe=orange!85!black,fonttitle=\bfseries,
+    title={\ding{115}\ \WarningName}}
+\newtcolorbox{caution}{colback=yellow!10,colframe=yellow!60!black,fonttitle=\bfseries,
+    title={\ding{117}\ \CautionName}}
+\newtcolorbox{note}{colback=blue!5,colframe=blue!50!black,fonttitle=\bfseries,
+    title={\ding{43}\ \NoteName}}
+
+% Numbered operating steps
+\newlist{steps}{enumerate}{1}
+\setlist[steps]{label=\arabic*., leftmargin=*}
+
+% Image placeholder until a photo/screenshot exists
+\newcommand{\imgph}[2][0.6\textwidth]{%
+    \fbox{\parbox[c][5cm][c]{#1}{\centering\small\textcolor{gray}{#2}}}}
+
+% Header: manual title instead of "Technical Documentation"
+\AtBeginDocument{\fancyhead[CO]{\ManualName}}

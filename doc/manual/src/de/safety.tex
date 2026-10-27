@@ -1,0 +1,59 @@
+\section{Sicherheit}
+\label{sec:safety}
+
+\subsection{Bestimmungsgemässe Verwendung}
+Der \ST{} ist ein tragbares, batteriebetriebenes Prüfgerät für die elektrische Abnahme von
+\ac{FS}-Fahrzeugen. Er darf verwendet werden, um
+\begin{itemize}
+    \item einen Prüfling mit einer Gleichspannung (\qtyrange{0}{60}{\volt}) oder einem Gleichstrom (\qtyrange{0}{10}{\ampere}) zu versorgen,
+    \item kleine Widerstände in Vierleiterschaltung und Widerstände in Zweileiterschaltung zu messen,
+    \item Isolationswiderstände mit Prüfspannungen von \qtylist{125;250;500;1000}{\volt} zu messen,
+    \item Gleichspannungen und Gleichströme zu messen.
+\end{itemize}
+Jede andere Verwendung gilt als nicht bestimmungsgemäss. Das Gerät darf nur von Personen
+verwendet werden, die für Arbeiten an elektrischen Anlagen qualifiziert sind und diese
+Anleitung gelesen haben.
+\todo[inline]{Erforderliche Qualifikation festlegen (z.\,B. FS ESO / Scrutineer, elektrotechnisch unterwiesene Person)}
+
+\subsection{Allgemeine Sicherheitshinweise}
+
+\begin{danger}
+    In der Betriebsart \disp{Isolation Test} liegen an den Prüfbuchsen bis zu \qty{1000}{\volt} DC an.
+    Prüfleitungen, Buchsen und Prüfling während der Prüfung nicht berühren.
+    Der Prüfling kann nach der Prüfung geladen bleiben.
+    \todo[inline]{Bestätigen: wird der Prüfling nach der Isolationsprüfung aktiv entladen (Q18)? Wie lange warten?}
+\end{danger}
+
+\begin{warning}
+    \begin{itemize}
+        \item Gerät nur mit unbeschädigtem Gehäuse, unbeschädigten Buchsen und Prüfleitungen verwenden.
+        \item Nur Prüfleitungen mit berührungsgeschützten \qty{4}{\milli\meter}-Steckern verwenden, die für die Spannung der Messung zugelassen sind.
+        \item Messkategorie und maximale Eingangsspannung nicht überschreiten (\autoref{sec:specs}).
+        \item In den Quellen-Betriebsarten, den Widerstandsmessungen, \disp{Ampmeter} und
+              \disp{Isolation Test} keine Fremdspannung an die Buchsen anlegen.
+        \item Gerät nicht in der Nähe brennbarer Gase oder Dämpfe verwenden.
+    \end{itemize}
+    \todo[inline]{Messkategorie (Anforderung: CAT III 600 V) noch nicht verifiziert / zertifiziert}
+\end{warning}
+
+\begin{caution}
+    \begin{itemize}
+        \item Gerät nur wie in \autoref{sec:charging} beschrieben laden.
+        \item Das Gerät enthält eine \ac{LiFePO4}-Batterie. Nicht öffnen, kurzschliessen oder erhitzen.
+        \item Betriebstemperatur: \tbc{\qtyrange{0}{50}{\celsius}}. Schutz gegen Regen: \tbc{IP54}.
+    \end{itemize}
+\end{caution}
+
+\subsection{Schutzfunktionen}
+Das Gerät enthält mehrere unabhängige Schutzfunktionen. Sie schützen das Gerät; sie ersetzen
+nicht die Sicherheitsregeln für Arbeiten an elektrischen Anlagen.
+\begin{itemize}
+    \item \ac{BMS}: schützt die Batterie vor Über-/Unterspannung, Überstrom und Übertemperatur.
+    \item Überspannungsschutz: wird eine zu hohe Spannung am Ausgang erkannt, wird der Ausgang
+          kurzgeschlossen und das Gerät gesperrt, bis es aus- und wieder eingeschaltet wird
+          (\autoref{sec:messages}). Bei einer externen Quelle kann dabei die interne Sicherung auslösen.
+    \item Überstromschutz des \ac{HV}-Ausgangs.
+    \item Spannungs- und Stromgrenzen je Betriebsart, Temperaturüberwachung.
+    \item Automatische Abschaltung nach \qty{10}{\minute} ohne Bedienung.
+\end{itemize}
+\todo[inline]{Not-Aus: Hardware-Abschaltung über ESC beschreiben (wie lange halten?)}

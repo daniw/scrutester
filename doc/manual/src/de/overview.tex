@@ -1,0 +1,43 @@
+\section{Geräteübersicht}
+\label{sec:overview}
+
+\subsection{Lieferumfang}
+\todo[inline]{Lieferumfang: Gerät, Prüfleitungen (welche?), Kelvinklemmen, Ladegerät / Ladekabel, Koffer, Anleitung}
+
+\subsection{Bedienelemente und Anschlüsse}
+
+\begin{figure}[h!]
+    \centering
+    \imgph[0.8\textwidth]{Foto der Frontseite mit nummerierten Positionen}
+    \caption{Frontseite}
+    \label{fig:front}
+\end{figure}
+\todo[inline]{Foto Frontseite mit Positionen; Beschriftung der Buchsen (welche Buchse in welcher Betriebsart, Sense-Buchsen für Vierleitermessung)}
+
+\begin{tabular}{lp{11cm}}
+    \rowcolor{gray} \textbf{Element} & \textbf{Funktion} \\
+    \enc       & Betriebsart im Menü wählen; Sollwert in den Quellen-Betriebsarten und Prüfspannung im \disp{Isolation Test} einstellen. \\
+    \btn{OK}   & Gewählte Betriebsart / Menüeintrag öffnen, bestätigen. \\
+    \btn{ESC}  & Zurück ins Menü. Im Hauptmenü: ausschalten. \\
+    \btn{OUT}  & Ausgang einschalten (halten oder drücken, je nach Betriebsart, siehe \autoref{sec:modes}). \\
+    Buchsen    & Berührungsgeschützte \qty{4}{\milli\meter}-Sicherheitsbuchsen für Prüfleitungen und Laden. \\
+    Display    & Farbdisplay, Helligkeit passt sich dem Umgebungslicht an. \\
+    LEDs       & \tbc{Status-LEDs} \\
+\end{tabular}
+\todo[inline]{Einschalten: welche Taste? Bedeutung der Status-LEDs?}
+
+\subsection{Display}
+Alle Anzeigen sind gleich aufgebaut:
+\begin{itemize}
+    \item Statuszeile (oben): Name der Betriebsart.
+    \item Hauptwert (gross): Messwert oder Ausgangswert.
+    \item Zweite Zeile: weitere Werte, z.\,B. Sollwert (\disp{SET}), Strom oder Spannung.
+    \item Fusszeile (unten): Belegung von \btn{ESC} und \btn{OK}/\btn{OUT}. Fehlermeldungen erscheinen hier rot.
+\end{itemize}
+\begin{figure}[h!]
+    \centering
+    \imgph[0.6\textwidth]{Screenshot: Hauptmenü}
+    \caption{Hauptmenü}
+    \label{fig:idle}
+\end{figure}
+\todo[inline]{Screenshots aller Anzeigen (Hauptmenü, jede Betriebsart, Einstellungen, Laden)}

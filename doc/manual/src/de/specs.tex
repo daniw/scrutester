@@ -1,0 +1,41 @@
+\section{Technische Daten}
+\label{sec:specs}
+
+Mit \tbc{} markierte Werte sind Auslegungswerte und noch nicht verifiziert.
+
+\begin{longtable}{p{5.5cm}p{10cm}}
+    \rowcolor{gray} \textbf{Parameter} & \textbf{Wert} \\ \endhead
+    \multicolumn{2}{l}{\textbf{Voltage Source}} \\
+    Spannungsbereich              & \qtyrange{0}{60}{\volt}, Schritte \qty{0.5}{\volt} \\
+    Ausgangsstrom                 & max. \qty{1}{\ampere} \\
+    Genauigkeit                   & \tbc{\qty{1}{\percent}} \\
+    \multicolumn{2}{l}{\textbf{Current Source}} \\
+    Strombereich                  & \qtyrange{0}{10}{\ampere}, Schritte \qty{0.1}{\ampere} \\
+    Bürdenspannung                & max. \qty{5}{\volt} \\
+    Genauigkeit                   & \tbc{\qty{1}{\percent}} \\
+    \multicolumn{2}{l}{\textbf{Milliohmmeter (Vierleiter)}} \\
+    Bereich / Auflösung           & \tbc{\qtyrange{0}{1000}{\milli\ohm}} / \tbc{\qty{1}{\milli\ohm}} \\
+    Messstrom                     & \qty{1}{\ampere} \\
+    Messrate                      & \tbc{\qty{5}{S\per\second}} \\
+    \multicolumn{2}{l}{\textbf{Ohmmeter (Zweileiter)}} \\
+    Bereich / Auflösung           & \tbc{\qtyrange{0}{10}{\mega\ohm}} / \tbc{\qty{0.1}{\ohm}} \\
+    Messstrom                     & \qty{1}{\milli\ampere} \\
+    \multicolumn{2}{l}{\textbf{Isolation Test}} \\
+    Prüfspannungen                & \qtylist{125;250;500;1000}{\volt} \\
+    Bereich                       & \tbc{} \\
+    \multicolumn{2}{l}{\textbf{Voltmeter / Ampmeter}} \\
+    Spannungsbereich              & \qty{\pm1000}{\volt} \\
+    Strombereich                  & \qty{\pm10}{\ampere} \\
+    \multicolumn{2}{l}{\textbf{Allgemein}} \\
+    Batterie                      & \ac{LiFePO4}, 4 Zellen in Serie, \qty{12.8}{\volt}, \qty{4.5}{\ampere\hour}, \qty{57}{\watt\hour} \\
+    Laden                         & \qtyrange{15}{24}{\volt} DC über die Buchsen, \qty{1}{\ampere} \\
+    Laufzeit                      & \tbc{\qty{\ge30}{\minute}} bei maximaler Ausgangsleistung \\
+    Anschlüsse                    & berührungsgeschützte \qty{4}{\milli\meter}-Sicherheitsbuchsen \\
+    Messkategorie                 & \tbc{CAT III \qty{600}{\volt}} \\
+    Betriebs- / Lagertemperatur   & \tbc{\qtyrange{0}{50}{\celsius}} \\
+    Schutzart                     & \tbc{IP54} \\
+    Display                       & 320 x 240 Pixel Farb-TFT, automatische Helligkeit \\
+    Abmessungen / Gewicht         & \tbc{} \\
+    Automatische Abschaltung      & \qty{10}{\minute} \\
+\end{longtable}
+\todo[inline]{Alle Genauigkeiten nach der Kalibrierung messen und eintragen; Abmessungen und Gewicht}

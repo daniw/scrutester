@@ -1,0 +1,34 @@
+\section{Charging}
+\label{sec:charging}
+
+The device is charged through its terminals from a DC supply with \qtyrange{15}{24}{\volt}.
+\todo[inline]{Which jacks and polarity? Required supply current? Is a specific charger delivered?}
+
+\begin{steps}
+    \item Switch the device on (main menu).
+    \item Connect the supply (\qtyrange{15}{24}{\volt}, at least \tbc{\qty{2}{\ampere}}) to \tbc{the output jacks}.
+    \item The device starts charging automatically and shows the \disp{Charge} screen.
+    \item Charging ends automatically (\disp{Charging finished}).
+\end{steps}
+
+The charge screen shows the battery voltage (large), the cell voltages (\disp{Cells}),
+the charge current, the state of charge, the charging time and the phase
+(\disp{PRECHARGE}, \disp{CLOSE}, \disp{CC}, \disp{CV}).
+\btn{ESC} stops charging. Charging does not restart before the supply has been disconnected
+\tbc{and reconnected}.
+
+\begin{itemize}
+    \item Charge current: \qty{1}{\ampere}, then constant voltage up to \qty{14.0}{\volt} (\qty{3.5}{\volt} per cell).
+    \item Charging time: max. \qty{5}{\hour} (\disp{ERROR: Charge timeout}).
+    \item Charging only ends once the cells are balanced (difference \qty{\le50}{\milli\volt}).
+          Otherwise \disp{Finished, cells unbalanced} is shown; cells can be balanced under
+          \disp{Settings > BMS Diagnostics}.
+    \item Deeply discharged battery: the device charges automatically with a reduced current
+          (\qty{100}{\milli\ampere}) until the battery has recovered.
+\end{itemize}
+
+\begin{caution}
+    Do not connect a supply above \qty{24}{\volt}. Do not charge outside \tbc{\qtyrange{0}{45}{\celsius}}.
+\end{caution}
+\todo[inline]{Charging time from empty (requirement: max. 4 h; 4.5 Ah at 1 A is about 4.5 h)}
+\todo[inline]{Can the device be charged while switched off? Does it switch off after charging?}

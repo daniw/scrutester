@@ -1,0 +1,48 @@
+\section{About this manual}
+\label{sec:about}
+
+This manual describes the operation of the \ST{} for users (\autoref{sec:overview} to \autoref{sec:specs})
+and the service tasks calibration and firmware update (\autoref{sec:service}).
+It applies to the hardware and firmware versions listed on the title page.
+The firmware version of a device is shown under \disp{Settings > About}.
+
+\subsection{Notation}
+
+\begin{tabular}{ll}
+    \btn{OUT}                  & Button on the device \\
+    \enc                       & Rotary encoder (turn) \\
+    \disp{Voltage Source}      & Text shown on the display \\
+    \tbc{60}                   & Value \TbcName{} (not yet verified on the device) \\
+\end{tabular}
+
+\subsection{Safety notices}
+
+\begin{danger}
+    Immediate danger to life. Ignoring it leads to death or severe injury.
+\end{danger}
+\begin{warning}
+    Possible danger to life. Ignoring it can lead to death or severe injury.
+\end{warning}
+\begin{caution}
+    Ignoring it can lead to minor injury or damage to the device or the \ac{DUT}.
+\end{caution}
+\begin{note}
+    Useful information for operation.
+\end{note}
+
+\subsection{Abbreviations}
+\begin{acronym}[ESC]
+    \acro{BMS}{battery management system}
+    \acro{DUT}{device under test}
+    \acro{FS}{Formula Student}
+    \acro{HV}{high voltage}
+    \acro{LiFePO4}[LiFePO$_4$]{lithium iron phosphate}
+    \acro{OVP}{overvoltage protection}
+    \acro{SoC}{state of charge}
+\end{acronym}
+
+\subsection{Revision history}
+\begin{tabular}{lll}
+    \rowcolor{gray} \textbf{Revision} & \textbf{Date} & \textbf{Change} \\
+    0.1 & 2026-10-24 & First draft (structure, content from firmware \texttt{sw\_rework}) \\
+\end{tabular}

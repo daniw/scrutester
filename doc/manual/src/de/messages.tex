@@ -1,0 +1,36 @@
+\section{Meldungen und Fehlerbehebung}
+\label{sec:messages}
+
+Fehlermeldungen werden rot in der Fusszeile oder im Hauptmenü angezeigt.
+
+\begin{longtable}{p{5cm}p{4.5cm}p{5.5cm}}
+    \rowcolor{gray} \textbf{Meldung} & \textbf{Ursache} & \textbf{Abhilfe} \\ \endhead
+    \disp{ERROR: Voltage limit exceeded} & Spannung an den Buchsen über der Grenze der Betriebsart. &
+        Prüfling und Anschluss prüfen. \btn{OUT} loslassen und erneut drücken. \\
+    \disp{ERROR: Current limit exceeded} & Strom über der Grenze der Betriebsart. &
+        Prüfling auf Kurzschluss prüfen. \btn{OUT} loslassen und erneut drücken. \\
+    \disp{ERROR: HV overcurrent} & Überstrom in der Isolationsmessung. &
+        Kurzschluss oder sehr kleiner Isolationswiderstand am Prüfling. \\
+    \disp{ERROR: Temperature / NTC} & Innentemperatur über \tbc{\qty{85}{\celsius}} oder Sensordefekt. &
+        Gerät abkühlen lassen. Bleibt die Meldung: Service. \\
+    \disp{ERROR: BMS communication} & Keine Daten vom Batteriemanagement. &
+        Gerät aus- und einschalten. Bleibt die Meldung: Service. \\
+    \disp{ERROR: OVP - power cycle to reset} & Überspannung am Ausgang, Ausgang kurzgeschlossen. &
+        Prüfleitungen entfernen, Gerät aus- und einschalten. Tritt es erneut auf oder funktioniert
+        kein Ausgang: Sicherung ausgelöst, Service. \\
+    \disp{ERROR: Remove external Voltage} & \disp{Ampmeter} gewählt, während Spannung an den Buchsen anliegt. &
+        Spannung entfernen. \\
+    \disp{ERROR: Charge timeout} & Laden dauerte länger als \qty{5}{\hour}. &
+        Versorgung prüfen. Bei Wiederholung: Batterie gealtert, Service. \\
+    \disp{Finished, cells unbalanced} & Zellen am Ladeende nicht ausgeglichen. &
+        Zellen ausgleichen (\disp{Settings > BMS Diagnostics}) und erneut laden. \\
+\end{longtable}
+
+\begin{longtable}{p{5cm}p{10.5cm}}
+    \rowcolor{gray} \textbf{Problem} & \textbf{Abhilfe} \\ \endhead
+    Gerät schaltet nicht ein & Batterie leer: laden (\autoref{sec:charging}). \\
+    Gerät schaltet von selbst aus & Automatische Abschaltung nach \qty{10}{\minute} oder Batterie leer. \\
+    Laden startet nicht & Versorgungsspannung (\qtyrange{15}{24}{\volt}) und Polarität prüfen. Versorgung trennen und wieder anschliessen. \\
+\end{longtable}
+\todo[inline]{Wird die Temperaturwarnung (70 °C) angezeigt? Falls ja, Meldung ergänzen}
+\todo[inline]{Weitere Fehlerfälle aus Labor- und Feldeinsatz}

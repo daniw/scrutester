@@ -1,0 +1,36 @@
+\section{Messages and troubleshooting}
+\label{sec:messages}
+
+Error messages are shown in red in the footer or in the main menu.
+
+\begin{longtable}{p{5cm}p{4.5cm}p{5.5cm}}
+    \rowcolor{gray} \textbf{Message} & \textbf{Cause} & \textbf{Remedy} \\ \endhead
+    \disp{ERROR: Voltage limit exceeded} & Voltage at the terminals above the limit of the mode. &
+        Check the \ac{DUT} and the connection. Release and press \btn{OUT} again. \\
+    \disp{ERROR: Current limit exceeded} & Current above the limit of the mode. &
+        Check the \ac{DUT} for a short circuit. Release and press \btn{OUT} again. \\
+    \disp{ERROR: HV overcurrent} & Overcurrent in the isolation test. &
+        Short circuit or very low insulation resistance at the \ac{DUT}. \\
+    \disp{ERROR: Temperature / NTC} & Internal temperature above \tbc{\qty{85}{\celsius}} or sensor defect. &
+        Let the device cool down. If the message remains: service. \\
+    \disp{ERROR: BMS communication} & No data from the battery management. &
+        Switch the device off and on. If the message remains: service. \\
+    \disp{ERROR: OVP - power cycle to reset} & Overvoltage at the output, output short-circuited. &
+        Remove the test leads, switch the device off and on. If it occurs again or no output works:
+        fuse blown, service. \\
+    \disp{ERROR: Remove external Voltage} & \disp{Ampmeter} selected with voltage at the terminals. &
+        Remove the voltage. \\
+    \disp{ERROR: Charge timeout} & Charging took longer than \qty{5}{\hour}. &
+        Check the supply. If repeated: battery aged, service. \\
+    \disp{Finished, cells unbalanced} & Cells not balanced at the end of charging. &
+        Balance the cells (\disp{Settings > BMS Diagnostics}) and charge again. \\
+\end{longtable}
+
+\begin{longtable}{p{5cm}p{10.5cm}}
+    \rowcolor{gray} \textbf{Problem} & \textbf{Remedy} \\ \endhead
+    Device does not switch on & Battery empty: charge (\autoref{sec:charging}). \\
+    Device switches off by itself & Automatic power-off after \qty{10}{\minute}, or battery empty. \\
+    Charging does not start & Check supply voltage (\qtyrange{15}{24}{\volt}) and polarity. Disconnect and reconnect the supply. \\
+\end{longtable}
+\todo[inline]{Is the temperature warning (70 °C) shown to the user? If yes, add its message}
+\todo[inline]{Further troubleshooting cases from bench and field use}

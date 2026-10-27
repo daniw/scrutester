@@ -1,0 +1,59 @@
+\section{Safety}
+\label{sec:safety}
+
+\subsection{Intended use}
+The \ST{} is a portable, battery powered tester for the electrical inspection of
+\ac{FS} vehicles. It may be used to
+\begin{itemize}
+    \item supply a \ac{DUT} with a DC voltage (\qtyrange{0}{60}{\volt}) or DC current (\qtyrange{0}{10}{\ampere}),
+    \item measure low resistances in 4-wire connection and resistances in 2-wire connection,
+    \item measure insulation resistance with test voltages of \qtylist{125;250;500;1000}{\volt},
+    \item measure DC voltage and DC current.
+\end{itemize}
+Any other use is not intended. The device may only be used by persons who are
+qualified for work on electrical systems and have read this manual.
+\todo[inline]{Define the required qualification (e.g. FS ESO/electrical scrutineer, electrically instructed person)}
+
+\subsection{General safety instructions}
+
+\begin{danger}
+    In the \disp{Isolation Test} mode the test terminals carry up to \qty{1000}{\volt} DC.
+    Do not touch the test leads, the terminals or the \ac{DUT} while a test is running.
+    The \ac{DUT} can stay charged after the test.
+    \todo[inline]{Confirm: is the DUT actively discharged after the isolation test (Q18)? How long to wait?}
+\end{danger}
+
+\begin{warning}
+    \begin{itemize}
+        \item Only use the device with undamaged enclosure, terminals and test leads.
+        \item Only use test leads with shrouded \qty{4}{\milli\meter} plugs rated for the voltage of the measurement.
+        \item Do not exceed the measurement category and the maximum input voltage (\autoref{sec:specs}).
+        \item Do not connect an external voltage to the terminals in the source modes, the
+              resistance modes, \disp{Ampmeter} and \disp{Isolation Test}.
+        \item Do not use the device near flammable gases or vapours.
+    \end{itemize}
+    \todo[inline]{Measurement category (requirement: CAT III 600 V) not yet verified / certified}
+\end{warning}
+
+\begin{caution}
+    \begin{itemize}
+        \item Only charge the device as described in \autoref{sec:charging}.
+        \item The device contains a \ac{LiFePO4} battery. Do not open, short-circuit or heat it.
+        \item Operating temperature: \tbc{\qtyrange{0}{50}{\celsius}}. Protection against rain: \tbc{IP54}.
+    \end{itemize}
+\end{caution}
+
+\subsection{Protective functions}
+The device contains several independent protective functions. They protect
+the device; they do not replace the safety rules for working on electrical systems.
+\begin{itemize}
+    \item \ac{BMS}: protects the battery against over-/undervoltage, overcurrent and overtemperature.
+    \item Overvoltage protection: if an excessive voltage is detected at the output,
+          the output is short-circuited and the device is locked until it is switched off
+          and on again (\autoref{sec:messages}). In case of an external source this may blow
+          the internal fuse.
+    \item Overcurrent protection of the \ac{HV} output.
+    \item Voltage and current limits per mode, temperature monitoring.
+    \item Automatic power-off after \qty{10}{\minute} without operation.
+\end{itemize}
+\todo[inline]{Emergency off: describe the hardware switch-off via ESC (how long to hold?)}

@@ -1,0 +1,147 @@
+\section{Betriebsarten}
+\label{sec:modes}
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{llll}
+        \rowcolor{gray} \textbf{Betriebsart (Display)} & \textbf{Funktion} & \textbf{Ausgang ein} & \textbf{Abschnitt} \\
+        \disp{Voltage Source} & Gleichspannung \qtyrange{0}{60}{\volt}, max. \qty{1}{\ampere} & \btn{OUT} halten & \ref{sec:mode_vsrc} \\
+        \disp{Current Source} & Gleichstrom \qtyrange{0}{10}{\ampere}, max. \qty{5}{\volt} & \btn{OUT} halten & \ref{sec:mode_isrc} \\
+        \disp{Milliohmmeter}  & Vierleiter-Widerstand, \qty{1}{\ampere} & automatisch & \ref{sec:mode_mohm} \\
+        \disp{Ohmmeter}       & Zweileiter-Widerstand, \qty{1}{\milli\ampere} & automatisch & \ref{sec:mode_ohm} \\
+        \disp{Isolation Test} & Isolationswiderstand, \qtyrange{125}{1000}{\volt} & \btn{OUT} halten & \ref{sec:mode_iso} \\
+        \disp{Voltmeter}      & Gleichspannung bis \qty{\pm1000}{\volt} & -- & \ref{sec:mode_volt} \\
+        \disp{Ampmeter}       & Gleichstrom bis \qty{\pm10}{\ampere} & -- & \ref{sec:mode_amp} \\
+        \disp{Settings}       & Einstellungen und Diagnose & -- & \ref{sec:settings} \\
+    \end{tabular}
+    \caption{Übersicht der Betriebsarten}
+    \label{tab:modes}
+\end{table}
+
+\begin{note}
+    Wird eine Grenze überschritten oder tritt ein Fehler auf, wird der Ausgang ausgeschaltet und
+    in der Fusszeile eine rote Meldung angezeigt (\autoref{sec:messages}). In den Betriebsarten
+    mit \quotedblbase\btn{OUT} halten\textquotedblleft{} \btn{OUT} loslassen und erneut drücken, um neu zu starten.
+\end{note}
+
+%-----------------------------------------------------------------
+\subsection{Voltage Source -- Spannungsquelle}
+\label{sec:mode_vsrc}
+Liefert eine geregelte Gleichspannung, z.\,B. zur Versorgung von Fahrzeugelektronik oder zum
+Prüfen eines Prüflings.
+\begin{itemize}
+    \item Sollwert: \qtyrange{0}{60}{\volt} in Schritten von \qty{0.5}{\volt}, mit \enc{} einstellen.
+    \item Ausgangsstrom: max. \qty{1}{\ampere}.
+    \item Anzeige: Ausgangsspannung (gross), Ausgangsstrom \disp{IOUT}, Sollwert \disp{SET}.
+\end{itemize}
+\begin{steps}
+    \item \disp{Voltage Source} wählen und \btn{OK} drücken.
+    \item Spannung mit \enc{} einstellen.
+    \item Prüfling an \tbc{die Ausgangsbuchsen} anschliessen.
+    \item \btn{OUT} halten. Der Ausgang ist eingeschaltet, solange \btn{OUT} gehalten wird.
+\end{steps}
+\begin{caution}
+    Der Ausgang schaltet bei \tbc{\qty{65}{\volt}} oder \tbc{\qty{1.5}{\ampere}} ab (\disp{ERROR: Voltage limit exceeded} / \disp{ERROR: Current limit exceeded}).
+\end{caution}
+\todo[inline]{Firmware erlaubt Sollwerte bis 63.5 V (127 x 0.5 V). Auf 60 V begrenzen oder 63.5 V dokumentieren?}
+\todo[inline]{Gibt es eine einstellbare Strombegrenzung oder nur die feste Schutzgrenze?}
+
+%-----------------------------------------------------------------
+\subsection{Current Source -- Stromquelle}
+\label{sec:mode_isrc}
+Liefert einen geregelten Gleichstrom, z.\,B. zur Prüfung der Stromschwelle des \ac{FS}-BSPD
+(Brake System Plausibility Device).
+\begin{itemize}
+    \item Sollwert: \qtyrange{0}{10}{\ampere} in Schritten von \qty{0.1}{\ampere}, mit \enc{} einstellen.
+    \item Ausgangsspannung (Bürdenspannung): max. \qty{5}{\volt}.
+    \item Anzeige: Ausgangsstrom (gross), Ausgangsspannung \disp{VOUT}, Sollwert \disp{SET}.
+\end{itemize}
+\begin{steps}
+    \item \disp{Current Source} wählen und \btn{OK} drücken.
+    \item Strom mit \enc{} einstellen.
+    \item Prüfling anschliessen.
+    \item \btn{OUT} halten.
+\end{steps}
+\todo[inline]{Firmware-Sollwert geht bis 12.7 A (127 x 100 mA), Schutz löst bei 13 A aus. Auf 10 A begrenzen?}
+\todo[inline]{Typischer BSPD-Prüfablauf als Beispiel}
+
+%-----------------------------------------------------------------
+\subsection{Milliohmmeter}
+\label{sec:mode_mohm}
+Misst kleine Widerstände (\qtyrange{0}{1000}{\milli\ohm}) in Vierleiterschaltung (Kelvin) mit
+einem Messstrom von \qty{1}{\ampere}, z.\,B. für Potentialausgleichsmessungen.
+\begin{steps}
+    \item \disp{Milliohmmeter} wählen und \btn{OK} drücken. Die Messung startet automatisch.
+    \item Stromleitungen (\tbc{Quellbuchsen}) und Sense-Leitungen (\tbc{Sense-Buchsen}) am Prüfling
+          anschliessen. Die Sense-Leitungen müssen innerhalb der Stromleitungen angeschlossen werden.
+    \item Widerstand ablesen.
+\end{steps}
+\begin{figure}[h!]
+    \centering
+    \imgph[0.6\textwidth]{Anschlussbild Vierleitermessung}
+    \caption{Vierleiteranschluss}
+\end{figure}
+\todo[inline]{Auflösung, Genauigkeit, Messrate; Anzeige bei offenen Leitungen / fehlender Sense-Verbindung (R:mOhm\_OL)}
+
+%-----------------------------------------------------------------
+\subsection{Ohmmeter}
+\label{sec:mode_ohm}
+Misst Widerstände in Zweileiterschaltung mit einem Messstrom von \qty{1}{\milli\ampere}
+(Leerlaufspannung max. \tbc{\qty{3}{\volt}}).
+\begin{steps}
+    \item \disp{Ohmmeter} wählen und \btn{OK} drücken. Die Messung startet automatisch.
+    \item Prüfling an \tbc{die Ausgangsbuchsen} anschliessen.
+\end{steps}
+\todo[inline]{Messbereich (Anforderung bis 10 MOhm bei 1 mA?), Auflösung, Genauigkeit}
+
+%-----------------------------------------------------------------
+\subsection{Isolation Test -- Isolationsmessung}
+\label{sec:mode_iso}
+Misst den Isolationswiderstand zwischen zwei Punkten, z.\,B. zwischen Traktionssystem und
+Fahrzeugchassis.
+\begin{itemize}
+    \item Prüfspannung: \qtylist{125;250;500;1000}{\volt}, mit \enc{} wählen.
+    \item Anzeige: Isolationswiderstand in \unit{\mega\ohm} (gross), Prüfspannung,
+          Ableitstrom \disp{Ileak}, Klemmenspannung \disp{Vterm}.
+\end{itemize}
+\begin{danger}
+    Bis zu \qty{1000}{\volt} an den Buchsen, solange \btn{OUT} gehalten wird. Nur geeignete
+    Prüfleitungen verwenden und den Prüfling während der Prüfung nicht berühren.
+\end{danger}
+\begin{steps}
+    \item Sicherstellen, dass der Prüfling spannungsfrei ist (mit \disp{Voltmeter} prüfen).
+    \item \disp{Isolation Test} wählen und \btn{OK} drücken.
+    \item Prüfspannung mit \enc{} wählen.
+    \item Prüfleitungen an \tbc{die HV-Buchsen} anschliessen.
+    \item \btn{OUT} halten, bis der Messwert stabil ist (\tbc{einige Sekunden}).
+    \item \btn{OUT} loslassen. \tbc{Bis der Prüfling entladen ist} warten, dann die Leitungen entfernen.
+\end{steps}
+\todo[inline]{Messbereich und Genauigkeit; maximaler Prüfstrom; Einschwingzeit}
+\todo[inline]{Prüfspannung 1000 V vs. Auslegungsziel 500 V (Konzept/Anforderungen): Freigabe von 1000 V bestätigen}
+\todo[inline]{Debug-Zeile \disp{Duty} vor Release aus der Isolationsanzeige entfernen?}
+
+%-----------------------------------------------------------------
+\subsection{Voltmeter}
+\label{sec:mode_volt}
+Misst Gleichspannungen bis \qty{\pm1000}{\volt}. Kein Ausgang aktiv.
+\begin{steps}
+    \item \disp{Voltmeter} wählen und \btn{OK} drücken.
+    \item Prüfleitungen an \tbc{die Messbuchsen} anschliessen.
+\end{steps}
+\todo[inline]{Auflösung, Genauigkeit, Eingangswiderstand, Verhalten bei AC}
+
+%-----------------------------------------------------------------
+\subsection{Ampmeter -- Strommessung}
+\label{sec:mode_amp}
+Misst Gleichströme bis \qty{\pm10}{\ampere} (Abschaltung bei \tbc{\qty{12}{\ampere}}).
+\begin{steps}
+    \item Alle Fremdspannungen von den Buchsen entfernen.
+    \item \disp{Ampmeter} wählen und \btn{OK} drücken. Liegt an den Buchsen eine Spannung an,
+          verweigert das Gerät die Betriebsart und zeigt \disp{ERROR: Remove external Voltage}.
+    \item Gerät in Serie in den Stromkreis schalten.
+\end{steps}
+\begin{warning}
+    In dieser Betriebsart sind die Buchsen intern kurzgeschlossen. Nie parallel zu einer
+    Spannungsquelle anschliessen.
+\end{warning}
+\todo[inline]{Max. zulässige Spannung im Stromkreis; Sicherungswert; Auflösung und Genauigkeit}

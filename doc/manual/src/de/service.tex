@@ -1,0 +1,73 @@
+\section{Service}
+\label{sec:service}
+
+Dieser Abschnitt richtet sich an geschultes Servicepersonal.
+
+\begin{warning}
+    Arbeiten am geöffneten Gerät dürfen nur von Fachpersonen ausgeführt werden.
+    Vor dem Öffnen alle Prüfleitungen und das Ladegerät entfernen.
+\end{warning}
+
+%-----------------------------------------------------------------
+\subsection{Kalibrierung}
+\label{sec:calibration}
+Sieben Messkanäle können kalibriert werden. Jeder Kanal hat einen Nullpunktschritt (Offset)
+und einen optionalen Verstärkungsschritt (Gain). Jeder Schritt wird sofort im Gerät gespeichert.
+
+\begin{tabular}{llp{8cm}}
+    \rowcolor{gray} \textbf{Kanal} & \textbf{Referenzschritt} & \textbf{Beschreibung} \\
+    \texttt{V\_TERM} & \qty{0.5}{\volt}           & Spannung an den Buchsen \\
+    \texttt{V\_SENS} & \qty{50}{\milli\volt}      & Sense-Spannung Vierleitermessung \\
+    \texttt{V\_OUT}  & \qty{0.5}{\volt}           & Ausgangsspannung des Wandlers \\
+    \texttt{V\_HV}   & \qty{10}{\volt}            & Prüfspannung Isolationsmessung \\
+    \texttt{I\_OUT}  & \qty{100}{\milli\ampere}   & Ausgangsstrom \\
+    \texttt{I\_ISO}  & \qty{100}{\micro\ampere}   & Ableitstrom Isolationsmessung \\
+    \texttt{V\_IN}   & \qty{0.5}{\volt}           & Batteriespannung \\
+\end{tabular}
+
+\begin{steps}
+    \item \disp{Settings > Calibration} öffnen, Kanal mit \enc{} wählen und \btn{OK} drücken.
+    \item \disp{Set input to 0}: Null anlegen (Kurzschluss oder offen, je nach Kanal) und \btn{OK}
+          drücken (\disp{OK: Zero}). \btn{ESC} bricht ab.
+    \item \disp{Apply known reference}: Referenz anlegen, ihren Wert mit \enc{} einstellen und
+          \btn{OK} drücken (\disp{OK: Set gain}). \btn{ESC} überspringt den Verstärkungsschritt.
+    \item Erscheint \disp{Gain calibration failed!}, Referenz prüfen und wiederholen.
+\end{steps}
+\todo[inline]{Je Kanal: benötigte Referenzquelle, Anschluss, empfohlener Referenzwert, Betriebsart in der der Kanal aktiv ist}
+\todo[inline]{Benötigte Kalibriermittel (Kalibrator, Referenzwiderstände, HV-Teiler)}
+\todo[inline]{Kalibrierprotokoll / Abnahmegrenzen nach der Kalibrierung}
+
+%-----------------------------------------------------------------
+\subsection{Serviceschnittstelle (CLI)}
+\label{sec:cli}
+Das Gerät hat eine serielle Kommandozeile am Programmierstecker.
+\begin{itemize}
+    \item Anschluss: \tbc{Programmieradapter ST1-3AA}, UART, \qty{115200}{Bd}, 8N1.
+    \item \texttt{help} listet alle Befehle.
+\end{itemize}
+
+\begin{longtable}{p{4cm}p{11.5cm}}
+    \rowcolor{gray} \textbf{Befehl} & \textbf{Funktion} \\ \endhead
+    \texttt{help}                 & Befehlsliste \\
+    \texttt{pADC}, \texttt{pBMS}, \texttt{pGPIO}, \texttt{pProt} & Messwerte, \ac{BMS}-Daten, IO-Zustände, Schutzzustände ausgeben \\
+    \texttt{zeroCal}, \texttt{gainCal} & Nullpunkt- / Verstärkungskalibrierung eines Kanals \\
+    \texttt{setOffset}, \texttt{setGain} & Kalibrierwerte direkt schreiben \\
+    \texttt{setSerial}            & Seriennummer setzen \\
+    \texttt{saveEEPROM}, \texttt{readEEPROM} & Konfiguration speichern / lesen \\
+    \texttt{state}                & Betriebsart wechseln \\
+    \texttt{control}              & Drehgeber und Tasten über das Terminal bedienen \\
+    \texttt{pRTC}, \texttt{setRTC} & Echtzeituhr lesen / stellen \\
+    \texttt{flashIcons}           & Menüsymbole in den Flash-Speicher schreiben \\
+    \texttt{turnOff}              & Gerät ausschalten \\
+\end{longtable}
+\todo[inline]{Bestätigen, welche Befehle im Release-Build enthalten sind (CLI\_ENABLED / CLI\_DEBUG), Argumente dokumentieren}
+
+%-----------------------------------------------------------------
+\subsection{Firmware-Update}
+\label{sec:fwupdate}
+\todo[inline]{Ablauf Firmware-Update: Werkzeuge (ST-Link, STM32CubeProgrammer), Stecker, Datei, Schritte; bleibt die Konfiguration (Kalibrierung) erhalten?}
+\todo[inline]{Menüsymbole: wann ist \texttt{flashIcons} / flash\_icon\_seed.py nach einem Update nötig?}
+
+%-----------------------------------------------------------------
+\subsection{Reparatur}
+\todo[inline]{Kontakt für Reparaturen, Ersatzteile, Verweis auf Schemas (doc/appendix)}
