@@ -121,8 +121,44 @@ static void test_burst_plan(void) {
 	CHECK(b.duty_run >= lo);
 }
 
+/*
+ * Every region change: whenever a leg may run at the low freq (old or new
+ * setting, as updates land within the tick), the burst idles a leg that is
+ * fast in both. A leg leaving the burst stays fast for that tick.
+ */
+static void test_transition(void) {
+	const unsigned both = VOUT_LEG_PRIM | VOUT_LEG_SEK;
+	for (int f = 0; f < 3; f++)
+		for (int t = 0; t < 3; t++) {
+			vout_legs_t prev = vout_region_legs((vout_region_t) f);
+			for (unsigned s = 0; s < 4; s++) {
+				vout_legs_t cur = vout_transition_step((vout_region_t) f,
+						(vout_region_t) t, s);
+				unsigned slow = (~prev.fast | ~cur.fast) & both;
+				if (slow) {
+					CHECK(cur.burst != 0);
+					CHECK((cur.burst & prev.fast & cur.fast) == cur.burst);
+					CHECK((cur.burst & slow) == 0);
+				}
+				if (prev.burst && prev.burst != cur.burst)
+					CHECK((prev.burst & cur.fast) == prev.burst);
+				prev = cur;
+			}
+			vout_legs_t end = vout_region_legs((vout_region_t) t);
+			CHECK(prev.fast == end.fast && prev.burst == end.burst);
+			// Same region: no intermediate state.
+			if (f == t)
+				for (unsigned s = 0; s < 3; s++) {
+					vout_legs_t c = vout_transition_step((vout_region_t) f,
+							(vout_region_t) t, s);
+					CHECK(c.fast == end.fast && c.burst == end.burst);
+				}
+		}
+}
+
 int main(void) {
 	test_burst_plan();
+	test_transition();
 	test_select();
 	test_duty_model();
 	test_pi_limits_reachable();

@@ -74,4 +74,27 @@ vout_burst_t vout_burst_plan(float duty_avg, unsigned frame_cycles,
 vout_burst_t vout_burst_plan_low_side(float duty_avg, unsigned frame_cycles,
 		unsigned sync_cycles, float max_run_duty);
 
+/*
+ * Region change in steps, one control tick each, so every parked pulse falls
+ * into an idle block (timer updates apply within one 20 us frame):
+ *   step 0: legs that become fast switch now, the old burst stays;
+ *   step 1: burst moves to the new fast leg (off in FOUR_SWITCH);
+ *   step 2+: legs that become parked go to the low freq (= steady state).
+ * Legs as VOUT_LEG_* bits; burst 0 = burst off.
+ */
+#define VOUT_LEG_PRIM 1U
+#define VOUT_LEG_SEK  2U
+
+typedef struct {
+	unsigned fast;  // legs at the high freq
+	unsigned burst; // leg under burst idle control
+} vout_legs_t;
+
+/* Fast legs and burst leg of a region in steady state. */
+vout_legs_t vout_region_legs(vout_region_t region);
+
+/* Leg state for a given step of the change from -> to (from == to: steady). */
+vout_legs_t vout_transition_step(vout_region_t from, vout_region_t to,
+		unsigned step);
+
 #endif /* INC_VOUT_REGION_H_ */

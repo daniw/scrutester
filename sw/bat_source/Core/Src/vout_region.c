@@ -98,3 +98,24 @@ vout_burst_t vout_burst_plan_low_side(float duty_avg, unsigned frame_cycles,
 	b.duty_run = 1.0F - b.duty_run;
 	return b;
 }
+
+vout_legs_t vout_region_legs(vout_region_t region) {
+	switch (region) {
+	case VOUT_REGION_BUCK:
+		return (vout_legs_t) { VOUT_LEG_PRIM, VOUT_LEG_PRIM };
+	case VOUT_REGION_FOUR_SWITCH:
+		return (vout_legs_t) { VOUT_LEG_PRIM | VOUT_LEG_SEK, 0 };
+	case VOUT_REGION_BOOST:
+	default:
+		return (vout_legs_t) { VOUT_LEG_SEK, VOUT_LEG_SEK };
+	}
+}
+
+vout_legs_t vout_transition_step(vout_region_t from, vout_region_t to,
+		unsigned step) {
+	vout_legs_t a = vout_region_legs(from);
+	vout_legs_t b = vout_region_legs(to);
+	if (step >= 2)
+		return b;
+	return (vout_legs_t) { a.fast | b.fast, step == 0 ? a.burst : b.burst };
+}

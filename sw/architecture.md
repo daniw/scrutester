@@ -213,8 +213,15 @@ The way back needs `VOUT_REGION_HYSTERESIS` (0.05) more. The ratio uses V_IN
 low-passed (`VOUT_VIN_FILTER_s`, 10 ms) and each region is held at least
 `VOUT_REGION_DWELL_s` (20 ms); with the raw sample it toggled at the 1.25 edge.
 A region change preloads the incoming PI with the duty that gives the same
-ideal ratio and writes both frequencies and duties together
-(`hrtim_set_prim_sek()`). The 1 A limiter (fast internal `i_out`) caps the duty in every region; it
+ideal ratio. Legs and burst then change over three control ticks
+(`vout_transition_step()`, host-tested), as a burst-leg switch is immediate
+but a new period only lands at that timer's next reset: (0) legs that become
+fast switch, the old burst keeps a sync block; (1) the burst moves to the new
+fast leg (off in 4SW); (2) legs that become parked drop to 50 kHz. A leg
+waiting to be parked runs at 1 MHz with its duty limited to
+[`VOUT_MIN_RUN_DUTY`, `VOUT_MAX_RUN_DUTY`]. So no parked pulse lands outside
+an idle block (before: one per change, and buck <-> boost could leave the
+new parked leg in burst idle). The 1 A limiter (fast internal `i_out`) caps the duty in every region; it
 starts at its ceiling and the voltage PI's integrator tracks the applied duty
 while it is capped (from 0 it caused a 5 V -> 9 V start-up overshoot). The
 FourSwitch gains are RAM-only: a `calibration_t` field would need a

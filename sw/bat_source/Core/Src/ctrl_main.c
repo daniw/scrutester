@@ -55,6 +55,12 @@ static volatile uint32_t vout_region_changes;
 static volatile float vout_last_ratio;
 static float vout_vin_filt_mV;        // 0 = not yet seeded
 static uint16_t vout_region_hold;     // ticks before the next region change
+// Region change in steps (vout_transition_step()), hardware state as written.
+static vout_region_t vout_trans_from;
+static unsigned vout_trans_step;
+static unsigned vout_burst_leg;       // VOUT_LEG_*, 0 = burst off
+static uint32_t vout_freq_prim;
+static uint32_t vout_freq_sek;
 
 const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
@@ -168,6 +174,11 @@ static void ctrl_main_start_voltage_wide(void) {
 	vout_region = VOUT_REGION_BUCK;
 	vout_vin_filt_mV = 0.0F;
 	vout_region_hold = 0;
+	vout_trans_from = VOUT_REGION_BUCK;
+	vout_trans_step = 2;
+	vout_burst_leg = VOUT_LEG_PRIM;
+	vout_freq_prim = CTRL_PARAM_SW_FREQ_HIGH;
+	vout_freq_sek = CTRL_PARAM_SW_FREQ_LOW;
 	vout_duty_prim = 0.0F;
 	vout_duty_sek = CTRL_PARAM_CONST_DUTY_LOW;
 	hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
@@ -610,12 +621,38 @@ void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 	ctrl_apply_buck_burst(ctrl_pi_voltage_buck.action);
 }
 
+/**
+ * Writes one 60V leg: freq + duty together when the freq changes, else duty.
+ * @param channel HRTIM_CHANNEL_PRIM or _SEK.
+ * @param freq Last written freq of that leg, updated.
+ * @param fast Leg runs at the high freq now.
+ * @param fast_in_region Leg is fast in the target region (else it waits to
+ *        be parked: its parked duty is limited to a sane 1 MHz duty).
+ * @param duty Duty for the leg.
+ */
+static void ctrl_vout_write_leg(uint8_t channel, uint32_t *freq, uint8_t fast,
+		uint8_t fast_in_region, float duty) {
+	uint32_t f = fast ? CTRL_PARAM_SW_FREQ_HIGH : CTRL_PARAM_SW_FREQ_LOW;
+	if (fast && !fast_in_region) {
+		if (duty < CTRL_PARAM_VOUT_MIN_RUN_DUTY)
+			duty = CTRL_PARAM_VOUT_MIN_RUN_DUTY;
+		else if (duty > CTRL_PARAM_VOUT_MAX_RUN_DUTY)
+			duty = CTRL_PARAM_VOUT_MAX_RUN_DUTY;
+	}
+	if (f != *freq) {
+		hrtim_set_freq_duty(channel, f, duty);
+		*freq = f;
+	} else
+		hrtim_set_duty(channel, duty);
+}
+
 /*
  * Full-range voltage source (0..60 V): buck, 4-switch or boost by
  * V_ref / V_in (vout_region.h), one PI per region. Only the active PI runs, so
  * a region change preloads the incoming one with the duty that gives the same
- * conversion ratio, and frequencies + duties are written together, so the
- * output does not step. The 1 A limiter caps the duty in every region.
+ * conversion ratio, so the output does not step. The legs and the burst
+ * change over three ticks (vout_transition_step()), so no parked pulse runs
+ * outside an idle block. The 1 A limiter caps the duty in every region.
  */
 static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
@@ -668,6 +705,8 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 		// The limiter's duty scale differs per region.
 		ctrl_pi_boost_iout_limit.prev_I_action =
 				ctrl_pi_boost_iout_limit.sat_limit_high;
+		vout_trans_from = vout_region;
+		vout_trans_step = 0;
 		vout_region = next;
 		vout_region_changes++;
 		vout_region_hold = (uint16_t) (CTRL_PARAM_VOUT_REGION_DWELL_s
@@ -700,50 +739,55 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 						0 : CTRL_PARAM_VOUT_SYNC_CYCLES,
 				vout_region == VOUT_REGION_BUCK,
 				CTRL_PARAM_VOUT_MIN_RUN_DUTY, CTRL_PARAM_VOUT_MAX_RUN_DUTY);
-	// Only the fast leg follows the burst: PRIM in buck, SEK in boost.
-	if (changed) {
-		if (vout_region == VOUT_REGION_FOUR_SWITCH)
-			hrtim_burst_enable(0);
-		else
-			hrtim_burst_select_leg(
-					vout_region == VOUT_REGION_BOOST ?
-							HRTIM_CHANNEL_SEK : HRTIM_CHANNEL_PRIM);
-	}
-	hrtim_burst_set_idle_cycles(bp.idle_cycles);
 #endif
 
 	switch (vout_region) {
 	case VOUT_REGION_BUCK:
 		vout_duty_prim = duty;
 		vout_duty_sek = CTRL_PARAM_CONST_DUTY_LOW;
-		if (changed)
-			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, bp.duty_run,
-			CTRL_PARAM_SW_FREQ_LOW, vout_duty_sek);
-		else
-			hrtim_set_duty(HRTIM_CHANNEL_PRIM, bp.duty_run);
 		break;
 	case VOUT_REGION_FOUR_SWITCH:
 		vout_duty_prim = duty;
 		vout_duty_sek = duty;
-		if (changed)
-			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_HIGH, vout_duty_prim,
-			CTRL_PARAM_SW_FREQ_HIGH, vout_duty_sek);
-		else {
-			hrtim_set_duty(HRTIM_CHANNEL_PRIM, vout_duty_prim);
-			hrtim_set_duty(HRTIM_CHANNEL_SEK, vout_duty_sek);
-		}
 		break;
 	case VOUT_REGION_BOOST:
 	default:
 		vout_duty_prim = CTRL_PARAM_CONST_DUTY_HIGH;
 		vout_duty_sek = duty;
-		if (changed)
-			hrtim_set_prim_sek(CTRL_PARAM_SW_FREQ_LOW, vout_duty_prim,
-			CTRL_PARAM_SW_FREQ_HIGH, bp.duty_run);
-		else
-			hrtim_set_duty(HRTIM_CHANNEL_SEK, bp.duty_run);
 		break;
 	}
+
+	vout_legs_t legs = vout_transition_step(vout_trans_from, vout_region,
+			vout_trans_step);
+	vout_legs_t target = vout_region_legs(vout_region);
+#ifdef VOUT_SYNC_BURST_ENABLED
+	// Only the fast leg follows the burst: PRIM in buck, SEK in boost.
+	if (legs.burst != vout_burst_leg) {
+		if (legs.burst == 0)
+			hrtim_burst_enable(0);
+		else
+			hrtim_burst_select_leg(
+					legs.burst == VOUT_LEG_SEK ?
+							HRTIM_CHANNEL_SEK : HRTIM_CHANNEL_PRIM);
+		vout_burst_leg = legs.burst;
+	}
+	// Old burst still on (step 0): keep the sync block for the parked pulses.
+	hrtim_burst_set_idle_cycles(
+			legs.burst == target.burst ?
+					bp.idle_cycles : CTRL_PARAM_VOUT_SYNC_CYCLES);
+#endif
+	ctrl_vout_write_leg(HRTIM_CHANNEL_PRIM, &vout_freq_prim,
+			(legs.fast & VOUT_LEG_PRIM) != 0,
+			(target.fast & VOUT_LEG_PRIM) != 0,
+			(legs.burst == VOUT_LEG_PRIM && target.burst == VOUT_LEG_PRIM) ?
+					bp.duty_run : vout_duty_prim);
+	ctrl_vout_write_leg(HRTIM_CHANNEL_SEK, &vout_freq_sek,
+			(legs.fast & VOUT_LEG_SEK) != 0,
+			(target.fast & VOUT_LEG_SEK) != 0,
+			(legs.burst == VOUT_LEG_SEK && target.burst == VOUT_LEG_SEK) ?
+					bp.duty_run : vout_duty_sek);
+	if (vout_trans_step < 2)
+		vout_trans_step++;
 	ctrl_main_handle.duty = duty * 1000;
 }
 

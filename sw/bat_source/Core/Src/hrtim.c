@@ -515,6 +515,26 @@ void hrtim_set_prim_sek(uint32_t prim_freq, float prim_duty,
 	HRTIM1->sCommonRegs.CR1 &= ~(HRTIM_CR1_TBUDIS | HRTIM_CR1_TEUDIS);
 }
 
+/**
+ * Sets frequency and duty of one channel together (update held back for that
+ * timer only, see hrtim_set_prim_sek()).
+ * @param channel HRTIM_CHANNEL_PRIM, _SEK or _HV.
+ * @param freq Frequency in Hz.
+ * @param duty Duty in pu from 0 to 1.
+ */
+void hrtim_set_freq_duty(uint8_t channel, uint32_t freq, float duty) {
+	if (!HRTIM_CHANNEL_IS_VALID(channel) || freq == 0)
+		return;
+
+	uint32_t period = hrtim_clamp_period(HRTIM_PERIOD_FROM_FREQ(freq));
+	uint32_t udis = HRTIM_CR1_TAUDIS << channel;
+
+	HRTIM1->sCommonRegs.CR1 |= udis;
+	HRTIM1->sTimerxRegs[channel].PERxR = period;
+	HRTIM1->sTimerxRegs[channel].CMP1xR = hrtim_duty_to_compare(period, duty);
+	HRTIM1->sCommonRegs.CR1 &= ~udis;
+}
+
 void hrtim_enable(uint8_t channel) {
 	switch (channel) {
 	case HRTIM_CHANNEL_PRIM:
