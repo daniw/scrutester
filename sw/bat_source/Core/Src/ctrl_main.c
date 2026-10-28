@@ -201,7 +201,7 @@ static void ctrl_main_start_voltage_wide(void) {
 void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	switch (mode) {
 
-	case CTRL_MODE_CHARGE:
+	case CTRL_MODE_CHARGE: {
 		ctrl_main_apply_reference(mode, 0);
 		ctrl_PID_reset(&ctrl_pi_voltage_buck);
 		ctrl_PID_reset(&ctrl_pi_charge_current);
@@ -217,19 +217,20 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		//
 		// Starts as the open-loop PRECHARGE boost (relay open, OUT_LV not
 		// measurable): the ISR ramps PRIM/SEK from here.
+		float prim_duty, sek_duty;
 		charge_precharge_start(&ctrl_main_handle.precharge,
-				adc_data.converted.v_term_ext_mv);
+				adc_data.converted.v_term_ext_mv, &prim_duty, &sek_duty);
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
-		hrtim_set_duty(HRTIM_CHANNEL_PRIM, CTRL_PARAM_CONST_DUTY_HIGH * 0.2F);
-		hrtim_set_duty(HRTIM_CHANNEL_SEK,
-				CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW);
+		hrtim_set_duty(HRTIM_CHANNEL_PRIM, prim_duty);
+		hrtim_set_duty(HRTIM_CHANNEL_SEK, sek_duty);
 		hrtim_enable(HRTIM_CHANNEL_PRIM);
 		hrtim_enable(HRTIM_CHANNEL_SEK);
 		// Assigned before `mode` (below), so the ISR never sees CTRL_MODE_CHARGE
 		// with a stale phase.
 		ctrl_main_handle.charge_phase = CHG_PHASE_PRECHARGE;
 		break;
+	}
 	case CTRL_MODE_60V:
 		ctrl_main_start_voltage_wide();
 		break;

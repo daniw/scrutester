@@ -187,7 +187,11 @@
 #define CTRL_PARAM_CHARGE_PRECHARGE_RATIO 0.99F
 // PRIM duty ramp (PRIM_START_FRACTION -> full, like the 60V boost start),
 // then the SEK duty ramp towards the target, then a hold before the relay
-// is closed.
+// is closed. SEK duty range of the open-loop boost, own copy of the 60V
+// boost limits.
+#define CTRL_PARAM_CHARGE_PRECHARGE_PRIM_START_FRACTION 0.1F
+#define CTRL_PARAM_CHARGE_PRECHARGE_SEK_DUTY_MIN 0.015F
+#define CTRL_PARAM_CHARGE_PRECHARGE_SEK_DUTY_MAX 0.8F
 #define CTRL_PARAM_CHARGE_PRECHARGE_PRIM_RAMP_s 0.2F
 #define CTRL_PARAM_CHARGE_PRECHARGE_SEK_RAMP_s 0.2F
 #define CTRL_PARAM_CHARGE_PRECHARGE_HOLD_s 0.2F

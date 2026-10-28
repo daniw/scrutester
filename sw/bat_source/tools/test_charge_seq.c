@@ -47,7 +47,7 @@ static void test_duty_formulas(void) {
 			18000 * (double) CTRL_PARAM_CHARGE_PRECHARGE_RATIO, 1);
 	CHECK_NEAR(charge_seq_precharge_duty(13000, 17100), 0.25117, 1e-4);
 	CHECK_NEAR(charge_seq_precharge_duty(13000, 5000), 0.015, 1e-6);   /* below V_in: minimum */
-	CHECK_NEAR(charge_seq_precharge_duty(5000, 60000), 0.8, 1e-6);     /* clamped to boost limit */
+	CHECK_NEAR(charge_seq_precharge_duty(5000, 60000), 0.8, 1e-6);     /* clamped to the precharge maximum */
 	CHECK_NEAR(charge_seq_precharge_duty(13000, 0), 0.015, 1e-6);
 
 	/* The preload writes the requested SEK duty through D = 0.985 - action. */
@@ -64,7 +64,8 @@ static void test_duty_formulas(void) {
 
 static void run_precharge(int32_t v_in, int32_t v_term, int32_t v_in_end) {
 	charge_precharge_t p;
-	charge_precharge_start(&p, v_term);
+	float prim0, sek0;
+	charge_precharge_start(&p, v_term, &prim0, &sek0);
 	const int32_t target = charge_seq_precharge_target_mV(v_term);
 
 	/* Derived from ctrl_param.h rather than hardcoded, so retuning those
@@ -124,16 +125,15 @@ static void test_precharge(void) {
 	run_precharge(14500, 15000, 14500);   /* target 14250 V < V_in: stays at minimum duty */
 	run_precharge(13000, 18000, 12500);   /* battery sags during the ramp: duty follows */
 
-	/* First tick: PRIM at PRIM_START_FRACTION of full duty, SEK at minimum.
-	 * PRIM_START_FRACTION is private to charge_seq.c (not in charge_seq.h),
-	 * so this 0.1 has to be kept in sync with it by hand if it's retuned
-	 * again. */
+	/* Start duties = first tick: PRIM at the start fraction, SEK at minimum. */
 	charge_precharge_t p;
-	float prim, sek;
-	charge_precharge_start(&p, 18000);
+	float prim, sek, prim0, sek0;
+	charge_precharge_start(&p, 18000, &prim0, &sek0);
 	charge_precharge_step(&p, 13000, &prim, &sek);
-	CHECK_NEAR(prim, 0.985 * 0.1, 1e-6);
-	CHECK_NEAR(sek, 0.015, 1e-6);
+	CHECK_NEAR(prim, CTRL_PARAM_CONST_DUTY_HIGH * CTRL_PARAM_CHARGE_PRECHARGE_PRIM_START_FRACTION, 1e-6);
+	CHECK_NEAR(sek, CTRL_PARAM_CHARGE_PRECHARGE_SEK_DUTY_MIN, 1e-6);
+	CHECK_NEAR(prim0, prim, 1e-6);
+	CHECK_NEAR(sek0, sek, 1e-6);
 }
 
 static charge_seq_action_t step(charge_seq_t *s, charge_phase_t isr, int32_t ref, int32_t i) {

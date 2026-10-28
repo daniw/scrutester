@@ -77,7 +77,10 @@ typedef struct {
 	int32_t v_target_mV;
 } charge_precharge_t;
 
-void charge_precharge_start(charge_precharge_t *p, int32_t v_term_mV);
+/* Resets the ramp; writes the duties to apply before the first step (equal
+ * to the first step's, so the start has no duty step). */
+void charge_precharge_start(charge_precharge_t *p, int32_t v_term_mV,
+		float *prim_duty, float *sek_duty);
 
 /* One ISR tick. Writes the PRIM and SEK duty to apply; returns 1 once the
  * whole ramp and hold have elapsed. v_in_mV is read live so the duty follows

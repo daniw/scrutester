@@ -13,13 +13,12 @@
  * runs on a single-precision FPU, so fold everything to float once here. */
 #define D_HI      ((float) CTRL_PARAM_CONST_DUTY_HIGH)
 #define D_LO      ((float) CTRL_PARAM_CONST_DUTY_LOW)
-#define BOOST_LO  ((float) CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW)
-#define BOOST_HI  ((float) CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH)
+#define SEK_LO    ((float) CTRL_PARAM_CHARGE_PRECHARGE_SEK_DUTY_MIN)
+#define SEK_HI    ((float) CTRL_PARAM_CHARGE_PRECHARGE_SEK_DUTY_MAX)
 #define CC_LO     ((float) CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW)
 #define CC_HI     ((float) CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH)
 
-/* PRIM starts at the same fraction of its full duty as the 60V boost ramp. */
-#define PRIM_START_FRACTION 0.1f
+#define PRIM_START_FRACTION ((float) CTRL_PARAM_CHARGE_PRECHARGE_PRIM_START_FRACTION)
 
 #define SECONDS_TO_TICKS(s) ((uint32_t) ((s) * CTRL_FREQ))
 #define PRIM_TICKS  SECONDS_TO_TICKS(CTRL_PARAM_CHARGE_PRECHARGE_PRIM_RAMP_s)
@@ -43,8 +42,8 @@ float charge_seq_zero_current_duty(int32_t v_in_mV, int32_t v_term_mV) {
 
 float charge_seq_precharge_duty(int32_t v_in_mV, int32_t v_ref_mV) {
 	if (v_ref_mV <= 0)
-		return BOOST_LO;
-	return clampf(1.0f - D_HI * (float) v_in_mV / (float) v_ref_mV, BOOST_LO, BOOST_HI);
+		return SEK_LO;
+	return clampf(1.0f - D_HI * (float) v_in_mV / (float) v_ref_mV, SEK_LO, SEK_HI);
 }
 
 int32_t charge_seq_precharge_target_mV(int32_t v_term_mV) {
@@ -60,9 +59,12 @@ uint8_t charge_seq_v_term_in_window(int32_t v_term_mV) {
 			&& v_term_mV <= CTRL_PARAM_CHARGE_START_VIN_HIGH_mV;
 }
 
-void charge_precharge_start(charge_precharge_t *p, int32_t v_term_mV) {
+void charge_precharge_start(charge_precharge_t *p, int32_t v_term_mV,
+		float *prim_duty, float *sek_duty) {
 	p->tick = 0;
 	p->v_target_mV = charge_seq_precharge_target_mV(v_term_mV);
+	*prim_duty = D_HI * PRIM_START_FRACTION;
+	*sek_duty = SEK_LO;
 }
 
 uint8_t charge_precharge_step(charge_precharge_t *p, int32_t v_in_mV,
@@ -73,14 +75,14 @@ uint8_t charge_precharge_step(charge_precharge_t *p, int32_t v_in_mV,
 		/* Soft start of the battery-side bridge with SEK at minimum duty. */
 		*prim_duty = D_HI * (PRIM_START_FRACTION
 				+ (1.0f - PRIM_START_FRACTION) * (float) t / (float) PRIM_TICKS);
-		*sek_duty = BOOST_LO;
+		*sek_duty = SEK_LO;
 	} else {
 		const uint32_t ts = t - PRIM_TICKS;
 		const float s = (ts >= SEK_TICKS) ? 1.0f : (float) ts / (float) SEK_TICKS;
 		/* Voltage the converter makes at minimum SEK duty; the reference ramps
-		 * from there to the target, so the first SEK duty equals BOOST_LO and
+		 * from there to the target, so the first SEK duty equals SEK_LO and
 		 * the duty is continuous across the PRIM/SEK ramp boundary. */
-		const float v_start = D_HI * (float) v_in_mV / (1.0f - BOOST_LO);
+		const float v_start = D_HI * (float) v_in_mV / (1.0f - SEK_LO);
 		const float v_ref = v_start + ((float) p->v_target_mV - v_start) * s;
 		*prim_duty = D_HI;
 		*sek_duty = charge_seq_precharge_duty(v_in_mV, (int32_t) v_ref);
