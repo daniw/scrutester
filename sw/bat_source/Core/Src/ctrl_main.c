@@ -277,6 +277,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		break;
 	}
 	ctrl_main_handle.ramp = 0.2F;
+	__COMPILER_BARRIER(); // setup stores before the hand-over store
 	ctrl_main_handle.mode = mode;
 }
 
@@ -318,6 +319,7 @@ void ctrl_main_start_ctrl_charge_low_current(void) {
 	ctrl_main_handle.ramp = 0.0F; // ISR ramps current 0 -> the reduced target
 	// Assigned before `mode` (below), so the ISR never sees CTRL_MODE_CHARGE
 	// with a stale phase (same ordering rule as ctrl_main_start_ctrl()).
+	__COMPILER_BARRIER(); // setup stores before the hand-over store
 	ctrl_main_handle.charge_phase = CHG_PHASE_CC_RAMP;
 	ctrl_main_handle.mode = CTRL_MODE_CHARGE;
 }
@@ -498,6 +500,7 @@ void ctrl_main_charge_start_ramp(void) {
 	// ctrl_apply_ramped_ref(), which starts from whatever `ramp` holds;
 	// start_ctrl() leaves it at 0.2 for the other modes' soft start.
 	ctrl_main_handle.ramp = 0.0F;
+	__COMPILER_BARRIER(); // setup stores before the hand-over store
 	ctrl_main_handle.charge_phase = CHG_PHASE_CC_RAMP; // last: the ISR acts on it
 }
 

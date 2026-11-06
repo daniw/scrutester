@@ -31,7 +31,7 @@ typedef struct{
 	uint32_t voltage_reference_mV;
 	uint32_t current_reference_mA;
 	float ramp;
-	ctrl_mode_t mode;
+	volatile ctrl_mode_t mode;
 	int32_t duty;
 	// One-way latch: set once CHARGE's CC phase reaches end-voltage and
 	// switches to CV, cleared only when CHARGE is (re-)started.
