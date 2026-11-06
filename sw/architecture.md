@@ -169,7 +169,8 @@ Executed from the **ADC1 DMA-complete interrupt**, not directly from HRTIM.
 The chain is: HRTIM timer period → HRTIM ADC trigger (with post-scaler) → ADC
 conversion → DMA → `HAL_ADC_ConvCpltCallback()`, which acts only for `hadc1`
 and decimates by 2 (`adc_interrupt_cnt`). With the converter at 1 MHz and an
-HRTIM ADC post-scaler of ÷20, that lands at **25 kHz = `CTRL_FREQ`**.
+HRTIM ADC post-scaler of ÷20, that lands at **25 kHz = `CTRL_FREQ`**
+(ISOMETER: 350 kHz, TRG5 post-scaler ÷7, also 25 kHz).
 
 `CTRL_FREQ` is what every integral gain and startup ramp is scaled by, so any
 change to switching frequency or post-scaler changes the effective loop tuning.
@@ -700,7 +701,7 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 | 5 | Isolation meas. | 129 µA offset on isolation current channel (op-amp input leakage) |
 | 6 | Voltage ref | Reference rail requires output load capacitor for stability |
 | 7 | PID tuning | **All PID gains are placeholder values; no tuning has been performed.** This matters more than it used to: the HV loops previously defaulted to zero gain, which silently disabled ISOMETER. They now default to real (untuned) values, so ISOMETER will actually drive the flyback. Treat the first run as a bench bring-up. |
-| 8 | ISOMETER ADC | Fixed (`e5bde9a`): ISOMETER now names its trigger explicitly (`ADC_TRIGGER_HRTIM_HV`, see `mode_table.c`), so the loop rate no longer depends on mode history. **Residual issue**: that trigger's actual rate is ~11.7 kHz (350 kHz ÷ 15 post-scaler ÷ 2 decimation), not the 25 kHz `CTRL_FREQ` that `CTRL_PARAM_HV_VOLTAGE_I`/`CTRL_PARAM_HV_CURRENT_I` and the startup ramp are scaled by — integral action is therefore ~2.1× weaker and the ramp ~2.1× slower than those constants suggest. The rate is now at least deterministic, which is what makes bench tuning possible; closing the gap (retune the HV gains, or change TRG2's post-scaler to 7 for an exact 25 kHz) is a tuning decision to make with the converter in front of you. |
+| 8 | ISOMETER ADC | Fixed (`e5bde9a`): ISOMETER now names its trigger explicitly (`ADC_TRIGGER_HRTIM_HV`, see `mode_table.c`), so the loop rate no longer depends on mode history. The rate was ~11.7 kHz (post-scaler ÷15); TRG5 post-scaler ÷7 now gives exactly `CTRL_FREQ`, gains unchanged (integral action and ramp ~2.1× faster than before on the bench). |
 | 9 | Charge thresholds | The CC→CV latch and cycle termination both key off the BMS `StackVoltage` against `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` (consistent — this corrects an earlier version of this table, which claimed the latch tested `v_in`). The CV tail's own PI loop, however, now regulates towards `4 × highest cell voltage` rather than `StackVoltage` (see §3, Charging). Under significant cell imbalance, the quantity being latched/terminated on (real `StackVoltage`) and the quantity the CV loop is driving towards (extrapolated `4 × max-cell`) can diverge — untested. Termination also now requires the cell-voltage spread to be ≤ 50 mV, which should catch most of this in practice, but the two-sensor tension itself is unresolved. |
 | 10 | Data logging | QSPI flash driver exists and holds the icon store, but logging is not wired into the application |
 | 11 | Error log | `error_Write()` is an unimplemented stub, so queued errors are discarded |

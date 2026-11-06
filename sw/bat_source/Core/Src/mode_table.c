@@ -86,17 +86,8 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
      * whichever one the last mode left and the control-loop rate depended on
      * mode history.
      *
-     * NOTE, and this is not yet resolved: HV runs at CTRL_PARAM_SW_FREQ_HV
-     * (350 kHz), TRG2's post-scaler in MX_HRTIM1_Init() is 15, and
-     * HAL_ADC_ConvCpltCallback() halves again -- so this loop executes at
-     * about 11.7 kHz, NOT the 25 kHz CTRL_FREQ that
-     * CTRL_PARAM_HV_VOLTAGE_I/CTRL_PARAM_HV_CURRENT_I and the startup ramp
-     * are scaled by. Integral action is therefore roughly 2.1x weaker, and
-     * the ramp roughly 2.1x slower, than those constants suggest. The rate
-     * is now at least deterministic, which is what makes bench tuning
-     * possible; closing the gap (retune the HV gains, or change TRG2's
-     * post-scaler to 7 for an exact 25 kHz) is a tuning decision to take
-     * with the converter in front of you. See ctrl_param.h. */
+     * HV at CTRL_PARAM_SW_FREQ_HV (350 kHz), TRG5 post-scaler 7 and the
+     * halving in HAL_ADC_ConvCpltCallback() give exactly CTRL_FREQ. */
     [STATEMACHINE_MODE_ISOMETER] = {
         .ctrl_mode   = CTRL_MODE_ISOMETER,
         .aux_io_mask = GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_ISO_EN | GPIO_MASK_DISCHARGE,
