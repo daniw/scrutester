@@ -171,6 +171,8 @@ conversion → DMA → `HAL_ADC_ConvCpltCallback()`, which acts only for `hadc1`
 and decimates by 2 (`adc_interrupt_cnt`). With the converter at 1 MHz and an
 HRTIM ADC post-scaler of ÷20, that lands at **25 kHz = `CTRL_FREQ`**
 (ISOMETER: 350 kHz, TRG5 post-scaler ÷7, also 25 kHz).
+Only ADC1's DMA transfer-complete IRQ is enabled; ADC2-5 DMA runs without
+IRQs (`adc_start_dma_quiet()`), the data just lands in `adc_data.raw`.
 
 `CTRL_FREQ` is what every integral gain and startup ramp is scaled by, so any
 change to switching frequency or post-scaler changes the effective loop tuning.

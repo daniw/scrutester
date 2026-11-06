@@ -49,6 +49,16 @@ volatile uint8_t adc_interrupt_cnt;
 // and ctrl_main_ctrl() taking a const ADC_CONVERTED_DATA* makes reaching for
 // one a compile error rather than a silent read of zeros in the control loop.
 static ADC_CONVERTED_DATA adc_converted_isr;
+
+/**
+ * Starts circular DMA without its interrupts: the data lands in RAM, the
+ * callback only acts on hadc1, so the IRQs were pure overhead.
+ */
+static void adc_start_dma_quiet(ADC_HandleTypeDef *hadc, uint32_t *buf,
+		uint32_t len) {
+	HAL_ADC_Start_DMA(hadc, buf, len);
+	__HAL_DMA_DISABLE_IT(hadc->DMA_Handle, DMA_IT_TC | DMA_IT_HT);
+}
 /* USER CODE END 0 */
 
 ADC_HandleTypeDef hadc1;
@@ -958,14 +968,14 @@ void adc_start(void){
 	// MX_ADC5_Init()/adc_configure_mode()'s HAL_ADCEx_InjectedConfigChannel()
 	// calls) -- hadc1 has no injected channels configured on it at all, so
 	// starting it there was always dead/wrong. Arm the real injected group.
-	HAL_ADCEx_InjectedStart_IT(&hadc5);
-	HAL_ADC_Start_DMA(&hadc5, (uint32_t*)&adc_data.raw.v_3v3, 12);
+	HAL_ADCEx_InjectedStart(&hadc5);
+	adc_start_dma_quiet(&hadc5, (uint32_t*)&adc_data.raw.v_3v3, 12);
 
 }
 
 // Which mode's injected channel is currently configured on hadc5 - both
 // ISOMETER (I_ISO) and CHARGE (I_BAT) share the same injected rank/callback,
-// so HAL_ADCEx_InjectedConvCpltCallback() needs this to know which raw field
+// so adc_convert_fast_data() needs this to know which raw field
 // the conversion result belongs to.
 static statemachine_modes_t adc_injected_mode = STATEMACHINE_IDLE;
 
@@ -1001,7 +1011,7 @@ static void adc_apply_shared_trigger(statemachine_modes_t mode) {
 // ADC_ConversionStop(hadc, ADC_REGULAR_INJECTED_GROUP) + ADC_Disable() inside
 // HAL_ADC_Stop_DMA()). Reconfiguring the injected channel does NOT resume
 // triggering by itself, so the injected group must be re-armed via
-// HAL_ADCEx_InjectedStart_IT() every time either mode is (re-)entered.
+// HAL_ADCEx_InjectedStart() every time either mode is (re-)entered.
 // JADSTART is guaranteed clear at this point (adc_configure_mode() just
 // stopped it), so this cannot return HAL_BUSY.
 static void adc_configure_injected(uint32_t channel, uint32_t trigger) {
@@ -1025,7 +1035,7 @@ static void adc_configure_injected(uint32_t channel, uint32_t trigger) {
 		Error_Handler();
 	}
 
-	HAL_ADCEx_InjectedStart_IT(&hadc5);
+	HAL_ADCEx_InjectedStart(&hadc5);
 }
 
 void adc_configure_mode(statemachine_modes_t mode) {
@@ -1059,7 +1069,7 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
 			Error_Handler();
 		HAL_ADC_Init(&hadc4);
-		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
+		adc_start_dma_quiet(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
 		break;
 	case STATEMACHINE_MODE_ISOMETER:
 		// adc_apply_shared_trigger() above pointed hadc1..4 at HV (TRG2),
@@ -1071,7 +1081,7 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		HAL_ADC_Init(&hadc4);
 
 		adc_configure_injected(ADC_CHANNEL_2, ADC_TRIGGER_HRTIM_HV);
-		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_hv, 1);
+		adc_start_dma_quiet(&hadc4, (uint32_t*) &adc_data.raw.v_hv, 1);
 
 		break;
 	case STATEMACHINE_MODE_CHARGE:
@@ -1083,7 +1093,7 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
 			Error_Handler();
 		HAL_ADC_Init(&hadc4);
-		HAL_ADC_Start_DMA(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
+		adc_start_dma_quiet(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
 
 		adc_configure_injected(ADC_CHANNEL_1, ADC_TRIGGER_HRTIM_SEK);
 		break;
@@ -1103,9 +1113,11 @@ void adc_configure_mode(statemachine_modes_t mode) {
 	HAL_ADC_Init(&hadc3);
 
 	HAL_ADC_Start_DMA(&hadc1, (uint32_t*) &adc_data.raw.i_out,1);
-	HAL_ADC_Start_DMA(&hadc2, (uint32_t*) &adc_data.raw.v_term,1);
-	HAL_ADC_Start_DMA(&hadc3, (uint32_t*) &adc_data.raw.v_in,1);
-	HAL_ADC_Start_DMA(&hadc5, (uint32_t*) &adc_data.raw.v_3v3, 12);
+	// TC drives the control loop; HT is unused.
+	__HAL_DMA_DISABLE_IT(hadc1.DMA_Handle, DMA_IT_HT);
+	adc_start_dma_quiet(&hadc2, (uint32_t*) &adc_data.raw.v_term,1);
+	adc_start_dma_quiet(&hadc3, (uint32_t*) &adc_data.raw.v_in,1);
+	adc_start_dma_quiet(&hadc5, (uint32_t*) &adc_data.raw.v_3v3, 12);
 }
 
 void adc_convert_fast_data(void){
@@ -1114,6 +1126,14 @@ void adc_convert_fast_data(void){
 	// ISR) reads this same instance for its control loop. Main context never
 	// touches adc_converted_isr directly; it only ever sees a coherent copy via
 	// adc_snapshot_converted() (see statemachine_step()).
+
+	// ADC5 injected rank 1 is polled: the ADC5 IRQ is not enabled in the
+	// NVIC, so its completion callback never ran.
+	if (adc_injected_mode == STATEMACHINE_MODE_ISOMETER)
+		adc_data.raw.i_iso = HAL_ADCEx_InjectedGetValue(&hadc5, ADC_INJECTED_RANK_1);
+	else if (adc_injected_mode == STATEMACHINE_MODE_CHARGE)
+		adc_data.raw.i_bat = HAL_ADCEx_InjectedGetValue(&hadc5, ADC_INJECTED_RANK_1);
+
 	adc_converted_isr.v_in   = (adc_data.raw.v_in   - adc_data.v_in_offset  )* adc_data.v_in_gain;
 	adc_converted_isr.v_out  = (adc_data.raw.v_out  - adc_data.v_out_offset )* adc_data.v_out_gain;
 	adc_converted_isr.v_term = (adc_data.raw.v_term - adc_data.v_term_offset)* adc_data.v_term_gain;
@@ -1236,35 +1256,6 @@ void adc_convert_data(void){
 }
 
 
-
-void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
-{
-	// ISOMETER and CHARGE both inject on ADC5 rank 1 (see
-	// adc_configure_mode()), but onto different pins (I_ISO vs I_BAT), so
-	// the result has to be routed by whichever mode configured the injected
-	// group last - adc_injected_mode tracks that. The rest below predates
-	// the current refactor and stays commented out/dead.
-	if (hadc->Instance == ADC5) {
-		if (adc_injected_mode == STATEMACHINE_MODE_ISOMETER) {
-			adc_data.raw.i_iso = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
-		} else if (adc_injected_mode == STATEMACHINE_MODE_CHARGE) {
-			adc_data.raw.i_bat = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
-		}
-	}
-
-	//adc_data.v_in_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
-	//adc_data.i_bat_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2);
-	//adc_data.v_out_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_3);
-	////adc_data.v_in_mV   = (adc_data.v_in_raw   - adc_data.v_in_offset  ) * ADC_VIN_GAIN_MV;
-	//adc_data.i_bat_mA  = (adc_data.i_bat_raw  - adc_data.i_bat_offset ) * ADC_IBAT_GAIN_MA;
-	//adc_data.v_out_mV  = (adc_data.v_out_raw  - adc_data.v_out_offset ) * ADC_VOUT_GAIN_MV;
-	//adc_data.converted.v_term_ext_mv = adc_data.ext_adc_data[0] * ADC_EXT_VTERM_GAIN_MV;
-	//adc_data.v_term_ext_mv_filt = 0.9f*adc_data.v_term_ext_mv_filt + 0.1f*adc_data.v_term_ext_mv;
-	//adc_data.converted.i_out_ext_mA  = adc_data.ext_adc_data[1] * ADC_EXT_IOUT_GAIN_mA;
-
-	//adc_data.reference_poti = tim_encoder_read();
-	//ctrl_main_ctrl_60v(0, adc_data.v_out_mV, adc_data.v_term_ext_mv, adc_data.i_bat_mA);
-}
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	if (hadc == &hadc1) {
