@@ -29,6 +29,7 @@ typedef struct
 
 	float P_action;
 	float I_action_out;
+	// double on purpose: float drops I steps < ~6e-8 (CC/HV limiter dead band).
 	double I_action;
 #ifndef NO_D_PART
 	float D_action;
