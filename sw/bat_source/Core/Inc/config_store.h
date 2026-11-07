@@ -2,10 +2,11 @@
  * config_store.h
  *
  * Persistent configuration store on the external EEPROM: a versioned
- * header, a hardware_data block (factory ID data) and a calibration
- * block (ADC channel trims + PID tuning gains), each with its own
- * CRC32. Structure and workflow ported from the night-cones project's
- * config_store (Andreas Horat), with the night-cones-specific fields
+ * header, a hardware_data block (factory ID data), a calibration
+ * block (ADC channel trims) and a controller gains block (PI gains),
+ * each with its own CRC32. Structure and workflow ported from the
+ * night-cones project's config_store (Andreas Horat), with the
+ * night-cones-specific fields
  * (cone_id, lightmode, network settings, ...) replaced by fields that
  * are actually meaningful for BatSource.
  */
@@ -15,10 +16,11 @@
 
 #include <stdint.h>
 
-#define CONFIG_STORE_PSVN 2 // Version of the persistent storage layout
+#define CONFIG_STORE_PSVN 3 // Version of the persistent storage layout
 
 #define CONFIG_STORE_HARDWARE_DATA_SIZE 16
-#define CONFIG_STORE_CALIBRATION_SIZE   192
+#define CONFIG_STORE_CALIBRATION_SIZE   96  // append-only
+#define CONFIG_STORE_GAINS_SIZE         96
 #define ENABLE_CALIBRATION
 
 /**
@@ -35,11 +37,9 @@ typedef struct
 /**
  * Field calibration data: ADC channel offset/gain trims for the
  * channels with known calibration needs (V_TERM, I_OUT, I_ISO - see
- * architecture.md known issue #5), and the PID tuning gains that are
- * otherwise hardcoded placeholders in ctrl_param.h (known issue #7).
- * Units and scaling match what's fed directly into adc_data and
- * ctrl_PID_controller_init()/PID_controller_t, so no re-scaling is
- * needed when loading or saving.
+ * architecture.md known issue #5). Units and scaling match what's fed
+ * directly into adc_data, so no re-scaling is needed when loading or
+ * saving. Kept across PSVN upgrades: only append new fields at the end.
  *
  * v_sens/v_out/v_hv were added alongside v_term/i_out/i_iso once the
  * calibration.c module made all six channels (V_TERM, V_SENS, V_OUT,
@@ -76,23 +76,6 @@ typedef struct
 	int32_t  i_iso_ext_offset;
 	float    i_iso_ext_gain;
 
-	float voltage_buck_p;
-	float voltage_buck_i;
-	float voltage_boost_p;
-	float voltage_boost_i;
-	float current_p;
-	float current_i;
-	float boost_iout_limit_p;
-	float boost_iout_limit_i;
-	float charge_current_p;
-	float charge_current_i;
-	float charge_voltage_p;  // unused (CV gains RAM-only, see ctrl_main.c)
-	float charge_voltage_i;  // unused
-	float voltage_hv_p;
-	float voltage_hv_i;
-	float flyback_current_p;
-	float flyback_current_i;
-
 	// Rated pack capacity in mA-seconds - see CTRL_PARAM_BATTERY_CAPACITY_mAs.
 	uint32_t battery_capacity_mAs;
 
@@ -112,6 +95,34 @@ typedef struct
 	float    v_in_gain;
 } calibration_t;
 
+/**
+ * Controller P/I gains, one pair per ctrl_pid_table row (same order).
+ * Reset to the table defaults on every PSVN change.
+ */
+typedef struct
+{
+	float voltage_buck_p;
+	float voltage_buck_i;
+	float voltage_boost_p;
+	float voltage_boost_i;
+	float current_p;
+	float current_i;
+	float boost_iout_limit_p;
+	float boost_iout_limit_i;
+	float charge_current_p;
+	float charge_current_i;
+	float charge_voltage_p;
+	float charge_voltage_i;
+	float voltage_hv_p;
+	float voltage_hv_i;
+	float flyback_current_p;
+	float flyback_current_i;
+	float voltage_4sw_p;
+	float voltage_4sw_i;
+	float vlimit_10a_p;
+	float vlimit_10a_i;
+} gains_t;
+
 typedef struct
 {
 	uint8_t psvn;
@@ -124,10 +135,16 @@ typedef struct
 	calibration_t calibration;
 	uint8_t calibration_reserved[CONFIG_STORE_CALIBRATION_SIZE - sizeof(calibration_t)];
 	uint32_t calibration_crc;
+
+	gains_t gains;
+	uint8_t gains_reserved[CONFIG_STORE_GAINS_SIZE - sizeof(gains_t)];
+	uint32_t gains_crc;
 } config_store_t;
 
 _Static_assert(sizeof(hardware_data_t) <= CONFIG_STORE_HARDWARE_DATA_SIZE, "hardware_data_t too big for its reserved block");
 _Static_assert(sizeof(calibration_t) <= CONFIG_STORE_CALIBRATION_SIZE, "calibration_t too big for its reserved block");
+_Static_assert(sizeof(gains_t) <= CONFIG_STORE_GAINS_SIZE, "gains_t too big for its reserved block");
+_Static_assert(sizeof(config_store_t) <= 256, "config_store_t exceeds the EEPROM");
 
 extern config_store_t config_store;
 
@@ -147,7 +164,7 @@ void config_store_init(void);
 int8_t config_store_read(void);
 
 /**
- * Persists the calibration block (and its CRC) to the EEPROM. Only
+ * Persists the calibration and gains blocks (and their CRCs). Only
  * writes pages whose content actually changed.
  * @return 0 on success, negative error code otherwise.
  */

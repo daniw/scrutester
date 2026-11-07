@@ -35,17 +35,6 @@ PID_controller_t ctrl_pi_hv_iout_limit;
 PID_controller_t ctrl_pi_voltage_4sw;
 PID_controller_t ctrl_pi_10a_vlimit;
 
-// RAM-only gains: a calibration_t field would need a PSVN bump, which makes
-// config_store_read() overwrite the stored calibration with defaults.
-static float ctrl_pi_voltage_4sw_p;
-static float ctrl_pi_voltage_4sw_i;
-// Also RAM-only: the CV loop's units changed (A/V at 50 Hz), the old
-// calibration_t charge_voltage_p/i fields are unused.
-static float ctrl_pi_charge_cv_p;
-static float ctrl_pi_charge_cv_i;
-static float ctrl_pi_10a_vlimit_p;
-static float ctrl_pi_10a_vlimit_i;
-
 _Static_assert(CTRL_PARAM_CHARGE_CV_RATE_HZ * STATEMACHINE_STEP_PERIOD_mS == 1000,
 		"CV loop runs at the statemachine tick");
 
@@ -69,49 +58,49 @@ const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
 // CLI setPI IDs are positional (row index), see `help setPI`.
 const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = { {
-		&ctrl_pi_voltage_buck, &config_store.calibration.voltage_buck_p,
-		&config_store.calibration.voltage_buck_i,
+		&ctrl_pi_voltage_buck, &config_store.gains.voltage_buck_p,
+		&config_store.gains.voltage_buck_i,
 		CTRL_PARAM_VOLTAGE_BUCK_P, CTRL_PARAM_VOLTAGE_BUCK_I,
 		CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH,
 		CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_LOW, "Buck", CTRL_FREQ }, {
-		&ctrl_pi_voltage_boost, &config_store.calibration.voltage_boost_p,
-		&config_store.calibration.voltage_boost_i,
+		&ctrl_pi_voltage_boost, &config_store.gains.voltage_boost_p,
+		&config_store.gains.voltage_boost_i,
 		CTRL_PARAM_VOLTAGE_BOOST_P, CTRL_PARAM_VOLTAGE_BOOST_I,
 		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH,
 		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, "Boost", CTRL_FREQ }, { &ctrl_pi_current,
-		&config_store.calibration.current_p,
-		&config_store.calibration.current_i,
+		&config_store.gains.current_p,
+		&config_store.gains.current_i,
 		CTRL_PARAM_CURRENT_P, CTRL_PARAM_CURRENT_I,
 		CTRL_PARAM_CURRENT_DUTY_SAT_HIGH, CTRL_PARAM_CURRENT_DUTY_SAT_LOW,
 		"Current", CTRL_FREQ }, { &ctrl_pi_boost_iout_limit,
-		&config_store.calibration.boost_iout_limit_p,
-		&config_store.calibration.boost_iout_limit_i,
+		&config_store.gains.boost_iout_limit_p,
+		&config_store.gains.boost_iout_limit_i,
 		CTRL_PARAM_BOOST_IOUT_LIMIT_P, CTRL_PARAM_BOOST_IOUT_LIMIT_I,
 		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH,
 		CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW, "BoostIoutLimit", CTRL_FREQ }, {
-		&ctrl_pi_charge_current, &config_store.calibration.charge_current_p,
-		&config_store.calibration.charge_current_i,
+		&ctrl_pi_charge_current, &config_store.gains.charge_current_p,
+		&config_store.gains.charge_current_i,
 		CTRL_PARAM_CHARGE_CURRENT_P, CTRL_PARAM_CHARGE_CURRENT_I,
 		CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH,
 		CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW, "ChargeCurrent", CTRL_FREQ }, {
-		&ctrl_pi_charge_voltage, &ctrl_pi_charge_cv_p, &ctrl_pi_charge_cv_i,
+		&ctrl_pi_charge_voltage, &config_store.gains.charge_voltage_p, &config_store.gains.charge_voltage_i,
 		CTRL_PARAM_CHARGE_VOLTAGE_P, CTRL_PARAM_CHARGE_VOLTAGE_I,
 		CTRL_PARAM_CHARGE_CURRENT_mA / 1000.0F, 0.0F, "ChargeVoltage", CTRL_PARAM_CHARGE_CV_RATE_HZ }, {
-		&ctrl_pi_voltage_hv, &config_store.calibration.voltage_hv_p,
-		&config_store.calibration.voltage_hv_i,
+		&ctrl_pi_voltage_hv, &config_store.gains.voltage_hv_p,
+		&config_store.gains.voltage_hv_i,
 		CTRL_PARAM_HV_VOLTAGE_P, CTRL_PARAM_HV_VOLTAGE_I,
 		CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW,
 		"HVVoltage", CTRL_FREQ }, { &ctrl_pi_hv_iout_limit,
-		&config_store.calibration.flyback_current_p,
-		&config_store.calibration.flyback_current_i,
+		&config_store.gains.flyback_current_p,
+		&config_store.gains.flyback_current_i,
 		CTRL_PARAM_HV_CURRENT_P, CTRL_PARAM_HV_CURRENT_I,
 		CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH, CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW,
-		"HVCurrent", CTRL_FREQ }, { &ctrl_pi_voltage_4sw, &ctrl_pi_voltage_4sw_p,
-		&ctrl_pi_voltage_4sw_i,
+		"HVCurrent", CTRL_FREQ }, { &ctrl_pi_voltage_4sw, &config_store.gains.voltage_4sw_p,
+		&config_store.gains.voltage_4sw_i,
 		CTRL_PARAM_VOLTAGE_4SW_P, CTRL_PARAM_VOLTAGE_4SW_I,
 		CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_HIGH,
 		CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW, "FourSwitch", CTRL_FREQ }, {
-		&ctrl_pi_10a_vlimit, &ctrl_pi_10a_vlimit_p, &ctrl_pi_10a_vlimit_i,
+		&ctrl_pi_10a_vlimit, &config_store.gains.vlimit_10a_p, &config_store.gains.vlimit_10a_i,
 		CTRL_PARAM_10A_VLIMIT_P, CTRL_PARAM_10A_VLIMIT_I,
 		CTRL_PARAM_CURRENT_DUTY_SAT_HIGH, CTRL_PARAM_CURRENT_DUTY_SAT_LOW,
 		"10AVoltLimit", CTRL_FREQ }, };

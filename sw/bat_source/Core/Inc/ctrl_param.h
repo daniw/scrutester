@@ -66,7 +66,7 @@
 #define CTRL_PARAM_VOUT_MIN_RUN_DUTY 0.04F
 #define CTRL_PARAM_VOUT_MAX_RUN_DUTY 0.95F
 
-// 4-switch region loop, bench-tuned at V_in ~13 V. RAM-only (not saved).
+// 4-switch region loop, bench-tuned at V_in ~13 V.
 #define CTRL_PARAM_VOLTAGE_4SW_P 0.005F
 #define CTRL_PARAM_VOLTAGE_4SW_I (3.0F/CTRL_FREQ)
 #define CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_HIGH 0.8F

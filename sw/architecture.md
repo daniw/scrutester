@@ -182,8 +182,8 @@ clamping anti-windup and configurable saturation limits. The D term is compiled
 out (`NO_D_PART`); all loops run as PI.
 
 **Tunable loops** — `ctrl_pid_table[]` in `ctrl_main.c` is the single source of
-truth. Each row carries the live controller, its EEPROM-backed calibration
-fields, its defaults and its duty saturation limits. `ctrl_main_init()`,
+truth. Each row carries the live controller, its EEPROM-backed gain fields
+(`config_store.gains`), its defaults and its duty saturation limits. `ctrl_main_init()`,
 `config_store_setDefaults()` and the CLI's `setPI` / `saveEEPROM` /
 `readEEPROM` all iterate it, so adding a loop means adding one row.
 
@@ -194,11 +194,11 @@ fields, its defaults and its duty saturation limits. `ctrl_main_init()`,
 | 2 | Current | 10 A output |
 | 3 | BoostIoutLimit | Output current limiter of the voltage source (all regions) |
 | 4 | ChargeCurrent | CC phase of charging |
-| 5 | ChargeVoltage | CV tail of charging: outer loop at 50 Hz, output = charge current (A/V). **RAM-only** like FourSwitch (the old `charge_voltage_p/i` EEPROM fields are unused) |
+| 5 | ChargeVoltage | CV tail of charging: outer loop at 50 Hz, output = charge current (A/V) |
 | 6 | HVVoltage | ISOMETER HV flyback voltage |
 | 7 | HVCurrent | ISOMETER leakage-current limiter |
-| 8 | FourSwitch | 4-switch region of the voltage source. **RAM-only**: no EEPROM field (see below), `setPI` works, `saveEEPROM` does not persist it |
-| 9 | 10AVoltLimit | 10 A compliance limiter: PI on the fast `v_out` (target `CTRL_PARAM_10A_COMPLIANCE_mV`, 5 V) caps the Current PI's duty, whose integrator then tracks the applied duty, so open terminals no longer wind it up to the 0.5 ceiling (~V_IN/2). Starts at its ceiling; gains = buck voltage loop, untuned. **RAM-only** |
+| 8 | FourSwitch | 4-switch region of the voltage source |
+| 9 | 10AVoltLimit | 10 A compliance limiter: PI on the fast `v_out` (target `CTRL_PARAM_10A_COMPLIANCE_mV`, 5 V) caps the Current PI's duty, whose integrator then tracks the applied duty, so open terminals no longer wind it up to the 0.5 ceiling (~V_IN/2). Starts at its ceiling; gains = buck voltage loop, untuned. |
 
 ### Full-range voltage source (60V_OUT)
 
@@ -227,10 +227,7 @@ waiting to be parked runs at 1 MHz with its duty limited to
 an idle block (before: one per change, and buck <-> boost could leave the
 new parked leg in burst idle). The 1 A limiter (fast internal `i_out`) caps the duty in every region; it
 starts at its ceiling and the voltage PI's integrator tracks the applied duty
-while it is capped (from 0 it caused a 5 V -> 9 V start-up overshoot). The
-FourSwitch gains are RAM-only: a `calibration_t` field would need a
-`CONFIG_STORE_PSVN` bump, which overwrites the stored calibration with
-defaults. Gains bench-tuned at V_in ~13 V, light load; limiter untested.
+while it is capped (from 0 it caused a 5 V -> 9 V start-up overshoot). Gains bench-tuned at V_in ~13 V, light load; limiter untested.
 
 **Parked-leg sync and pulse skipping** (60V, 10A and RESISTANCE_1A/1mA modes,
 `VOUT_SYNC_BURST_DISABLE` in `debug.h` removes it). The parked leg's 1.5 % low pulse used
@@ -537,14 +534,18 @@ command). Data logging not yet wired up.
 ## 5. Configuration, Calibration and Protection
 
 ### Persistent config (`config_store.c`, `eeprom.c`)
-Versioned layout on the 256-byte I2C EEPROM: an 8-byte header (`psvn`), a
-16-byte `hardware_data` block (serial number) and a 192-byte `calibration`
-block, each with its own CRC32. A block is adopted only if its CRC checks out,
+Versioned layout (PSVN 3) on the 256-byte I2C EEPROM: an 8-byte header
+(`psvn`), a 16-byte `hardware_data` block (serial number), a 96-byte
+`calibration` block (ADC offset/gain trims, pack capacity, 1 A reference DAC
+code; append-only) and a 96-byte `gains` block (P/I of every `ctrl_pid_table`
+row), each with its own CRC32. A block is adopted only if its CRC checks out,
 so a corrupt block falls back to defaults rather than leaving garbage in a live
-calibration value. Loaded at boot before `adc_init()` and `ctrl_main_init()`.
+value. Loaded at boot before `adc_init()` and `ctrl_main_init()`.
 
-Holds ADC offset/gain trims for six internal channels plus their external-ADC
-counterparts, all 16 PID gains, pack capacity, and the 1 A reference DAC code.
+On a PSVN upgrade the calibration (and serial number) is kept and all gains
+are reset to the table defaults; PSVN 2 (gains mixed into the calibration
+block) is converted field by field. A newer PSVN (downgrade) uses defaults and
+leaves the EEPROM untouched. Host test: `tools/test_config_store.sh`.
 
 ### Calibration (`calibration.c`)
 Six calibratable channels (`V_TERM`, `V_SENS`, `V_OUT`, `V_HV`, `I_OUT`,

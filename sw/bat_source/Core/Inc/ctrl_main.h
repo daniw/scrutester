@@ -56,7 +56,7 @@ typedef struct{
 
 /**
  * One entry per tunable PID control loop: the live controller instance, the
- * EEPROM-backed calibration fields it's saved to/loaded from, its default
+ * EEPROM-backed gain fields it's saved to/loaded from, its default
  * gains and (fixed, non-tunable) duty saturation limits, and a CLI-facing
  * name. ctrl_main_init() and the CLI's setPI/saveEEPROM/readEEPROM commands
  * all iterate ctrl_pid_table instead of hand-listing each controller, so
