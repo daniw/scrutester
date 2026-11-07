@@ -1,52 +1,96 @@
 \section{Requirements}
 
 \subsection{Functional requirements}
-\begin{table}[h!]
     \begin{ReqTable}
     \ReqHeader
     \ReqItem{R:Battery}{The tester is internally powered. The internal energy source can be recharged. }
-    \ReqItem{R:Charger}{The device includes a charger. }
-    \ReqItem{R:Charger_enclosure}{The device can be charged inside the storage enclosure. }
+    \ReqItem{R:Charger}{The device is charged via USB-C with an external charger (min. \qty{15}{\volt}, \qty{2}{\ampere}). }
+    % \ReqItem{R:Charger_enclosure}{The device can be charged inside the storage enclosure. }
     \ReqItem{R:Bat_Status}{An indicator provides information about the state of charge. }
     \ReqItem{R:Bat_Replace}{The internal energy source can be easily replaced using basic tools. Screwdrivers and pliers are considered basic tools. A soldering iron is considered a special tool, therefore no soldering must be required to replace the energy source. }
-    \ReqItemMM{R:Chargingtime}{Charging time: }{}{$\qty{4}{\hour}$}
+    \ReqItemMM{R:Chargingtime}{Charging time: }{}{$\qty{4.5}{\hour}$}
     \ReqItemMM{R:Endurance}{Runtime at maximum power output: }{$\qty{30}{\min}$}{}
-    \ReqItem{R:60V}{Output mode to provide 60V}
+    \ReqItem{R:AutoOff}{The device switches off automatically after \qty{10}{\minute} without operation and after charging is finished. }
+    
+    \ReqItem{R:60V}{One Output mode must provide a DC Voltage}
+    \ReqItemMM{R:60V_Range}{Output voltage range}{\qty{0}{\volt}}{\qty{63}{\volt}}
     \ReqItemMM{R:60V_Tolerance}{Allowed deviation from target voltage in voltage mode: }{}{$\qty{1}{\percent}$}
     \ReqItemMM{R:60V_Current}{Output current in voltage mode: }{$\qty{1}{\ampere}$}{}
-    \ReqItem{R:BSPD}{Output mode to provide an adjustable current}
+    \ReqItemMM{R:60V_Bandwidth}{Output Voltage Bandwidth: }{\qty{1}{\kilo\hertz}}{}
+    
+    \ReqItem{R:BSPD}{One output mode to provide an adjustable current}
     \ReqItemMM{R:BSPD_Current}{Maximum output current in current mode}{$\qty{10}{\ampere}$}{}
     \ReqItemMM{R:BSPD_Tolerance}{Allowed deviation from target output current in current mode: }{}{$\qty{1}{\percent}$}
     \ReqItemMM{R:BSPD_Voltage}{Maximum output voltage in current mode}{$\qty{5}{\volt}$}{}
+    \ReqItemMM{R:BSPD_Bandwidth}{Output Current Bandwidth: }{\qty{1}{\kilo\hertz}}{}
+
+    \ReqItem{R:mOhm}{One mode must be able to measure resistance in 4-wire mode}
+    \ReqItemMM{R:mOhm_Resolution}{4-Wire Resistance Measurement resolution}{}{\qty{1}{\milli\ohm}}
+    \ReqItemMM{R:mOhm_Range}{4-Wire Resistance Measurement Range}{\qty{0}{\milli\ohm}}{\qty{1000}{\milli\ohm}}
+    \ReqItemMM{R:mOhm_Samplingrate}{4-Wire Resistance Measurement Update Rate}{\qty{5}{S\per\second}}{}
+    \ReqItemMM{R:mOhm_Current}{4-Wire Resistance Measurement Current}{\qty{0.1}{\ampere}}{\qty{1}{\ampere}}
+    \ReqItem{R:mOhm_OL}{The device must detect open leads (Source ports) and unconnected sense pins.}
+    
+
+    \ReqItem{R:Ohm}{One mode must be able to measure resistance in 2-wire mode}
+    \ReqItemMM{R:Ohm_Resolution}{2-Wire Resistance Measurement resolution}{}{\qty{0.1}{\ohm}}
+    \ReqItemMM{R:Ohm_Range}{2-Wire Resistance Measurement Range}{\qty{0}{\ohm}}{\qty{10}{\mega\ohm}}
+    \ReqItemMM{R:Ohm_Samplingrate}{2-Wire Resistance Measurement Update Rate}{\qty{5}{S\per\second}}{}
+    \ReqItemMM{R:Ohm_Voltage}{2-Wire Resistance Measurement Voltage}{}{\qty{5}{\volt}}
+
+    \ReqItem{R:MegaOhm}{One mode must be able to measure isolation resistance at high voltage.}
+    \ReqItemMM{R:MegaOhm_Resolution}{Isolation tester resolution}{}{\qty{10}{\kilo\ohm}}
+    \ReqItemMM{R:MegaOhm_Range}{Isolation tester measurement Range}{\qty{400}{\kilo\ohm}}{\qty{10}{\mega\ohm}}
+    \ReqItemMM{R:MegaOhm_Samplingrate}{Isolation tester measurement Update Rate}{\qty{5}{S\per\second}}{}
+    \ReqItemMM{R:MegaOhm_Voltage}{Isolation tester measurement voltages }{\qty{125}{\volt}}{\qty{1000}{\volt}}
+
+    \ReqItem{R:Voltmeter}{One mode must be able to measure voltage AC and DC.}
+    \ReqItemMM{R:Voltmeter_Resolution}{Voltmeter resolution}{}{\qty{10}{\milli\volt}}
+    \ReqItemMM{R:Voltmeter_Range}{Voltmeter measurement Range}{\qty{1}{\volt}}{\qty{1000}{\volt}}
+    \ReqItemMM{R:Voltmeter_Samplingrate}{Voltmeter measurement Update Rate}{\qty{5}{S\per\second}}{}
+    \ReqItemMM{R:Voltmeter_Inputimpedance}{In Voltmeter mode, the input impedance shall be }{\qty{10}{\mega\ohm}}{}
+
+    \ReqItem{R:Ampmeter}{One mode must be able to measure DC current. The current input is fused.}
+    \ReqItemMM{R:Ampmeter_Range}{Ampmeter measurement range}{}{\qty{\pm10}{\ampere}}
+    \ReqItemMM{R:Ampmeter_Voltage}{Maximum voltage in the measured circuit}{}{\qty{1000}{\volt} DC}
+
+
     \ReqItem{R:Output}{The output terminals must be shrouded \qty{4}{\milli\meter} jacks. }
+    \ReqItemMM{R:Testleads}{Length of the test leads}{}{\qty{1.4}{\meter}}
     \ReqItem{R:Calibration}{A means to calibrate the output values is provided. }
     \ReqItemMM{R:Temp_Operation}{Operating temperature}{\qty{0}{\celsius}}{\qty{50}{\celsius}}
     \ReqItemMM{R:Temp_Storage}{Storage temperature}{\qty{0}{\celsius}}{\qty{50}{\celsius}}
+
+    \ReqItem{R:Certification_EMC}{The device shall fulfill EMC Regulation IEC 61326-1}
+    \ReqItem{R:Certification_Safety}{The device shall fulfill Safety Regulation IEC 61010-1}
+    \ReqItem{R:Certification_Transport}{The battery pack/device shall fulfill UN 38.3}
+    \ReqItem{R:Certification_BatterySafety}{The battery pack/device shall fulfill IEC 62133-2}
+
+
+
+
     \end{ReqTable}
-\end{table}
 \todo[inline]{Define operational temperature range.}
 \todo[inline]{Define storage temperature range.}
+\todo[inline]{Assess requirements in Hardware to measure resistance. Eg. Switch of shunt at high resistances}
 
 %\clearpage
 
 \subsection{Safety requirements}
-\begin{table}[h!]
     \begin{ReqTable}
     \ReqHeader
     \ReqItem{R:Iso}{The device must provide galvanic isolation between the charging port and the output terminals. }
-    \ReqItem{R:Overvolt}{The device must not be permanently damaged when connected to \qty{600}{\volt}. }
-    \ReqItemMM{R:Overvolt_CAT}{Overvoltage category}{CAT III \qty{600}{\volt}}{}
+    \ReqItem{R:Overvolt}{The device must not be permanently damaged when connected to \qty{1000}{\volt} DC. }
+    \ReqItemMM{R:Overvolt_CAT}{Overvoltage category}{CAT IV \qty{1000}{\volt} DC}{}
     \ReqItem{R:Short}{A short circuit of the battery or the charging port must be prevented. }
     \ReqItem{R:Overcurrent}{An overcurrent protection for the battery must be included. }
     \ReqItem{R:BMS}{The battery must be protected against deep-discharge, over-charge, overcurrent and over-temperature. }
     \ReqItemMM{R:Rain}{The device must be able to operate in rain. The enclosure fulfills an ingress protection of at least: }{IP54}{}
     \end{ReqTable}
-\end{table}
 
 \clearpage
 
 \subsection{Optional requirements}
-\begin{table}[h!]
     \begin{ReqTable}
     \ReqHeader
     \ReqItem{R:Disp}{Output voltage and / or current are displayed}
@@ -54,8 +98,5 @@
     \ReqItem{R:Disp_dark}{Display is readable in low-light conditions}
     \ReqItem{R:Res}{A constant current with low ripple is provided to measure low-value resistance. }
     \ReqItemMM{R:Res_current}{Measurement current range}{\qty{0}{\ampere}}{\qty{1}{\ampere}}
-    \ReqItem{R:Res_kelvin}{Additional measurement inputs allow the measurement of resistor values using the 4-wire connection method (Kelving connection). }
-    \ReqItem{R:Iso}{Insulation resistance measurement mode}
-    \ReqItemMM{R:Iso_voltage}{Insulation resistance measurement test voltage}{\qty{50}{\volt}}{\qty{500}{\volt}}
+    \ReqItem{R:Res_kelvin}{Additional measurement inputs allow the measurement of resistor values using the 4-wire connection method (Kelvin connection). }
     \end{ReqTable}
-\end{table}
