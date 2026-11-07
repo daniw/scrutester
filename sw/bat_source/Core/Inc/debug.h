@@ -14,6 +14,9 @@
 // CHARGE bench output (periodic/peak printouts) and chargeStep/chargeNext.
 //#define CHARGE_DEBUG
 
+// External ADC (ADS131M04) boot self-test values per channel on the CLI.
+//#define EXT_ADC_DEBUG
+
 // EMI test mode (both converters switching, live terminals). Icon store:
 // flash_icon_seed.py --emi for an EMI_DEBUG build.
 #define EMI_DEBUG

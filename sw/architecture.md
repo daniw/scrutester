@@ -575,6 +575,12 @@ BMS data older than `BQ76905_STALE_ms` (3 s, no complete async read cycle) is
 `BMS_STALE`: ERROR in CHARGE (stops the charge), WARNING elsewhere; it also
 blocks the CHARGE auto-entry. A read cycle stuck that long is restarted.
 
+At boot `ADS131M04_selftest()` calibrates the external ADC's offsets on
+shorted inputs and checks every channel with the internal ±test signal (2/15
+of full scale, ±25 %, symmetric within 5 %). A failure is `EXT_ADC`: ERROR
+until power cycle, so no output mode runs, VOLTMETER/AMPMETER leave to idle
+and CHARGE is not auto-entered. `EXT_ADC_DEBUG` prints the values per channel.
+
 ---
 
 ## 6. Source Module Reference
@@ -613,7 +619,7 @@ blocks the CHARGE auto-entry. A read cycle stuck that long is restarted.
 | `driver_pca9554.c` | I/O expander for hardware ID reading |
 | `w25n01gv.c` | QSPI NAND flash driver |
 | `cli.c` | UART command parser (calibration / diagnostics / keyboard control); `setGPIO`/`setDAC`/`setDuty`/`enPWM`/`wdtTest` only with `CLI_DEBUG`, `state` goes via IDLE |
-| `debug.h` | All debug / bench flags (`CHARGE_DEBUG`, `EMI_DEBUG`, `CLI_DEBUG`, `CLI_ENABLED`, `VOUT_SYNC_BURST_DISABLE`, CLI flash test options) |
+| `debug.h` | All debug / bench flags (`CHARGE_DEBUG`, `EXT_ADC_DEBUG`, `EMI_DEBUG`, `CLI_DEBUG`, `CLI_ENABLED`, `VOUT_SYNC_BURST_DISABLE`, CLI flash test options) |
 | `aux_io_ctrl.c` | Relay and GPIO output helpers |
 
 ---

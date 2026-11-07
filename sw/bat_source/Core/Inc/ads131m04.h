@@ -183,6 +183,7 @@ typedef struct{
     uint8_t txBuffer[6*3];
     uint8_t rxBuffer[6*3];
     int32_t channelData[4];
+    uint8_t selftest_ok;   // boot self-test passed (ADS131M04_selftest())
 } ADS131M04_handle;
 
 

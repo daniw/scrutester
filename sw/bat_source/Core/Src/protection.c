@@ -12,8 +12,11 @@
 #include "protection_param.h"
 #include "adc.h"
 #include "bq76905.h"
+#include "ads131m04.h"
 #include "main.h"
 #include <stdlib.h>
+
+extern ADS131M04_handle ext_adc;
 
 extern ADC_MEAS_DATA adc_data;
 extern BQ76905_handle bms;
@@ -162,6 +165,10 @@ void protection_update(statemachine_modes_t mode) {
 
 	error_mask |= protection_check_limits(mode);
 
+	// Protection and limiters rely on the external ADC.
+	if (!ext_adc.selftest_ok)
+		error_mask |= (uint16_t) PROTECTION_SRC_EXT_ADC;
+
 	// CHARGE acts on the BMS data; elsewhere the BMS hardware protects alone.
 	if (BQ76905_data_stale(&bms)) {
 		if (mode == STATEMACHINE_MODE_CHARGE)
@@ -201,6 +208,7 @@ const char *protection_source_name(protection_source_t src) {
 	case PROTECTION_SRC_LIMIT_V:      return "LIMIT_V";
 	case PROTECTION_SRC_LIMIT_I:      return "LIMIT_I";
 	case PROTECTION_SRC_BMS_STALE:    return "BMS_STALE";
+	case PROTECTION_SRC_EXT_ADC:      return "EXT_ADC";
 	default:                          return "?";
 	}
 }
@@ -221,6 +229,8 @@ const char *protection_error_text(void) {
 		return "ERROR: Current limit exceeded";
 	if (e & PROTECTION_SRC_BMS_STALE)
 		return "ERROR: BMS communication";
+	if (e & PROTECTION_SRC_EXT_ADC)
+		return "ERROR: Ext. ADC self-test";
 	if (e)
 		return "ERROR: Temperature / NTC";
 	return NULL;

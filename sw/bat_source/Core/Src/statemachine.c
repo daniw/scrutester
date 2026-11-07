@@ -372,9 +372,10 @@ void statemachine_step(void) {
 		// ended by ESC/a fault and the charger has not been removed since
 		// (charge_lockout), or the BMS has not delivered a plausible stack
 		// voltage yet (it reads 0 before the first poll, which would pass the
-		// "below end voltage" test below).
-		uint8_t bms_fresh = !BQ76905_data_stale(&bms);
-		if (!charge_lockout && bms_fresh
+		// "below end voltage" test below), or the ext ADC self-test failed.
+		uint8_t entry_ok = !charge_lockout && !BQ76905_data_stale(&bms)
+				&& !(protection_get_error_mask() & PROTECTION_SRC_EXT_ADC);
+		if (entry_ok
 				&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)
 				&& !(bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB)
 				&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV
@@ -382,7 +383,7 @@ void statemachine_step(void) {
 				&& bms.VoltageRegisters.StackVoltage
 						< CTRL_PARAM_CHARGE_END_VOLTAGE_mV - CTRL_PARAM_CHARGE_RESTART_MARGIN_mV) {
 			statemachine_switchfromIdle(STATEMACHINE_MODE_CHARGE);
-		} else if (!charge_lockout && bms_fresh
+		} else if (entry_ok
 				&& (bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)
 				&& !(bms.SafetyRegisters.safetyStatusA & (uint8_t) ~BQ76905_SAFETY_STATUS_A_CUV)
 				&& !bms.SafetyRegisters.safetyStatusB

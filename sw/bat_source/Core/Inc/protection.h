@@ -21,6 +21,7 @@ typedef enum {
     PROTECTION_SRC_LIMIT_V      = (1u << 6), /* per-mode limit, latched */
     PROTECTION_SRC_LIMIT_I      = (1u << 7), /* per-mode limit, latched */
     PROTECTION_SRC_BMS_STALE    = (1u << 8), /* ERROR in CHARGE, else WARNING */
+    PROTECTION_SRC_EXT_ADC      = (1u << 9), /* boot self-test failed, until power cycle */
 } protection_source_t;
 
 void protection_init(void);

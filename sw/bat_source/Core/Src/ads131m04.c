@@ -1,6 +1,8 @@
 #include <ads131m04.h>
 #include "stdio.h"
 #include "string.h"
+#include <stdlib.h>
+#include "debug.h"
 #include "irq_priority.h"
 
 const int32_t adc_offset[4]={
@@ -60,75 +62,68 @@ void ADS131M04_init(ADS131M04_handle* handle, SPI_HandleTypeDef* _hspi, GPIO_Typ
 
 
 
+/* Internal test signal: 2/15 of full scale at any gain (datasheet 8.3.9). */
+#define SELFTEST_COUNTS ((int32_t) (2.0 / 15.0 * (1 << 23)))
+#define SELFTEST_TOL    (SELFTEST_COUNTS / 4)  // magnitude window
+#define SELFTEST_SYM    (SELFTEST_COUNTS / 20) // |pos + neg|
+
+/**
+ * Averages n samples of all channels with the given input mux.
+ * @param mux ADS131M04_FLAG_CH0_CFG_MUX_*.
+ * @param avg Result per channel.
+ * @param n Number of samples (~4 ms each).
+ */
+static void selftest_average(ADS131M04_handle *handle, uint16_t mux,
+		int32_t avg[4], int n) {
+	int32_t sum[4] = { 0 };
+	for (int ch = 0; ch < 4; ch++)
+		ADS131M04_setChannelConfig(handle, ch, mux);
+	HAL_Delay(20); // filter settling
+	for (int i = 0; i < n; i++) {
+		ADS131M04_readData(handle);
+		HAL_Delay(5);
+		for (int ch = 0; ch < 4; ch++)
+			sum[ch] += handle->channelData[ch];
+	}
+	for (int ch = 0; ch < 4; ch++)
+		avg[ch] = sum[ch] / n;
+}
+
+/**
+ * Offset calibration on shorted inputs, then a check of every channel with
+ * the internal positive/negative test signals. Sets handle->selftest_ok.
+ */
 void ADS131M04_selftest(ADS131M04_handle *handle) {
-	uint32_t buffer[4];
-	memset(buffer, 0, sizeof(buffer));
-	// Measure short circuit
-	for (int i = 0; i < 4; i++)
-		ADS131M04_setChannelConfig(handle, i, ADS131M04_FLAG_CH0_CFG_MUX_SHOR);
-	HAL_Delay(100);
-	for (int i = 0; i < 16; i++) {
-		ADS131M04_readData(handle);
-		HAL_Delay(100);
+	int32_t zero[4], pos[4], neg[4];
 
-		for (int ch = 0; ch < 4; ch++)
-			buffer[ch] += handle->channelData[ch];
-		/*printf("Got Zero Voltages \t%i, \t%i, \t%i, \t%i\n",
-				handle->channelData[0],
-				handle->channelData[1],
-				handle->channelData[2],
-				handle->channelData[3]);*/
-	}
+	selftest_average(handle, ADS131M04_FLAG_CH0_CFG_MUX_SHOR, zero, 16);
+	for (int ch = 0; ch < 4; ch++)
+		ADS131M04_setOffsetCalibration(handle, ch,
+				(uint32_t) (zero[ch] + adc_offset[ch]));
+	selftest_average(handle, ADS131M04_FLAG_CH0_CFG_MUX_TPOS, pos, 4);
+	selftest_average(handle, ADS131M04_FLAG_CH0_CFG_MUX_TNEG, neg, 4);
 
-	// Measure Positive test voltage
+	handle->selftest_ok = 1;
 	for (int ch = 0; ch < 4; ch++) {
-		ADS131M04_setOffsetCalibration(handle, ch, (buffer[ch] >> 4)+adc_offset[ch]);
-		ADS131M04_setChannelConfig(handle, ch, ADS131M04_FLAG_CH0_CFG_MUX_TPOS);
+		uint8_t ok = labs(pos[ch] - SELFTEST_COUNTS) < SELFTEST_TOL
+				&& labs(neg[ch] + SELFTEST_COUNTS) < SELFTEST_TOL
+				&& labs(pos[ch] + neg[ch]) < SELFTEST_SYM;
+		if (!ok)
+			handle->selftest_ok = 0;
+#ifdef EXT_ADC_DEBUG
+		printf("ExtADC ch%d: zero %ld pos %ld neg %ld (expect +/-%ld) %s\r\n",
+				ch, (long) zero[ch], (long) pos[ch], (long) neg[ch],
+				(long) SELFTEST_COUNTS, ok ? "OK" : "FAIL");
+#endif
 	}
+	if (!handle->selftest_ok)
+		printf("ExtADC self-test FAILED, outputs blocked\r\n");
 
-	HAL_Delay(100);
-	for (int i = 0; i < 16; i++) {
-		ADS131M04_readData(handle);
-		HAL_Delay(100);
-
-		for (int ch = 0; ch < 4; ch++)
-			buffer[ch] += handle->channelData[ch];
-		/*printf("Got Pos Test Voltages \t%i, \t%i, \t%i, \t%i\n",
-				(handle->channelData[0] * 1200) >> 23,
-				(handle->channelData[1] * 1200) >> 23,
-				(handle->channelData[2] * 1200) >> 23,
-				(handle->channelData[3] * 1200) >> 23);*/
-	}
-	// Measure negative test voltage
-	for (int ch = 0; ch < 4; ch++) {
-		ADS131M04_setChannelConfig(handle, ch, ADS131M04_FLAG_CH0_CFG_MUX_TNEG);
-	}
-
-	HAL_Delay(100);
-	for (int i = 0; i < 16; i++) {
-		ADS131M04_readData(handle);
-		HAL_Delay(100);
-
-		for (int ch = 0; ch < 4; ch++)
-			buffer[ch] += handle->channelData[ch];
-		/*printf("Got Neg Test Voltages \t%i, \t%i, \t%i, \t%i\n",
-				(handle->channelData[0] * 1200) >> 23,
-				(handle->channelData[1] * 1200) >> 23,
-				(handle->channelData[2] * 1200) >> 23,
-				(handle->channelData[3] * 1200) >> 23);*/
-	}
-	// Switch back to normal
-	for (int i = 0; i < 4; i++)
-		ADS131M04_setChannelConfig(handle, i, ADS131M04_FLAG_CH0_CFG_MUX_DIFF);
-
-	HAL_Delay(100);
+	for (int ch = 0; ch < 4; ch++)
+		ADS131M04_setChannelConfig(handle, ch, ADS131M04_FLAG_CH0_CFG_MUX_DIFF);
+	HAL_Delay(20);
 	ADS131M04_readData(handle);
-	HAL_Delay(4);
-	/*printf("Got Measured Voltages \t%i, \t%i, \t%i, \t%i\n",
-			(handle->channelData[0] * 1200) >> 23,
-			(handle->channelData[1] * 1200) >> 23,
-			(handle->channelData[2] * 1200) >> 23,
-			(handle->channelData[3] * 1200) >> 23);*/
+	HAL_Delay(5);
 }
 
 void ADS131M04_configureSPI(ADS131M04_handle* handle) {
