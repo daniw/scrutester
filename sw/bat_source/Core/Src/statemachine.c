@@ -237,6 +237,8 @@ static void statemachine_step_calibration(void) {
 void statemachine_step(void) {
 	uint8_t temp;
 
+	i2c_check_timeout();
+
 	// Due to race conditions
 	adc_snapshot_converted();
 	adc_convert_data();

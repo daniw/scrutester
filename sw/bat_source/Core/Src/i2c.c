@@ -21,9 +21,11 @@
 #include "i2c.h"
 
 /* USER CODE BEGIN 0 */
+#include <stdio.h>
 #include "irq_priority.h"
 
 #define I2C_QUEUE_SIZE 64
+#define I2C_TIMEOUT_ms 50
 
 /**
  * Enum to define the I2C communication direction.
@@ -70,35 +72,39 @@ volatile WORK_I2C i2c_work;
 I2C_HandleTypeDef hi2c4;
 I2C_HandleTypeDef *i2c_handle = &hi2c4;
 volatile uint8_t i2c_exclusiveAccess;
+static volatile uint32_t i2c_start_tick;
 
 /**
- * Works through the I2C queue and sends an I2C message.
+ * Works through the I2C queue and sends an I2C message. A transfer that
+ * cannot be started is reported as error and the next entry is tried.
  */
 void i2c_Get(void)
 {
-	if (!i2c_exclusiveAccess && queue_NotEmpty(i2c_queue))
+	HAL_StatusTypeDef status;
+
+	while (!i2c_exclusiveAccess && queue_NotEmpty(i2c_queue))
 	{
 		i2c_work = WORK_I2C_RUN;
+		i2c_start_tick = HAL_GetTick();
 		switch (queue_Get(i2c_queue).methode)
 		{
 			case I2CM_READ:
-			HAL_I2C_Master_Receive_DMA(i2c_handle, queue_Get(i2c_queue).address,
+			status = HAL_I2C_Master_Receive_DMA(i2c_handle, queue_Get(i2c_queue).address,
 					queue_Get(i2c_queue).buf, queue_Get(i2c_queue).numbytes);
-			//printf("i2c.c: Read i2C Command\n\r");
 			break;
-			case I2CM_WRITE:
-			HAL_I2C_Master_Transmit_DMA(i2c_handle, queue_Get(i2c_queue).address,
+			default:
+			status = HAL_I2C_Master_Transmit_DMA(i2c_handle, queue_Get(i2c_queue).address,
 					queue_Get(i2c_queue).buf, queue_Get(i2c_queue).numbytes);
-			//queue_Pop(i2c_queue, I2C_QUEUE_SIZE);
-			//i2c_work = WORK_I2C_IDLE;
-			//printf("i2c.c: Write i2C Command\n\r");
 			break;
 		}
+		if (status == HAL_OK)
+		{
+			return;
+		}
+		event_Add(EVENT_IIC_ERROR, queue_Get(i2c_queue).error_callback, queue_Get(i2c_queue).argument);
+		queue_Pop(i2c_queue, I2C_QUEUE_SIZE);
 	}
-	else
-	{
-		i2c_work = WORK_I2C_IDLE;
-	}
+	i2c_work = WORK_I2C_IDLE;
 }
 
 /**
@@ -385,7 +391,10 @@ uint8_t i2c_WriteBlocking(uint8_t address, uint8_t* buf, uint32_t numbytes){
 
 	i2c_exclusiveAccess = 1;
 	while (i2c_work!=WORK_I2C_IDLE)
+	{
 		HAL_Delay(1);
+		i2c_check_timeout();
+	}
 	retval = HAL_I2C_Master_Transmit(i2c_handle, address, buf, numbytes, 100);
 	//printf("i2c.c: Error in write: %d\n", retval);
 	i2c_exclusiveAccess = 0;
@@ -405,7 +414,10 @@ uint8_t i2c_ReadBlocking(uint8_t address, uint8_t* buf, uint32_t numbytes){
 
 	i2c_exclusiveAccess = 1;
 	while (i2c_work!=WORK_I2C_IDLE)
+	{
 		HAL_Delay(1);
+		i2c_check_timeout();
+	}
 	retval = HAL_I2C_Master_Receive(i2c_handle, address, buf, numbytes, 100);
 	i2c_exclusiveAccess = 0;
 	i2c_Get();
@@ -424,11 +436,88 @@ uint8_t i2c_IsDeviceReadyBlocking(uint8_t address){
 
 	i2c_exclusiveAccess = 1;
 	while (i2c_work!=WORK_I2C_IDLE)
+	{
 		HAL_Delay(1);
+		i2c_check_timeout();
+	}
 	ready = (HAL_I2C_IsDeviceReady(i2c_handle, address, 1, 10) == HAL_OK);
 	i2c_exclusiveAccess = 0;
 	i2c_Get();
 	return ready;
+}
+
+/**
+ * Busy-wait of about 10 us (half SCL period of the bus recovery).
+ */
+static void i2c_delay_10us(void)
+{
+	for (volatile uint32_t i = 0; i < 400; i++);
+}
+
+/**
+ * Frees a bus held by a slave: 9 SCL clocks, then a STOP condition.
+ * The I2C peripheral must be de-initialized (pins released).
+ */
+static void i2c_bus_recovery(void)
+{
+	GPIO_InitTypeDef gpio = {0};
+
+	HAL_GPIO_WritePin(GPIOC, I2C_SCL_Pin | I2C_SDA_Pin, GPIO_PIN_SET);
+	gpio.Pin = I2C_SCL_Pin | I2C_SDA_Pin;
+	gpio.Mode = GPIO_MODE_OUTPUT_OD;
+	gpio.Pull = GPIO_NOPULL;
+	gpio.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOC, &gpio);
+	i2c_delay_10us();
+
+	for (uint8_t i = 0; i < 9; i++)
+	{
+		HAL_GPIO_WritePin(GPIOC, I2C_SCL_Pin, GPIO_PIN_RESET);
+		i2c_delay_10us();
+		HAL_GPIO_WritePin(GPIOC, I2C_SCL_Pin, GPIO_PIN_SET);
+		i2c_delay_10us();
+	}
+
+	// STOP: SDA rises while SCL is high
+	HAL_GPIO_WritePin(GPIOC, I2C_SDA_Pin, GPIO_PIN_RESET);
+	i2c_delay_10us();
+	HAL_GPIO_WritePin(GPIOC, I2C_SCL_Pin, GPIO_PIN_SET);
+	i2c_delay_10us();
+	HAL_GPIO_WritePin(GPIOC, I2C_SDA_Pin, GPIO_PIN_SET);
+	i2c_delay_10us();
+}
+
+/**
+ * Recovers from a transfer that did not finish within I2C_TIMEOUT_ms:
+ * resets the peripheral, frees the bus, reports the stuck entry through
+ * its error callback and continues with the queue. Call from main context.
+ */
+void i2c_check_timeout(void)
+{
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+
+	if (i2c_work != WORK_I2C_RUN || (HAL_GetTick() - i2c_start_tick) <= I2C_TIMEOUT_ms)
+	{
+		__set_PRIMASK(primask);
+		return;
+	}
+	// DeInit aborts the DMA, so no late callback can pop the entry again
+	HAL_I2C_DeInit(i2c_handle);
+	__set_PRIMASK(primask);
+
+	i2c_bus_recovery();
+	if (HAL_I2C_Init(i2c_handle) != HAL_OK)
+	{
+		error_Add(ERROR_IIC_INIT, 0);
+	}
+	printf("I2C timeout, bus recovered\r\n");
+
+	__disable_irq();
+	event_Add(EVENT_IIC_ERROR, queue_Get(i2c_queue).error_callback, queue_Get(i2c_queue).argument);
+	queue_Pop(i2c_queue, I2C_QUEUE_SIZE);
+	i2c_Get();
+	__set_PRIMASK(primask);
 }
 
 /* USER CODE END 1 */

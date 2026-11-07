@@ -480,7 +480,11 @@ never a half-built one.
 ### I2C (I2C4: SCL=PC6, SDA=PC7)
 All slaves share one bus. Transactions are queued and asynchronous (DMA +
 event-driven); the queue is guarded against the I2C ISR and drops with
-`ERROR_IIC_OVF` when full rather than blocking.
+`ERROR_IIC_OVF` when full rather than blocking. A transfer running longer than
+50 ms is aborted by `i2c_check_timeout()` (per state-machine tick and in the
+blocking helpers): DeInit, 9 SCL clocks + STOP, Init; the stuck entry is
+reported via its error callback and the queue is kept. A failed DMA start is
+reported as an error the same way.
 
 ### SPI
 - **SPI3** (PA10/11/12, CS=PA15): ADS131M04 external ADC. DRDY_N interrupt on PD2; Sync/Reset on PD0.

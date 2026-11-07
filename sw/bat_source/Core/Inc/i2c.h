@@ -52,6 +52,7 @@ void i2c_Write(uint8_t address, uint8_t* buf, uint32_t numbytes, void* callback,
 uint8_t i2c_WriteBlocking(uint8_t address, uint8_t* buf, uint32_t numbytes);
 uint8_t i2c_ReadBlocking(uint8_t address, uint8_t* buf, uint32_t numbytes);
 uint8_t i2c_IsDeviceReadyBlocking(uint8_t address);
+void i2c_check_timeout(void);
 
 /* USER CODE END Prototypes */
 
