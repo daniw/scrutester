@@ -28,6 +28,7 @@
 #include "hrtim.h"
 #include "ui_ctrl.h"
 #include "gpio.h"
+#include "irq_priority.h"
 #include "w25n01gv.h"
 #include "ctrl_param.h"
 #include "rtc.h"
@@ -282,12 +283,48 @@ void cli_init(UART_HandleTypeDef *huart1) {
     memset(history, 0, sizeof(history));
     history_count = 0;
     history_index = -1;
+	SET_BIT(cli_huart->Instance->CR1, USART_CR1_RXNEIE_RXFNEIE);
+	HAL_NVIC_SetPriority(USART2_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_EnableIRQ(USART2_IRQn);
 	printf("Serial Interface enabled V 1.0.\r\n");
 	printf(">>\r\n");
 #endif
 }
 
 #ifdef CLI_ENABLED
+
+// RX ring buffer filled by the UART IRQ: polled RX lost pasted input
+// whenever a main loop pass took longer than the 8-byte FIFO.
+#define CLI_RX_BUF_SIZE 256U
+static volatile uint8_t cli_rx_buf[CLI_RX_BUF_SIZE];
+static volatile uint16_t cli_rx_head; // written by the IRQ
+static volatile uint16_t cli_rx_tail; // written by cli_readline()
+
+void USART2_IRQHandler(void) {
+	USART_TypeDef *u = cli_huart->Instance;
+	while (u->ISR & USART_ISR_RXNE_RXFNE) {
+		uint8_t c = (uint8_t) u->RDR;
+		uint16_t next = (cli_rx_head + 1) % CLI_RX_BUF_SIZE;
+		if (next != cli_rx_tail) { // full: drop
+			cli_rx_buf[cli_rx_head] = c;
+			cli_rx_head = next;
+		}
+	}
+	u->ICR = USART_ICR_ORECF; // an overrun would retrigger the IRQ forever
+}
+
+/**
+ * Takes one received byte from the RX buffer.
+ * @param c Byte out.
+ * @return 1 if a byte was available.
+ */
+static int cli_getc(char *c) {
+	if (cli_rx_tail == cli_rx_head)
+		return 0;
+	*c = (char) cli_rx_buf[cli_rx_tail];
+	cli_rx_tail = (cli_rx_tail + 1) % CLI_RX_BUF_SIZE;
+	return 1;
+}
 
 int _write(int fd, char *ptr, int len) {
 	(void) fd;
@@ -326,7 +363,7 @@ bool cli_readline(void) {
     	input_cli_pulse_esc();
     }
 
-	while (HAL_UART_Receive(cli_huart, (uint8_t*) &c,1, 1) == 0) {
+	while (cli_getc(&c)) {
 		ret = true;
 
 		if (cli_control_active) {

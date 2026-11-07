@@ -228,41 +228,39 @@ int main(void)
 
 	  cli_loop();
 
-	  e = event_Get();
-	  switch(e.event){
-		case EVENT_VOID:
-		case EVENT_INIT:
-			break;
-		case EVENT_IIC_RX:
-		case EVENT_IIC_TX:
-			if(e.callback != 0)
-				e.callback(e.argument);
-			break;
-		case EVENT_IIC_ERROR:
-			if(e.callback != 0)
-				e.callback(e.argument);
-			break;
-		case EVENT_EEPROM_READ:
-			break;
-		case EVENT_EEPROM_TIMEOUT:
-			break;
-		case EVENT_SM_STEP:
-			statemachine_step();
-			break;
-		case EVENT_BMS_TIMER:
-			BQ76905_readAllValuesAsync(&bms);
-			break;
-		case EVENT_EVENT:
-		default:
-			break;
+	  // Drain the queue: one event per pass let events pile up behind the CLI.
+	  while ((e = event_Get()).event != EVENT_VOID) {
+		  switch(e.event){
+			case EVENT_VOID:
+			case EVENT_INIT:
+				break;
+			case EVENT_IIC_RX:
+			case EVENT_IIC_TX:
+				if(e.callback != 0)
+					e.callback(e.argument);
+				break;
+			case EVENT_IIC_ERROR:
+				if(e.callback != 0)
+					e.callback(e.argument);
+				break;
+			case EVENT_EEPROM_READ:
+				break;
+			case EVENT_EEPROM_TIMEOUT:
+				break;
+			case EVENT_SM_STEP:
+				statemachine_step();
+				break;
+			case EVENT_BMS_TIMER:
+				BQ76905_readAllValuesAsync(&bms);
+				break;
+			case EVENT_EVENT:
+			default:
+				break;
 
+		  }
 	  }
 
 
-	  /*
-	   * Loop delay
-	   */
-	  HAL_Delay(1);
 
 
   }

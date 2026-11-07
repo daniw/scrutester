@@ -67,8 +67,8 @@ Bare-metal, **event-driven**, single-threaded. No RTOS.
 │                                              │
 │   while(1) {                                 │
 │     cli_loop();                              │
-│     process_event(event_Get());              │
-│     HAL_Delay(1);                            │
+│     while ((e = event_Get()) != VOID)        │
+│       process_event(e);                      │
 │   }                                          │
 └──────────────────────────────────────────────┘
          │
@@ -506,8 +506,10 @@ event-driven); the queue is guarded against the I2C ISR and drops with
 period / compare value to `[0x60, 0xFFDF]`, the window the HRTIM imposes.
 
 ### UART (USART2: TX=PD5, RX=PD6)
-CLI debug interface — calibration, diagnostics, parameter read/write. Polled,
-no interrupt. Includes a keyboard-control mode (`control`) that drives the
+CLI debug interface — calibration, diagnostics, parameter read/write. RX by
+interrupt into a 256-byte ring buffer (`USART2_IRQHandler()` in `cli.c`,
+`IRQ_PRIO_AUX`), so pasted input survives long main loop passes; TX blocking
+(`printf`). Includes a keyboard-control mode (`control`) that drives the
 on-device encoder/buttons from the terminal, for UI work without the display
 board attached.
 
