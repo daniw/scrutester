@@ -153,7 +153,7 @@ int main(void)
    * DAC test setup
    */
   dac_setValueRef2(2048);
-  dac_sqwave_init(DAC_CHANNEL_2, config_store.calibration.i_1a_ref_dac_value);
+  dac_sqwave_init(DAC_CHANNEL_2, 0); // high value set by dac_sqwave_start()
 
   /*
    * CLI Setup
@@ -191,13 +191,7 @@ int main(void)
   bms.battery_capacity_mAs = config_store.calibration.battery_capacity_mAs;
 
 
-  /*
-   * PWM Init
-   */
-  hrtim_set_freq(HRTIM_CHANNEL_PRIM, 50000);
-  hrtim_set_freq(HRTIM_CHANNEL_SEK, 150000);
-  hrtim_set_duty(HRTIM_CHANNEL_PRIM, 0.985);
-
+  // HRTIM counters run, outputs stay disabled until a mode starts
   hrtim_start_timer();
   timer_start();
 
