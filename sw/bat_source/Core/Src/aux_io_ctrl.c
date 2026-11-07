@@ -88,18 +88,18 @@ void aux_io_ctrl_set_config(statemachine_modes_t mode, uint8_t keep_k1_closed){
 	uint8_t cfg = mode_table[mode].aux_io_mask;
 
 	HAL_GPIO_WritePin(OUT_SEL_ISO_GPIO_Port, OUT_SEL_ISO_Pin,
-			cfg & GPIO_MASK_OUT_SEL_ISO);
+			(cfg & GPIO_MASK_OUT_SEL_ISO) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(SHUNT_EN_GPIO_Port, SHUNT_EN_Pin,
-			cfg & GPIO_MASK_SHUNT_EN);
+			(cfg & GPIO_MASK_SHUNT_EN) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(SHUNT_ISO_EN_GPIO_Port, SHUNT_ISO_EN_Pin,
-			cfg & GPIO_MASK_SHUNT_ISO_EN);
+			(cfg & GPIO_MASK_SHUNT_ISO_EN) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(DISCHARGE_N_GPIO_Port, DISCHARGE_N_Pin,
-			cfg & GPIO_MASK_DISCHARGE);
+			(cfg & GPIO_MASK_DISCHARGE) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 
 	if(keep_k1_closed == 0){
 
 		HAL_GPIO_WritePin(OUT_SEL_HV_GPIO_Port, OUT_SEL_HV_Pin,
-				cfg & GPIO_MASK_OUT_SEL_HV);
+				(cfg & GPIO_MASK_OUT_SEL_HV) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 	} else{
 		HAL_GPIO_WritePin(OUT_SEL_HV_GPIO_Port, OUT_SEL_HV_Pin, GPIO_PIN_RESET);
 	}
