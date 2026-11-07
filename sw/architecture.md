@@ -484,7 +484,7 @@ reported via its error callback and the queue is kept. A failed DMA start is
 reported as an error the same way.
 
 ### SPI
-- **SPI3** (PA10/11/12, CS=PA15): ADS131M04 external ADC. DRDY_N interrupt on PD2; Sync/Reset on PD0.
+- **SPI3** (PA10/11/12, CS=PA15): ADS131M04 external ADC. DRDY_N interrupt on PD2; Sync/Reset on PD0. Every data frame is checked against its output CRC (CCITT); a bad frame keeps the old values and counts `crc_errors` (`printADC`).
 - **SPI4** (PE2–6): LCD display — real hardware SPI peripheral, DMA-driven for
   bulk transfers (`lcd.c`). Only SCK/MISO/MOSI (PE2/PE5/PE6) are the SPI4
   peripheral pins; PE3 (`DISPLAY.WR`, the D/C line) and PE4 (`DISPLAY.CS`) are

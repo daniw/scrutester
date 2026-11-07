@@ -25,12 +25,12 @@ void ADS131M04_configureSPI(ADS131M04_handle* handle);
 
 void ADS131M04_selftest(ADS131M04_handle* handle);
 
-void ADS131M04_init(ADS131M04_handle* handle, SPI_HandleTypeDef* _hspi, GPIO_TypeDef* _drdyPort, uint16_t _drdyPin,
+void ADS131M04_init(ADS131M04_handle* handle, SPI_HandleTypeDef* _hspi, GPIO_TypeDef* _csPort, uint16_t _csPin,
 		 GPIO_TypeDef* _rstPort, uint16_t _rstPin){
     uint16_t temp;
 	handle->hspi = _hspi;
-    handle->drdyPort=_drdyPort;
-    handle->drdyPin = _drdyPin;
+    handle->csPort=_csPort;
+    handle->csPin = _csPin;
     handle->rstPort=_rstPort;
     handle->rstPin = _rstPin;
 
@@ -148,9 +148,9 @@ void ADS131M04_sendCommand(ADS131M04_handle* handle, uint16_t cmd) {
 	handle->txBuffer[3] = 0 ;
 	handle->txBuffer[4] = 0;
 	handle->txBuffer[5] =  0x00; // Padding       ;
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 0);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 0);
     HAL_SPI_TransmitReceive(handle->hspi, handle->txBuffer, handle->rxBuffer, 3*6, HAL_MAX_DELAY);
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 1);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 1);
 }
 
 void ADS131M04_writeRegister(ADS131M04_handle* handle, uint8_t reg, uint16_t value) {
@@ -161,9 +161,9 @@ void ADS131M04_writeRegister(ADS131M04_handle* handle, uint8_t reg, uint16_t val
     handle->txBuffer[4] = (value & 0xFF)        ;
     handle->txBuffer[5] =  0x00; // Padding       ;
 
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 0);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 0);
     HAL_SPI_TransmitReceive(handle->hspi, handle->txBuffer, handle->rxBuffer, 3*6, HAL_MAX_DELAY);
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 1);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 1);
 }
 
 uint16_t ADS131M04_readRegister(ADS131M04_handle* handle, uint8_t reg) {
@@ -174,28 +174,45 @@ uint16_t ADS131M04_readRegister(ADS131M04_handle* handle, uint8_t reg) {
 	handle->txBuffer[3] = 0 ;
 	handle->txBuffer[4] = 0;
 	handle->txBuffer[5] =  0x00; // Padding       ;
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 0);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 0);
     HAL_SPI_TransmitReceive(handle->hspi, handle->txBuffer, handle->rxBuffer, 3*6, HAL_MAX_DELAY);
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 1);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 1);
     memset(handle->txBuffer, 0, sizeof(handle->txBuffer));
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 0);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 0);
     HAL_SPI_TransmitReceive(handle->hspi, handle->txBuffer, handle->rxBuffer, 3*6, HAL_MAX_DELAY);
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 1);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 1);
     return (handle->rxBuffer[0] << 8) | handle->rxBuffer[1];
 }
 
 void ADS131M04_readData(ADS131M04_handle* handle) {
-    for (int i = 0; i < 6; ++i) handle->txBuffer[i] = 0x00;
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 0);
-    HAL_SPI_TransmitReceive_DMA( handle->hspi, handle->txBuffer, handle->rxBuffer, 3*5);
+    for (int i = 0; i < 6*3; ++i) handle->txBuffer[i] = 0x00;
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 0);
+    HAL_SPI_TransmitReceive_DMA( handle->hspi, handle->txBuffer, handle->rxBuffer, 3*6);
 }
 
 void ADS131M04_handleDRDYInterrupt(ADS131M04_handle* handle) {
 	ADS131M04_readData(handle);
 }
 
+/**
+ * CRC-16/CCITT-FALSE (poly 0x1021, seed 0xFFFF, MSB first), datasheet 8.3.12.
+ */
+static uint16_t crc16_ccitt(const uint8_t *data, int len) {
+    uint16_t crc = 0xFFFF;
+    while (len--) {
+        crc ^= (uint16_t) *data++ << 8;
+        for (int i = 0; i < 8; i++)
+            crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
+    }
+    return crc;
+}
+
 void ADS131M04_handleSPIComplete(ADS131M04_handle* handle) {
-    HAL_GPIO_WritePin(handle->drdyPort, handle->drdyPin, 1);
+    HAL_GPIO_WritePin(handle->csPort, handle->csPin, 1);
+    if (crc16_ccitt(handle->rxBuffer, 5 * 3) != ((handle->rxBuffer[15] << 8) | handle->rxBuffer[16])) {
+        handle->crc_errors++;
+        return;
+    }
     for (int i = 1; i < 5; ++i) {
     	handle->channelData[i-1] = ( handle->rxBuffer[i * 3] << 16) | ( handle->rxBuffer[i * 3 + 1] << 8) | handle->rxBuffer[i * 3 + 2];
     	if(handle->channelData[i-1] & 0x800000)

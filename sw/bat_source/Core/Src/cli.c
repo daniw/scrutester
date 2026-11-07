@@ -1013,6 +1013,7 @@ void cmd_printADC() {
 		printf("  Ext I_Out  : %li : %li mA\r\n", adc_data.ext_adc_data[1], adc_data.converted.i_out_ext_mA_filt );
 		printf("  Ext V_Sns  : %li : %li uV\r\n", adc_data.ext_adc_data[2], adc_data.converted.v_sens_ext_uv_filt);
 		printf("  Ext I_Iso  : %li : %li uA\r\n", adc_data.ext_adc_data[3], adc_data.converted.i_iso_ext_uA_filt );
+		printf("  Ext CRC err: %lu\r\n", (unsigned long) ext_adc.crc_errors);
 
 		uint8_t region;
 		uint32_t changes;
