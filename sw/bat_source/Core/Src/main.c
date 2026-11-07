@@ -330,7 +330,8 @@ void SystemClock_Config(void)
  * External ADC finished SPI communication
  */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
-	ADS131M04_handleSPIComplete(&ext_adc);
+	if (hspi == ext_adc.hspi)
+		ADS131M04_handleSPIComplete(&ext_adc);
 }
 
 

@@ -232,7 +232,7 @@ const char *cmd_arg_str[] = {
 		"pADC {loops}",
 		"setDuty [channel: 0=PRIM,1=SEK,2=HV] [duty]",
 		"enPWM [channel: 0=PRIM,1=SEK,2=HV,3=all (disable only)] [0 disable | 1 enable]",
-		"setRef [value]",
+		"setRef [counts: 500 mV (60V/EMI), 100 mA (10A), ISOMETER index 0-3]",
 		"test_i2c",
 		"setLED [current, 0.1mA]",
 		"setBacklight [current, 0.1mA]",
@@ -729,7 +729,7 @@ void cmd_readEEPROM(void) {
 		printf("%-16s P / I: ", e->name);
 		cli_printFloat(*e->cal_p);
 		printf(" / ");
-		cli_printFloat(*e->cal_i);
+		cli_printFloat(*e->cal_i * e->rate_hz);
 		printf("\r\n");
 	}
 
@@ -932,12 +932,12 @@ void cmd_setDAC(void) {
 }
 
 void cmd_setRef(void){
-		uint8_t value;
 		CLI_CHECK_ARG_CNT(1);
 
 		char *end;
-		ctrl_main_handle.poti_reference = strtoul(arg_locs[1], &end, 10);
-		printf("Set Reference to: %d\r\n", ctrl_main_handle.poti_reference);
+		uint16_t counts = strtoul(arg_locs[1], &end, 10);
+		statemachine_set_setpoint(counts);
+		printf("Set reference to: %u counts\r\n", counts);
 }
 
 

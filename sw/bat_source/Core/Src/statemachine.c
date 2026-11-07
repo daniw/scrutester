@@ -141,6 +141,14 @@ void statemachine_init(void) {
 
 static input_encoder_clamp_t encoder_setpoint_clamp;
 
+/**
+ * @brief Set the live setpoint (encoder counts); clamped to the mode max on the next tick.
+ * @param count 500 mV (60V/EMI), 100 mA (10A), index (ISOMETER)
+ */
+void statemachine_set_setpoint(uint16_t count) {
+	input_encoder_clamp_reset(&encoder_setpoint_clamp, count);
+}
+
 static void statemachine_apply_encoder_setpoint(void) {
 	int32_t max = (statemachine_handle.current_mode == STATEMACHINE_MODE_ISOMETER) ? 3 : 127;
 #ifdef EMI_DEBUG

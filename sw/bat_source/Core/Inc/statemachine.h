@@ -61,6 +61,7 @@ void statemachine_step(void);
 
 void statemachine_switchfromIdle(statemachine_modes_t mode);
 void statemachine_switchtoIdle(void);
+void statemachine_set_setpoint(uint16_t count);
 
 #ifdef CHARGE_DEBUG
 /* CHARGE single-step bench test (charge_seq.h): with test mode on, CHARGE
