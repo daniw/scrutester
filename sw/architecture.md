@@ -586,12 +586,16 @@ IDLE and re-enters on its own if the supply is still present. AMPMETER and
 VOLTMETER (no controller) leave to IDLE with the banner on the idle screen;
 leaving AMPMETER also releases the SEK short.
 
-`OVP_N` low (OVP latch) is a lockout until power cycle
+`OVP_N` low (OVP latch) is a lockout until a user-confirmed reset
 (`statemachine_ovp_lockout()`): converters off, SEK half-bridge shorted
 (`hrtim_sek_force_short()`, `CONV_CTRL_EN` on, PRIM off), relays unchanged,
 all mode handling skipped. The short takes over from the crowbar thyristor if
 the internal converter caused the OVP and carries the current to blow the
-fuse if an external source did. `OVP_RESET` is not used.
+fuse if an external source did. The banner asks to remove the external
+voltage; an OK click (max 3 attempts) runs a tick-based reset: SEK short
+released (`hrtim_sek_restore()`), 2 ticks, 1 ms `OVP_RESET` pulse, 2 ticks,
+then `OVP_N` is read directly. High: back to IDLE. Low: lockout again,
+attempt counter +1. After 3 failures only a power cycle resets.
 
 BMS data older than `BQ76905_STALE_ms` (3 s, no complete async read cycle) is
 `BMS_STALE`: ERROR in CHARGE (stops the charge), WARNING elsewhere; it also
@@ -720,7 +724,7 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 **Hardware protection layers:**
 1. **BMS** (BQ76905) — over/under-voltage, over-current, over-temperature per cell; watchdog
 2. **OCP latch** — analog overcurrent detection via shunt; blocks gate driver via `OCP_N`
-3. **OVP crowbar** — shorts converter secondary when output voltage exceeds threshold; latch requires explicit `OVP_RESET`. Firmware adds the SEK half-bridge short until power cycle (§5); `OVP_RESET` is never driven
+3. **OVP crowbar** — shorts converter secondary when output voltage exceeds threshold; latch requires explicit `OVP_RESET`. Firmware adds the SEK half-bridge short and drives `OVP_RESET` after an OK confirmation, max 3 attempts (§5)
 4. **Active discharge** — MOSFET Q18 safely dissipates stored energy on shutdown
 5. **Firmware** — `protection.c` plus the interlock in `statemachine_step()` (see §5)
 
@@ -761,7 +765,7 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 | 18 | Fault handlers | Fixed (`207265f`): see §8, power stage off before the fault handlers spin. |
 | 19 | Ext ADC rate | The ADS131M04 runs at ~246 Hz (OSR 16256). The 60V 1 A limiter now uses the fast internal `i_out` (`78c6851`). The PI I-terms (60V regions, 10A, CHARGE CC, HV) still integrate the external value, which limits the usable I gains. Open. |
 | 20 | Protection interlock | Fixed (`f6d31be`): per-mode V/I limits; AMPMETER/VOLTMETER (no controller) leave to IDLE on any protection ERROR, which also releases the SEK short. Open: AMPMETER has no runtime `V_TERM` limit, only the 500 mV entry check. |
-| 21 | OVP | `84d906e`: OVP latch trip → SEK short until power cycle (§5). Open (todo A2): `OVP_RESET` is never driven, detection is polled (20 ms tick), the reset/recovery strategy is not agreed with HW. |
+| 21 | OVP | `84d906e`: OVP latch trip → SEK short (§5). `OVP_RESET` is pulsed after an OK confirmation (max 3 attempts, SEK short released first, `OVP_N` checked afterwards). Detection is still polled (20 ms tick). |
 | 22 | Ext ADC integrity | Fixed (`fc92dc0`, `f0b8dfd`): every frame checked against its output CRC (bad frame keeps the old values, counted); boot self-test latches `EXT_ADC` on failure. |
 | 23 | BMS data | Fixed (`de1c0a1`): BMS data older than 3 s is `BMS_STALE` (stops CHARGE, blocks its entry); poll 10 Hz. |
 | 24 | Timers / I2C | Fixed (`eecbf20`, `5c0bd41`): software timer loads above 16 bit report an error instead of truncating; I2C transfers time out after 50 ms with bus recovery. |

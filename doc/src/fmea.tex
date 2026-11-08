@@ -156,7 +156,7 @@ severity:
         {[HW+FW] Continuous crowbar activation after an \acs{OVP} trip}
         {The \ac{OVP} latch blocks the primary only; the hardware design relies on the microcontroller shorting the secondary half-bridge to relieve the crowbar thyristor (\secref{sec_lv_converter}).}
         {Without the short the thyristor carries the full fault current until it, the fuse or the \ac{BMS} gives up.}
-        {On \texttt{OVP\_N} low the firmware switches both converters off and shorts the secondary half-bridge until power cycle (\texttt{statemachine\_ovp\_lockout()}), with an on-screen error. Detection is polled every \qty{20}{\milli\second}; \texttt{OVP\_RESET} is never driven, so only a power cycle resets. Open: agree the reset strategy with the hardware design. \todo[inline]{rating proposed, check}}
+        {On \texttt{OVP\_N} low the firmware switches both converters off and shorts the secondary half-bridge until the user confirms a reset with OK (\texttt{statemachine\_ovp\_lockout()}), with an on-screen error. Detection is polled every \qty{20}{\milli\second}; \texttt{OVP\_RESET} is pulsed after the short is released, at most three attempts, then only a power cycle resets. \todo[inline]{rating proposed, check}}
     \FMEAItemModerate
         {[FW] Fault handler leaves the power stage switching}
         {\texttt{Error\_Handler()} and the HardFault/MemManage/BusFault/UsageFault/NMI handlers used to spin while the \ac{HRTIM} kept switching at the last duty.}

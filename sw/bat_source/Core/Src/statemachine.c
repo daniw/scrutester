@@ -72,8 +72,18 @@ static uint8_t mode_error_shown;
 static const char *idle_error_pending;
 // Banner text at the last protection trip (for the CHARGE exit).
 static const char *protection_trip_text;
-// OVP tripped: SEK shorted until power cycle.
-static uint8_t ovp_lockout;
+// OVP lockout: SEK shorted until a user-confirmed reset (see ovp_lockout()).
+typedef enum {
+	OVP_NONE,
+	OVP_LOCKED,      // waiting for OK
+	OVP_REL_WAIT,    // SEK released, waiting before the reset pulse
+	OVP_CHECK_WAIT   // pulse done, waiting before checking OVP_N
+} ovp_state_t;
+#define OVP_MAX_ATTEMPTS 3
+#define OVP_WAIT_TICKS 2
+static ovp_state_t ovp_state;
+static uint8_t ovp_attempts;
+static uint8_t ovp_wait;
 
 #define STATEMACHINE_BUTTON_RELEASED 0
 #define STATEMACHINE_BUTTON_CLICK 1
@@ -976,33 +986,93 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 }
 
 /**
- * @brief On an OVP latch trip: converters off, SEK half-bridge shorted until
- *        power cycle (supports the crowbar until the fuse blows on an
- *        external source). Relays stay as they are.
- * @return 1 while the lockout is active (skip all mode handling).
+ * @brief Shows the OVP banner on the current screen (attempt counter).
  */
-static uint8_t statemachine_ovp_lockout(void) {
-	static const char *const OVP_TEXT = "ERROR: OVP - power cycle to reset";
+static void statemachine_ovp_show(void) {
+	char text[48];
 
-	if (ovp_lockout)
-		return 1;
-	if (!(protection_get_error_mask() & PROTECTION_SRC_OVP))
-		return 0;
+	if (ovp_attempts >= OVP_MAX_ATTEMPTS)
+		snprintf(text, sizeof(text), "ERROR: OVP - power cycle to reset");
+	else
+		snprintf(text, sizeof(text), "OVP: remove ext. V, OK = reset (%d/%d)",
+				ovp_attempts, OVP_MAX_ATTEMPTS);
+	if (statemachine_handle.current_mode == STATEMACHINE_IDLE)
+		display_show_idle_error(text);
+	else
+		display_show_mode_error(text);
+}
 
-	ovp_lockout = 1;
+/**
+ * @brief Converters off, SEK half-bridge shorted (supports the crowbar until
+ *        the fuse blows on an external source), PRIM blocked by the HW latch.
+ */
+static void statemachine_ovp_enter(void) {
+	ovp_state = OVP_LOCKED;
 	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
 	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
 	ctrl_main_stop_control();
 	dac_sqwave_stop();
 	statemachine_handle.output_on = 0;
 	hrtim_sek_force_short();
-	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1); // PRIM off, SEK shorted
-	printf("OVP: SEK shorted until power cycle (mode %d)\r\n",
-			statemachine_handle.current_mode);
-	if (statemachine_handle.current_mode == STATEMACHINE_IDLE)
-		display_show_idle_error(OVP_TEXT);
-	else
-		display_show_mode_error(OVP_TEXT);
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
+	statemachine_ovp_show();
+}
+
+/**
+ * @brief OVP latch handling. On a trip: lockout (SEK shorted). OK click (max
+ *        OVP_MAX_ATTEMPTS): release SEK, pulse OVP_RESET, check OVP_N, then
+ *        back to IDLE or lockout again. Relays stay as they are. Buttons are
+ *        read here, the normal button update is skipped in lockout.
+ * @return 1 while the lockout is active (skip all mode handling).
+ */
+static uint8_t statemachine_ovp_lockout(void) {
+	switch (ovp_state) {
+	case OVP_NONE:
+		if (!(protection_get_error_mask() & PROTECTION_SRC_OVP))
+			return 0;
+		ovp_attempts = 0;
+		statemachine_ovp_enter();
+		printf("OVP: SEK shorted (mode %d)\r\n",
+				statemachine_handle.current_mode);
+		break;
+	case OVP_LOCKED:
+		// Held OK counts up, so only the first tick of a press is a click.
+		if (input_btn_ok()) {
+			if (ok_button_pressed++ == 0 && ovp_attempts < OVP_MAX_ATTEMPTS) {
+				aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+				hrtim_sek_restore();
+				ovp_wait = OVP_WAIT_TICKS;
+				ovp_state = OVP_REL_WAIT;
+				printf("OVP: reset %d, SEK released\r\n", ovp_attempts + 1);
+			}
+		} else
+			ok_button_pressed = 0;
+		break;
+	case OVP_REL_WAIT:
+		if (--ovp_wait)
+			break;
+		HAL_GPIO_WritePin(OVP_RESET_GPIO_Port, OVP_RESET_Pin, GPIO_PIN_SET);
+		HAL_Delay(1);
+		HAL_GPIO_WritePin(OVP_RESET_GPIO_Port, OVP_RESET_Pin, GPIO_PIN_RESET);
+		ovp_wait = OVP_WAIT_TICKS;
+		ovp_state = OVP_CHECK_WAIT;
+		printf("OVP: reset pulse done\r\n");
+		break;
+	case OVP_CHECK_WAIT:
+		if (--ovp_wait)
+			break;
+		ovp_attempts++;
+		if (HAL_GPIO_ReadPin(OVP_N_GPIO_Port, OVP_N_Pin) == GPIO_PIN_SET) {
+			printf("OVP: latch cleared\r\n");
+			ovp_state = OVP_NONE;
+			statemachine_switchtoIdle();
+		} else {
+			printf("OVP: latch tripped again (%d/%d)\r\n", ovp_attempts,
+					OVP_MAX_ATTEMPTS);
+			statemachine_ovp_enter();
+		}
+		break;
+	}
 	return 1;
 }
 

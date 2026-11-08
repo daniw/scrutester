@@ -237,7 +237,7 @@ data (older than \qty{3}{\second}) stops a charge, and a failed external
 converter output off from \texttt{statemachine\_step()} and shows a red
 banner; the passive meter modes return to IDLE. An \ac{OVP} latch trip
 switches the converters off and shorts the secondary half-bridge until the
-device is power-cycled. Fault handlers switch the power stage off at register
+user confirms a reset with OK (three attempts, then power cycle). Fault handlers switch the power stage off at register
 level before they halt, and the independent watchdog (about
 \qty{2}{\second}) resets a hung main loop. The mechanism is summarised here; the full
 failure-by-failure treatment, including where this protection does and
