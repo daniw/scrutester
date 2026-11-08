@@ -30,6 +30,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#define TEXT_PRIMARY C_WHITE
+#define TEXT_SECONDARY C_LIGHT_GRAY /* ~85 % */
+
 extern ctrl_main_t ctrl_main_handle;
 extern ADC_MEAS_DATA adc_data;
 extern BQ76905_handle bms;
@@ -72,7 +75,7 @@ static void draw_battery_icon(int16_t x, int16_t y, uint8_t pct) {
 
 static void draw_status_bar(const char *title, UG_COLOR accent) {
 	UG_FillFrame(0, STATUS_Y0, LCD_WIDTH - 1, STATUS_H - 1, C_BLACK);
-	LCD_PutStr(4, 4, (char*) title, FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(4, 4, (char*) title, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 	draw_battery_icon(LCD_WIDTH - 40, 6, bms.charge_percentage);
 	UG_FillFrame(0, STATUS_H - 3, LCD_WIDTH - 1, STATUS_H - 1, accent);
 }
@@ -87,16 +90,16 @@ void display_refresh_battery_icon(void) {
 
 static void draw_footer(const char *left, const char *right) {
 	UG_FillFrame(0, FOOTER_Y, LCD_WIDTH - 1, LCD_HEIGHT - 1, C_BLACK);
-	LCD_PutStr(4, FOOTER_Y + 4, (char*) left, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(4, FOOTER_Y + 4, (char*) left, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 	if (right != 0) {
 		int16_t w = (int16_t) (strlen(right) * UG_GetFontWidth(FONT_TINY));
 		LCD_PutStr(LCD_WIDTH - 4 - w, FOOTER_Y + 4, (char*) right, FONT_TINY,
-		C_WHITE_63, C_BLACK);
+		TEXT_SECONDARY, C_BLACK);
 	}
 }
 
 static void draw_output_border(UG_COLOR accent, uint8_t active) {
-	UG_COLOR c = active ? accent : C_DIM_GRAY;
+	UG_COLOR c = active ? accent : C_GRAY;
 	UG_DrawFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, c);
 	UG_DrawFrame(1, STATUS_H + 1, LCD_WIDTH - 2, FOOTER_Y - 2, c);
 }
@@ -168,7 +171,7 @@ void display_show_idle(uint8_t menu_index) {
 		UG_FillFrame(0, cy + 70, LCD_WIDTH - 1,
 				cy + 70 + UG_GetFontHeight(FONT_SMALL),
 				C_BLACK);
-		LCD_PutStr(LCD_WIDTH / 2 - w / 2, cy + 70, text, FONT_SMALL, C_WHITE,
+		LCD_PutStr(LCD_WIDTH / 2 - w / 2, cy + 70, text, FONT_SMALL, TEXT_PRIMARY,
 		C_BLACK);
 	}
 }
@@ -216,14 +219,14 @@ static void enter_active_output(statemachine_modes_t mode, const char *big_unit,
 	draw_footer("ESC: Back", "Turn: set  Hold OUT: on");
 
 	LCD_PutStr(LCD_WIDTH / 2 + 70, BIG_Y + 10, (char*) big_unit, FONT_SMALL,
-	C_WHITE, C_BLACK);
-	LCD_PutStr(16, SECOND_Y, (char*) secondary_label, FONT_TINY, C_WHITE_63,
+	TEXT_PRIMARY, C_BLACK);
+	LCD_PutStr(16, SECOND_Y, (char*) secondary_label, FONT_TINY, TEXT_SECONDARY,
 	C_BLACK);
 	LCD_PutStr(16 + UNIT_DX, SECOND_Y + 18, (char*) secondary_unit, FONT_SMALL,
-	C_WHITE, C_BLACK);
-	LCD_PutStr(SET_X, SECOND_Y, "SET", FONT_TINY, C_WHITE_63, C_BLACK);
+	TEXT_PRIMARY, C_BLACK);
+	LCD_PutStr(SET_X, SECOND_Y, "SET", FONT_TINY, TEXT_SECONDARY, C_BLACK);
 	LCD_PutStr(SET_X + UNIT_DX, SECOND_Y + 18, (char*) setpoint_unit,
-	FONT_SMALL, C_WHITE, C_BLACK);
+	FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 }
 
 static void update_active_output(statemachine_modes_t mode,
@@ -237,24 +240,24 @@ static void update_active_output(statemachine_modes_t mode,
 
 	snprintf(text, sizeof(text), "%3d.%02d", (int) (big_value_x100 / 100),
 			(int) ((big_value_x100 < 0 ? -big_value_x100 : big_value_x100) % 100));
-	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
+	LCD_PutStr(16, BIG_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
 
 	snprintf(text, sizeof(text), "%3d.%03d", (int) (secondary_value_x1000 / 1000),
 			(int) ((secondary_value_x1000 < 0 ?
 					-secondary_value_x1000 : secondary_value_x1000) % 1000));
-	LCD_PutStr(16, SECOND_Y + 18, text, FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 18, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 
 #ifdef UI_DEBUG
 	snprintf(text, sizeof(text), "duty %3d.%03d",
 			(int) (ctrl_main_handle.duty / 1000),
 			(int) ((ctrl_main_handle.duty < 0 ?
 					-ctrl_main_handle.duty : ctrl_main_handle.duty) % 1000));
-	LCD_PutStr(16, SECOND_Y + 40, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 40, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 #endif
 
 	snprintf(text, sizeof(text), "%3u.%03u", (unsigned) (setpoint_value_x1000 / 1000),
 			(unsigned) (setpoint_value_x1000 % 1000));
-	LCD_PutStr(SET_X, SECOND_Y + 18, text, FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(SET_X, SECOND_Y + 18, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -287,13 +290,13 @@ static void enter_passive_readout(statemachine_modes_t mode, const char *unit) {
 
 	LCD_PutStr(passive_readout_x + value_w + PASSIVE_GAP_PX,
 			passive_readout_y + (value_h - UG_GetFontHeight(FONT_BIG)) / 2,
-			(char*) unit, FONT_BIG, C_WHITE, C_BLACK);
+			(char*) unit, FONT_BIG, TEXT_PRIMARY, C_BLACK);
 }
 
 static void update_passive_readout(int32_t value_x100) {
 	snprintf(text, sizeof(text), "%3d.%02d", (int) (value_x100 / 100),
 			(int) ((value_x100 < 0 ? -value_x100 : value_x100) % 100));
-	LCD_PutStr(passive_readout_x, passive_readout_y, text, FONT_HUGE, C_WHITE,
+	LCD_PutStr(passive_readout_x, passive_readout_y, text, FONT_HUGE, TEXT_PRIMARY,
 	C_BLACK);
 }
 
@@ -314,10 +317,10 @@ static void enter_resistance(statemachine_modes_t mode) {
 	draw_status_bar(menu_name_for_mode(mode), entry->accent);
 	draw_output_border(entry->accent, 1);
 	draw_footer("ESC: Back", 0);
-	LCD_PutStr(16, SECOND_Y, (char*) excitation, FONT_TINY, C_WHITE_63,
+	LCD_PutStr(16, SECOND_Y, (char*) excitation, FONT_TINY, TEXT_SECONDARY,
 	C_BLACK);
 	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, (char*) unit, FONT_SMALL,
-	C_WHITE, C_BLACK);
+	TEXT_PRIMARY, C_BLACK);
 }
 
 static void update_resistance(statemachine_modes_t mode) {
@@ -350,7 +353,7 @@ static void update_resistance(statemachine_modes_t mode) {
 				(unsigned) (ohm_x10 % 10));
 	}
 	// ToDo: Remove/mask Debug Values using a define DEBUG
-	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
+	LCD_PutStr(16, BIG_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
 	if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: Take V_sense */
 		snprintf(text, sizeof(text), "V_sense = %d uV     ",
@@ -360,7 +363,7 @@ static void update_resistance(statemachine_modes_t mode) {
 		snprintf(text, sizeof(text), "V_term = %d mV     ",
 				(int) adc_data.converted.v_term_ext_mv_filt);
 	}
-	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 
 	if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: Take V_sense */
@@ -371,7 +374,7 @@ static void update_resistance(statemachine_modes_t mode) {
 		snprintf(text, sizeof(text), "I_meas= %d mA     ",
 				(int) adc_data.converted.i_out_ext_mA_filt);
 	}
-	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -386,7 +389,7 @@ static void enter_isometer(void) {
 	draw_status_bar("Isolation Test", entry->accent);
 	draw_output_border(entry->accent, 0);
 	draw_footer("ESC: Back", "Turn: test V  Hold OUT: test");
-	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "Mohm", FONT_SMALL, C_WHITE,
+	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "Mohm", FONT_SMALL, TEXT_PRIMARY,
 	C_BLACK);
 }
 
@@ -396,7 +399,7 @@ static void update_isometer(uint8_t output_active) {
 
 	snprintf(text, sizeof(text), "Test Voltage: %4u V   ",
 			ctrl_main_handle.voltage_iso_reference_V);
-	LCD_PutStr(16, SECOND_Y, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 
 	if (adc_data.converted.i_iso_ext_uA_filt > 0) {
 		/* R[Mohm] = V / I[uA] (since Mohm = V/uA algebraically); keep one
@@ -412,18 +415,18 @@ static void update_isometer(uint8_t output_active) {
 	} else {
 		snprintf(text, sizeof(text), " OVER  ");
 	}
-	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
+	LCD_PutStr(16, BIG_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
 
 	snprintf(text, sizeof(text), "Ileak = %d uA     ", (int) adc_data.converted.i_iso_ext_uA_filt);
-	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 
 	snprintf(text, sizeof(text), "Vterm = %d V     ", (int) adc_data.converted.v_term_ext_mv_filt/1000);
-	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 36, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 
 	snprintf(text, sizeof(text), "Duty = %3d.%01d  ", (int) ( ctrl_main_handle.duty/ 10),
 			(int) ((ctrl_main_handle.duty < 0 ?
 					-ctrl_main_handle.duty : ctrl_main_handle.duty) % 10));
-	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -440,7 +443,7 @@ static void enter_charge(void) {
 	draw_footer("ESC: Stop", 0);
 	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "V", FONT_SMALL, TEXT_PRIMARY,
 	C_BLACK);
-	LCD_PutStr(16, SECOND_Y + 36, "Cells", FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 36, "Cells", FONT_TINY, TEXT_SECONDARY, C_BLACK);
 }
 
 void display_show_charge_done(const char *msg, uint8_t error) {
@@ -453,16 +456,16 @@ void display_show_charge_done(const char *msg, uint8_t error) {
 	int16_t y = cy + ICON_STORE_ICON_HEIGHT / 2 + 8;
 
 	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
+	draw_output_border(C_GREEN, !error);
 	draw_menu_icon((uint8_t) (entry - menu_order), entry, cx, cy, color, 0);
 	int16_t w = (int16_t) (strlen(msg) * UG_GetFontWidth(FONT_SMALL));
-	LCD_PutStr(cx - w / 2, y, (char*) msg, FONT_SMALL, error ? C_RED : C_WHITE,
-	draw_output_border(C_GREEN, !error);
+	LCD_PutStr(cx - w / 2, y, (char*) msg, FONT_SMALL, error ? C_RED : TEXT_PRIMARY,
 			C_BLACK);
 	snprintf(text, sizeof(text), "%u.%03u V   %u%%",
 			bms.VoltageRegisters.StackVoltage / 1000,
 			bms.VoltageRegisters.StackVoltage % 1000, bms.charge_percentage);
 	w = (int16_t) (strlen(text) * UG_GetFontWidth(FONT_TINY));
-	LCD_PutStr(cx - w / 2, y + 22, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(cx - w / 2, y + 22, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 	draw_footer("ESC: Back", 0);
 }
 
@@ -476,13 +479,13 @@ static void update_charge(uint8_t output_active) {
 
 	snprintf(text, sizeof(text), "%2u.%03u", bms.VoltageRegisters.StackVoltage / 1000,
 			bms.VoltageRegisters.StackVoltage % 1000);
-	LCD_PutStr(16, BIG_Y, text, FONT_BIG, C_WHITE, C_BLACK);
+	LCD_PutStr(16, BIG_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
 
 	snprintf(text, sizeof(text), "I %4d mA   %3u%%   %02u:%02u:%02u    ",
 			bms.CurrentRegisters.CC1Current, bms.charge_percentage,
 			(unsigned) (elapsed_s / 3600), (unsigned) ((elapsed_s / 60) % 60),
 			(unsigned) (elapsed_s % 60));
-	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 
 	/* One fixed-width segment per cell so each can be colored independently
 	 * (balancing_get_active_mask() -- attention color while that cell's
@@ -493,7 +496,7 @@ static void update_charge(uint8_t output_active) {
 	static const int16_t CELL_SEGMENT_X[4] = { 64, 124, 184, 244 };
 	uint8_t balancing_mask = balancing_get_active_mask();
 	for (int i = 0; i < 4; i++) {
-		UG_COLOR color = (balancing_mask & (1u << i)) ? C_ORANGE : C_WHITE_63;
+		UG_COLOR color = (balancing_mask & (1u << i)) ? C_ORANGE : TEXT_SECONDARY;
 		snprintf(text, sizeof(text), "%u.%03uV",
 				bms.CellVoltageRegisters.CellVoltages[i] / 1000,
 				bms.CellVoltageRegisters.CellVoltages[i] % 1000);
@@ -503,7 +506,7 @@ static void update_charge(uint8_t output_active) {
 	// Fixed width so a shorter label ("CC") fully overwrites a longer one ("CLOSE").
 	snprintf(text, sizeof(text), "Phase: %-5s",
 			charge_seq_phase_name(ctrl_main_handle.charge_phase));
-	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 54, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
 }
 
@@ -623,9 +626,9 @@ void display_show_settings_list(uint8_t submenu_index) {
 		uint8_t selected = (i == submenu_index);
 
 		LCD_PutStr(selected ? 26 : 16, y, (char*) SETTINGS_ITEMS[list[i]], FONT_SMALL,
-		C_WHITE, C_BLACK);
+		TEXT_PRIMARY, C_BLACK);
 		if (selected)
-			LCD_PutStr(6, y, ">", FONT_SMALL, C_WHITE, C_BLACK);
+			LCD_PutStr(6, y, ">", FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 	}
 }
 
@@ -637,23 +640,23 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 
 	if (submenu_index == STATEMACHINE_SETTINGS_MODE_ABOUT) {
 		snprintf(text, sizeof(text), "ScruTester Firmware");
-		LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, C_WHITE, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 		snprintf(text, sizeof(text), "Serial number: %04d", config_store.hardware_data.serial_number);
-		LCD_PutStr(16, STATUS_H + 34, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 34, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		snprintf(text, sizeof(text), "Commit: %s", GIT_DATE);
-		LCD_PutStr(16, STATUS_H + 52, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 52, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		snprintf(text, sizeof(text), "HW revision: %u", aux_io_ctrl_readHW_Revision());
-		LCD_PutStr(16, STATUS_H + 70, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 70, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		snprintf(text, sizeof(text), "MCU: STM32G474VET6");
-		LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		snprintf(text, sizeof(text), "FW version: %d.%d (%s)", FW_VERSION_MAJOR, FW_VERSION_MINOR, GIT_HASH);
-		LCD_PutStr(16, STATUS_H + 106, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 106, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		snprintf(text, sizeof(text), "Designed by daniw & ahorat");
-		LCD_PutStr(16, STATUS_H + 124, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 124, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		snprintf(text, sizeof(text), "Repository: ");
-		LCD_PutStr(16, STATUS_H + 142, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 142, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		snprintf(text, sizeof(text), "    github.com/daniw/scrutester");
-		LCD_PutStr(16, STATUS_H + 160, text, FONT_TINY, C_WHITE_63, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 160, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 	}
 }
 
@@ -661,14 +664,14 @@ static void update_settings_bms(void) {
 	snprintf(text, sizeof(text), "Safety Alert  AB = 0x%04X",
 			(bms.SafetyRegisters.safetyAlertA << 8)
 					| bms.SafetyRegisters.safetyAlertB);
-	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
 	snprintf(text, sizeof(text), "Safety Status AB = 0x%04X",
 			(bms.SafetyRegisters.safetyStatusA << 8)
 					| bms.SafetyRegisters.safetyStatusB);
-	LCD_PutStr(16, STATUS_H + 24, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 24, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
-	LCD_PutStr(16, STATUS_H + 40, "Cell = ", FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 40, "Cell = ", FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	{
 		/* Fixed-width segment per cell, colored orange while that cell's
 		 * bleed FET is commanded on (balancing_get_active_mask()) -- same
@@ -681,37 +684,37 @@ static void update_settings_bms(void) {
 			LCD_PutStr(72 + i * 40, STATUS_H + 40, text, FONT_TINY, color, C_BLACK);
 		}
 	}
-	LCD_PutStr(232, STATUS_H + 40, "mV", FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(232, STATUS_H + 40, "mV", FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
 	snprintf(text, sizeof(text), "Current  = %d mA    ", bms.CurrentRegisters.CC2Current);
-	LCD_PutStr(16, STATUS_H + 56, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 56, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
 //	snprintf(text, sizeof(text), "Passed Q = %d mAs    ",
 //			(int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4);
 	snprintf(text, sizeof(text), "Passed Q = %d.%03d Ah    ",
 			((((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF))>=0?1:-1) * abs((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4) / 3600000),
 			(abs((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4) / 3600 % 1000));
-	LCD_PutStr(16, STATUS_H + 72, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 72, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
 	snprintf(text, sizeof(text), "Passed T = %u s    ",
 			(unsigned) (bms.Accumulator.passedTime / 4));
-	LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
 	if (balancing_is_manual_override_active())
 		snprintf(text, sizeof(text), "Balancing: ON  (mask=0x%X)   ",
 				balancing_get_active_mask());
 	else
 		snprintf(text, sizeof(text), "Balancing: OFF               ");
-	LCD_PutStr(16, STATUS_H + 104, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 104, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 }
 
 static void update_settings_display(void) {
 	snprintf(text, sizeof(text), "Ambient: %4u.%02u lux  ",
 			(unsigned) ui_ctrl_readBrightness() / 100, (unsigned) ui_ctrl_readBrightness() % 100);
-	LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text), "Display brightness: %u%%    ",
 			(unsigned) ui_ctrl_readBacklightPercent());
-	LCD_PutStr(16, STATUS_H + 40, text, FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 40, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 }
 
 static void update_settings_adc1(void) {
@@ -721,28 +724,28 @@ static void update_settings_adc1(void) {
 	downsample = 0;
 	adc_convert_data();
 	snprintf(text, sizeof(text),"v_in       : %8u : %7ld mV", adc_data.raw.v_in   , adc_data.converted.v_in  );
-	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"v_out      : %8u : %7ld mV", adc_data.raw.v_out  , adc_data.converted.v_out );
-	LCD_PutStr(16, STATUS_H + 23, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 23, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"v_term     : %8u : %7ld mV", adc_data.raw.v_term , adc_data.converted.v_term);
-	LCD_PutStr(16, STATUS_H + 38, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 38, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"v_hv       : %8u : %7ld mV", adc_data.raw.v_hv   , adc_data.converted.v_hv  );
-	LCD_PutStr(16, STATUS_H + 53, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 53, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"i_bat      : %8u : %7d mA",  adc_data.raw.i_bat  , adc_data.converted.i_bat );
-	LCD_PutStr(16, STATUS_H + 68, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 68, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"i_out      : %8u : %7d mA",  adc_data.raw.i_out  , adc_data.converted.i_out );
-	LCD_PutStr(16, STATUS_H + 83, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 83, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"i_iso      : %8u : %7d uA",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
-	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
 	snprintf(text, sizeof(text),"Ext V_Term : %8li : %7li mV", adc_data.ext_adc_data[0], adc_data.converted.v_term_ext_mv_filt);
-	LCD_PutStr(16, STATUS_H + 128, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 128, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"Ext I_Out  : %8li : %7li mA", adc_data.ext_adc_data[1], adc_data.converted.i_out_ext_mA_filt );
-	LCD_PutStr(16, STATUS_H + 143, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 143, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"Ext V_Sns  : %8li : %7li uV", adc_data.ext_adc_data[2], adc_data.converted.v_sens_ext_uv_filt);
-	LCD_PutStr(16, STATUS_H + 158, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 158, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text),"Ext I_Iso  : %8li : %7li uA", adc_data.ext_adc_data[3], adc_data.converted.i_iso_ext_uA_filt );
-	LCD_PutStr(16, STATUS_H + 173, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 173, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 }
 
 /**
@@ -782,25 +785,25 @@ static void update_settings_adc2(void) {
 	downsample = 0;
 	adc_convert_data();
 	snprintf(text, sizeof(text), "v_3v3         : %8u : %7u mV",			adc_data.raw.v_3v3, adc_data.converted.v_3v3);
-	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	draw_temp_row(STATUS_H + 23, "temp_sec", adc_data.raw.temp_sec, adc_data.converted.temp_sec, PROTECTION_SRC_TEMP_SEC);
 	snprintf(text, sizeof(text), "v_3v3a        : %8u : %7u mV",			adc_data.raw.v_3v3a, adc_data.converted.v_3v3a);
-	LCD_PutStr(16, STATUS_H + 38, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 38, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	draw_temp_row(STATUS_H + 53, "temp_inductor", adc_data.raw.temp_trafo, adc_data.converted.temp_trafo, PROTECTION_SRC_TEMP_TRAFO);
 	draw_temp_row(STATUS_H + 68, "temp_current", adc_data.raw.temp_current, adc_data.converted.temp_current, PROTECTION_SRC_TEMP_CURRENT);
 	draw_temp_row(STATUS_H + 83, "temp_prim", adc_data.raw.temp_prim, adc_data.converted.temp_prim, PROTECTION_SRC_TEMP_PRIM);
 	snprintf(text, sizeof(text), "v_15v         : %8u : %7u mV",			adc_data.raw.v_15v, adc_data.converted.v_15v);
-	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text), "v_vcc         : %8u : %7u mV",			adc_data.raw.v_vcc, adc_data.converted.v_vcc);
-	LCD_PutStr(16, STATUS_H + 113, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 113, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text), "v_5v          : %8u : %7u mV",			adc_data.raw.v_5v, adc_data.converted.v_5v);
-	LCD_PutStr(16, STATUS_H + 128, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 128, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text), "int_temp      : %8u : %7i \260C",			adc_data.raw.int_temp, adc_data.converted.int_temp);
-	LCD_PutStr(16, STATUS_H + 143, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 143, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text), "v_bat         : %8u : %7u mV",			adc_data.raw.v_bat, adc_data.converted.v_bat);
-	LCD_PutStr(16, STATUS_H + 158, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 158, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 	snprintf(text, sizeof(text), "v_ref_int     : %8u : %7u mV",			adc_data.raw.v_ref_int, adc_data.converted.v_ref_int);
-	LCD_PutStr(16, STATUS_H + 173, text, FONT_TINY, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 173, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
 
 }
 
@@ -845,7 +848,7 @@ void display_service_pin(const uint8_t *digits, uint8_t pos) {
 	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
 	draw_status_bar(SETTINGS_ITEMS[STATEMACHINE_SETTINGS_MODE_SERVICE], C_SILVER);
 	draw_footer("ESC: Back", "OK: Next");
-	LCD_PutStr(16, STATUS_H + 16, "Enter PIN", FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 16, "Enter PIN", FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 
 	for (uint8_t i = 0; i < 4; i++) {
 		char c[2] = { (i < pos) ? '*' : (i == pos ? (char) ('0' + digits[i]) : '-'), 0 };
@@ -853,7 +856,7 @@ void display_service_pin(const uint8_t *digits, uint8_t pos) {
 
 		if (i == pos)
 			UG_FillFrame(x - 4, STATUS_H + 60, x + 36, STATUS_H + 120, C_DIM_GRAY);
-		LCD_PutStr(x, STATUS_H + 70, c, FONT_BIG, C_WHITE,
+		LCD_PutStr(x, STATUS_H + 70, c, FONT_BIG, TEXT_PRIMARY,
 				i == pos ? C_DIM_GRAY : C_BLACK);
 	}
 }
@@ -899,7 +902,7 @@ void display_update_settings_detail(uint8_t submenu_index) {
 static void draw_calibration_live(calibration_channel_t ch, int16_t y) {
 	snprintf(text, sizeof(text), "Raw: %-8ld  %ld %s          ", (long) calibration_peek_raw(ch),
 			(long) calibration_peek_converted(ch), calibration_channel_unit(ch));
-	LCD_PutStr(16, y, text, FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(16, y, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 
 	if (calibration_has_ext(ch)) {
 		snprintf(text, sizeof(text), "Ext: %ld %s          ",
@@ -907,7 +910,7 @@ static void draw_calibration_live(calibration_channel_t ch, int16_t y) {
 	} else {
 		snprintf(text, sizeof(text), "                        ");
 	}
-	LCD_PutStr(16, y + 16, text, FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(16, y + 16, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 }
 
 void display_calibration_enter(calibration_channel_t ch, uint8_t ui_state) {
@@ -921,19 +924,19 @@ void display_calibration_enter(calibration_channel_t ch, uint8_t ui_state) {
 	case 1:
 		snprintf(text, sizeof(text), "Calibration: %s", calibration_channel_name(ch));
 		draw_status_bar(text, C_SILVER);
-		LCD_PutStr(16, STATUS_H + 8, "Set input to 0", FONT_SMALL, C_WHITE,
+		LCD_PutStr(16, STATUS_H + 8, "Set input to 0", FONT_SMALL, TEXT_PRIMARY,
 		C_BLACK);
 		LCD_PutStr(16, STATUS_H + 28, "(short/disconnect as needed)",
-		FONT_TINY, C_WHITE_63, C_BLACK);
+		FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		draw_footer("ESC: Cancel", "OK: Zero");
 		break;
 	case 2:
 		snprintf(text, sizeof(text), "Calibration: %s", calibration_channel_name(ch));
 		draw_status_bar(text, C_SILVER);
 		LCD_PutStr(16, STATUS_H + 8, "Apply known reference,", FONT_SMALL,
-		C_WHITE, C_BLACK);
+		TEXT_PRIMARY, C_BLACK);
 		LCD_PutStr(16, STATUS_H + 28, "dial in its value:", FONT_SMALL,
-		C_WHITE, C_BLACK);
+		TEXT_PRIMARY, C_BLACK);
 		draw_footer("ESC: Skip", "OK: Set gain");
 		break;
 	case 3:
@@ -942,7 +945,7 @@ void display_calibration_enter(calibration_channel_t ch, uint8_t ui_state) {
 		LCD_PutStr(16, STATUS_H + 8, "Gain calibration failed!", FONT_SMALL,
 		C_RED, C_BLACK);
 		LCD_PutStr(16, STATUS_H + 28, "Check reference value & retry",
-		FONT_TINY, C_WHITE_63, C_BLACK);
+		FONT_TINY, TEXT_SECONDARY, C_BLACK);
 		draw_footer("ESC: Skip", "OK: Retry");
 		break;
 	default:
@@ -961,10 +964,10 @@ void display_calibration_update(calibration_channel_t ch, uint8_t ui_state,
 			snprintf(text, sizeof(text), " %-6s (%s)                ",
 					calibration_channel_name((calibration_channel_t) i),
 					calibration_channel_unit((calibration_channel_t) i));
-			LCD_PutStr(selected ? 14 : 6, y, text, FONT_TINY, C_WHITE,
+			LCD_PutStr(selected ? 14 : 6, y, text, FONT_TINY, TEXT_PRIMARY,
 			C_BLACK);
 			if (selected)
-				LCD_PutStr(6, y, "> ", FONT_TINY, C_WHITE, C_BLACK);
+				LCD_PutStr(6, y, "> ", FONT_TINY, TEXT_PRIMARY, C_BLACK);
 		}
 		break;
 	case 1:
@@ -973,7 +976,7 @@ void display_calibration_update(calibration_channel_t ch, uint8_t ui_state,
 	case 2:
 		snprintf(text, sizeof(text), "Reference: %ld %s        ", (long) reference_value,
 				calibration_channel_unit(ch));
-		LCD_PutStr(16, STATUS_H + 52, text, FONT_SMALL, C_WHITE, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 52, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 		draw_calibration_live(ch, STATUS_H + 76);
 		break;
 	default:
