@@ -14,7 +14,10 @@
 #
 # Usage:
 #   tools/check.sh              compare against the baseline, fail if it grew
-#   tools/check.sh --update     regenerate the baseline from the current tree
+#   tools/check.sh --update     regenerate the baselines from the current tree
+#
+# A second, optional stage runs cppcheck (if installed) on the same sources and
+# compares against tools/cppcheck.baseline the same way.
 #
 # Exit status: 0 if no new warnings (or --update), 1 otherwise.
 
@@ -27,8 +30,10 @@ export LC_ALL=C
 cd "$(dirname "$0")/.."
 PROJECT_ROOT="$PWD"
 BASELINE="tools/warnings.baseline"
+CPP_BASELINE="tools/cppcheck.baseline"
 CURRENT="$(mktemp)"
-trap 'rm -f "$CURRENT"' EXIT
+CPP_CURRENT="$(mktemp)"
+trap 'rm -f "$CURRENT" "$CURRENT.norm" "$CPP_CURRENT" "$CPP_CURRENT.norm"' EXIT
 
 # Locate the CubeIDE-bundled cross compiler. Pinning the exact plugin directory
 # would break on every IDE update, so glob for it and take the newest match.
@@ -55,6 +60,8 @@ CFLAGS=(
     -mthumb
     -Wall
     -Wextra
+    -Wdouble-promotion
+    -Wfloat-conversion
     -fsyntax-only
     ${EXTRA_CFLAGS:-}   # e.g. EXTRA_CFLAGS=-DEMI_DEBUG, to check a build variant
 )
@@ -82,6 +89,26 @@ for src in Core/Src/*.c; do
     fi
 done
 
+# Optional cppcheck stage. Skipped (not failed) if cppcheck is missing.
+# icon_seed_data.c is a 1 MB generated data blob, not worth analysing.
+have_cppcheck=0
+if command -v cppcheck >/dev/null 2>&1; then
+    have_cppcheck=1
+    CPP_SRCS=()
+    for src in Core/Src/*.c; do
+        [ "$src" = "Core/Src/icon_seed_data.c" ] || CPP_SRCS+=("$src")
+    done
+    cppcheck --quiet --enable=warning,style,performance,portability \
+        --inline-suppr --suppress=missingIncludeSystem \
+        --template='{file}:{line}:{id}:{message}' \
+        --platform=unix32 \
+        -DUSE_HAL_DRIVER -DSTM32G474xx -D__GNUC__=12 -D__ARM_ARCH_7EM__ \
+        "${INCLUDES[@]}" \
+        "${CPP_SRCS[@]}" 2>"$CPP_CURRENT"
+else
+    echo "check.sh: cppcheck not installed, skipped"
+fi
+
 # Keep only the diagnostic headline lines (file:line:col: warning/error: text),
 # dropping the source-echo and caret lines GCC interleaves.
 #
@@ -102,9 +129,21 @@ normalize() {
         | sort
 }
 
+# Same line-number stripping as normalize(), for the cppcheck template.
+cpp_normalize() {
+    grep -E '^[^ ][^:]*:[0-9]+:' "$1" \
+        | sed -E "s|^${PROJECT_ROOT}/||" \
+        | sed -E 's|^([^:]+):[0-9]+:|\1: |' \
+        | sort
+}
+
 if [ "${1:-}" = "--update" ]; then
     normalize "$CURRENT" > "$BASELINE"
     echo "check.sh: baseline updated -- $(wc -l < "$BASELINE") diagnostics recorded."
+    if [ "$have_cppcheck" -eq 1 ]; then
+        cpp_normalize "$CPP_CURRENT" > "$CPP_BASELINE"
+        echo "check.sh: cppcheck baseline updated -- $(wc -l < "$CPP_BASELINE") findings recorded."
+    fi
     exit 0
 fi
 
@@ -128,11 +167,22 @@ fi
 if [ -n "$new" ]; then
     echo "check.sh: FAIL -- $(echo "$new" | wc -l) NEW diagnostic(s):" >&2
     echo "$new" | sed 's/^/  + /' >&2
-    rm -f "$CURRENT.norm"
     exit 1
 fi
 
-rm -f "$CURRENT.norm"
+if [ "$have_cppcheck" -eq 1 ]; then
+    if [ ! -f "$CPP_BASELINE" ]; then
+        echo "check.sh: no baseline at $CPP_BASELINE. Run 'tools/check.sh --update' first." >&2
+        exit 2
+    fi
+    cpp_normalize "$CPP_CURRENT" > "$CPP_CURRENT.norm"
+    cpp_new=$(comm -13 "$CPP_BASELINE" "$CPP_CURRENT.norm")
+    if [ -n "$cpp_new" ]; then
+        echo "check.sh: FAIL -- $(echo "$cpp_new" | wc -l) NEW cppcheck finding(s):" >&2
+        echo "$cpp_new" | sed 's/^/  + /' >&2
+        exit 1
+    fi
+fi
 
 if [ "$failed" -ne 0 ]; then
     echo "check.sh: FAIL -- compile errors above." >&2

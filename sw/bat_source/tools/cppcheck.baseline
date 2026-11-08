@@ -1,0 +1,143 @@
+Core/Src/adc.c: constParameterPointer:Parameter 'hadc' can be declared as pointer to const
+Core/Src/ads131m04.c: badBitmaskCheck:Operator '|' with one operand equal to zero is redundant.
+Core/Src/ads131m04.c: badBitmaskCheck:Operator '|' with one operand equal to zero is redundant.
+Core/Src/ads131m04.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
+Core/Src/ads131m04.c: unreadVariable:Variable 'temp' is assigned a value that is never used.
+Core/Src/ads131m04_config.c: unreadVariable:Variable 'value' is assigned a value that is never used.
+Core/Src/ads131m04_config.c: variableScope:The scope of the variable 'value' can be reduced.
+Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
+Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
+Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
+Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
+Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
+Core/Src/cli.c: arrayIndexThenCheck:Array index 'number_of_args' is used before limits check.
+Core/Src/cli.c: duplicateCondition:The if condition is the same as the previous if condition
+Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 1) requires 'int' but the argument type is 'unsigned int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 2) requires 'int' but the argument type is 'unsigned int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 3) requires 'int' but the argument type is 'unsigned int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'unsigned int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/cli.c: invalidPrintfArgType_uint:%lu in format string (no. 1) requires 'unsigned long' but the argument type is 'unsigned int'.
+Core/Src/cli.c: invalidPrintfArgType_uint:%lx in format string (no. 1) requires 'unsigned long' but the argument type is 'unsigned int'.
+Core/Src/cli.c: invalidPrintfArgType_uint:%lx in format string (no. 2) requires 'unsigned long' but the argument type is 'unsigned int'.
+Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
+Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
+Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
+Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
+Core/Src/cli.c: unreadVariable:Variable 'reg_prot' is assigned a value that is never used.
+Core/Src/cli.c: unreadVariable:Variable 'reg_status' is assigned a value that is never used.
+Core/Src/cli.c: unreadVariable:Variable 'test_read_block_nof_bytes' is assigned a value that is never used.
+Core/Src/cli.c: unusedVariable:Unused variable: pin
+Core/Src/cli.c: variableScope:The scope of the variable 'led_current' can be reduced.
+Core/Src/config_store.c: constParameterPointer:Parameter 'block' can be declared as pointer to const
+Core/Src/config_store.c: invalidPrintfArgType_uint:%u in format string (no. 2) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/config_store.c: invalidPrintfArgType_uint:%u in format string (no. 2) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/config_store.c: variableScope:The scope of the variable 'byte' can be reduced.
+Core/Src/ctrl_main.c: redundantInitialization:Redundant initialization for 'bp'. The initialized value is overwritten before it is read.
+Core/Src/ctrl_main.c: redundantInitialization:Redundant initialization for 'duty_run'. The initialized value is overwritten before it is read.
+Core/Src/dac.c: constParameterPointer:Parameter 'dacHandle' can be declared as pointer to const
+Core/Src/dac.c: constParameterPointer:Parameter 'dacHandle' can be declared as pointer to const
+Core/Src/display.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 1) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 1) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 1) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 2) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 2) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 2) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/display.c: variableScope:The scope of the variable 'pixel_buf' can be reduced.
+Core/Src/driver_pca9554.c: constParameterPointer:Parameter 'hpca9554' can be declared as pointer to const
+Core/Src/event.c: uninitvar:Uninitialized variables: e.callback, e.argument
+Core/Src/event.c: variableScope:The scope of the variable 'newhead' can be reduced.
+Core/Src/event.c: variableScope:The scope of the variable 'oldhead' can be reduced.
+Core/Src/hrtim.c: constParameterPointer:Parameter 'hrtimHandle' can be declared as pointer to const
+Core/Src/hrtim.c: constParameterPointer:Parameter 'hrtimHandle' can be declared as pointer to const
+Core/Src/hrtim.c: constParameterPointer:Parameter 'hrtimHandle' can be declared as pointer to const
+Core/Src/icon_store.c: missingReturn:Found an exit path from function with non-void return type that has missing return statement
+Core/Src/list.c: arithOperationsOnVoidPointer:'ret' is of type 'void *'. When using void pointers in calculations, the behaviour is undefined.
+Core/Src/list.c: constParameterPointer:Parameter 'data' can be declared as pointer to const
+Core/Src/list.c: variableScope:The scope of the variable 'found' can be reduced.
+Core/Src/lp581x.c: constParameterPointer:Parameter 'hlp581x' can be declared as pointer to const
+Core/Src/lp581x.c: constParameterPointer:Parameter 'hlp581x' can be declared as pointer to const
+Core/Src/lp581x.c: constParameterPointer:Parameter 'hlp581x' can be declared as pointer to const
+Core/Src/lp581x.c: constParameterPointer:Parameter 'hlp581x' can be declared as pointer to const
+Core/Src/lp581x.c: constParameterPointer:Parameter 'hlp581x' can be declared as pointer to const
+Core/Src/lp581x.c: constParameterPointer:Parameter 'hlp581x' can be declared as pointer to const
+Core/Src/lp581x.c: constParameterPointer:Parameter 'hlp581x' can be declared as pointer to const
+Core/Src/lp581x.c: constParameterPointer:Parameter 'value' can be declared as pointer to const
+Core/Src/lp581x.c: constParameterPointer:Parameter 'value' can be declared as pointer to const
+Core/Src/main.c: constParameterPointer:Parameter 'hspi' can be declared as pointer to const
+Core/Src/main.c: variableScope:The scope of the variable 'e' can be reduced.
+Core/Src/opt3004.c: constParameterPointer:Parameter 'hopt3004' can be declared as pointer to const
+Core/Src/opt3004.c: constParameterPointer:Parameter 'hopt3004' can be declared as pointer to const
+Core/Src/quadspi.c: constParameterPointer:Parameter 'qspiHandle' can be declared as pointer to const
+Core/Src/quadspi.c: constParameterPointer:Parameter 'qspiHandle' can be declared as pointer to const
+Core/Src/rtc.c: constParameterPointer:Parameter 'rtcHandle' can be declared as pointer to const
+Core/Src/rtc.c: constParameterPointer:Parameter 'rtcHandle' can be declared as pointer to const
+Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'signed int'.
+Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
+Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 3) requires 'long' but the argument type is 'signed int'.
+Core/Src/statemachine.c: invalidPrintfArgType_uint:%u in format string (no. 5) requires 'unsigned int' but the argument type is 'signed int'.
+Core/Src/statemachine.c: knownConditionTrueFalse:Condition 'step_mA==0' is always false
+Core/Src/syscalls.c: constParameterPointer:Parameter 'ptr' can be declared as pointer to const
+Core/Src/temp_conv.c: unsignedLessThanZero:Checking if unsigned expression 'value' is less than zero.
+Core/Src/temp_conv.c: unsignedLessThanZero:Checking if unsigned expression 'value' is less than zero.
+Core/Src/tim.c: constParameterPointer:Parameter 'timHandle' can be declared as pointer to const
+Core/Src/tim.c: constParameterPointer:Parameter 'tim_baseHandle' can be declared as pointer to const
+Core/Src/tim.c: constParameterPointer:Parameter 'tim_baseHandle' can be declared as pointer to const
+Core/Src/tim.c: constParameterPointer:Parameter 'tim_encoderHandle' can be declared as pointer to const
+Core/Src/tim.c: constParameterPointer:Parameter 'tim_encoderHandle' can be declared as pointer to const
+Core/Src/timer.c: constParameterPointer:Parameter 'htim' can be declared as pointer to const
+Core/Src/usart.c: constParameterPointer:Parameter 'uartHandle' can be declared as pointer to const
+Core/Src/usart.c: constParameterPointer:Parameter 'uartHandle' can be declared as pointer to const
+Core/Src/w25n01gv.c: invalidPrintfArgType_uint:%lX in format string (no. 1) requires 'unsigned long' but the argument type is 'unsigned int'.
+Core/Src/w25n01gv.c: redundantAssignment:Variable 'reg_conf' is reassigned a value before the old one has been used.
+Core/Src/w25n01gv.c: redundantAssignment:Variable 'reg_conf' is reassigned a value before the old one has been used.
+Core/Src/w25n01gv.c: redundantAssignment:Variable 'status' is reassigned a value before the old one has been used.
+Core/Src/w25n01gv.c: unreadVariable:Variable 'status' is assigned a value that is never used.
+Core/Src/w25n01gv.c: unreadVariable:Variable 'status' is assigned a value that is never used.
+Core/Src/w25n01gv.c: unreadVariable:Variable 'status' is assigned a value that is never used.
+Core/Src/w25n01gv.c: variableScope:The scope of the variable 'chunk' can be reduced.
+Core/Src/w25n01gv.c: variableScope:The scope of the variable 'column_addr' can be reduced.
+Core/Src/w25n01gv.c: variableScope:The scope of the variable 'page_addr' can be reduced.
+Core/Src/w25n01gv.c: variableScope:The scope of the variable 'status' can be reduced.
+Core/Src/w25n01gv.c: variableScope:The scope of the variable 'write_size' can be reduced.
+Drivers/CMSIS/Include/cmsis_gcc.h: comparePointers:Comparing pointers that point to different objects
+Drivers/CMSIS/Include/cmsis_gcc.h: comparePointers:Comparing pointers that point to different objects
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'addr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'addr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'addr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'addr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'addr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'addr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'ptr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'ptr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'ptr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'ptr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'ptr' can be declared as pointer to const
+Drivers/CMSIS/Include/cmsis_gcc.h: constParameterPointer:Parameter 'ptr' can be declared as pointer to const
+Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_ll_adc.h: duplicateExpression:Same expression on both sides of '&'.
