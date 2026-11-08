@@ -7,6 +7,7 @@
 
 #include "error.h"
 
+#include <stdio.h>
 #include "stdint.h"
 #include "queue.h"
 #include "main.h" // CMSIS __get_PRIMASK/__disable_irq/__set_PRIMASK
@@ -34,48 +35,17 @@ struct error_queue
 struct error_queue error_queue;
 
 /**
- * Saves the error into the error file.
+ * Prints a queued error on the CLI.
  * @param code error code.
- * @param time time of when the error occurred.
- * @param date date of when the error occurred.
+ * @param time unused.
+ * @param date unused.
  * @param data a number that indicates the location in the code where the error occurred.
  */
 void error_Write(ERROR_CODE code, uint32_t time, uint32_t date, uint32_t data)
 {
-	/*int state = FR_OK;
-	FIL file;
-	char datas[9];
-	UINT len, lenw;
-	state = f_open(&file, ERROR_FILE_PATH, FA_WRITE | FA_OPEN_ALWAYS);
-	if (state == FR_OK)
-	{
-		state = f_lseek(&file, file.obj.objsize);
-	}
-	if (state == FR_OK)
-	{
-		util_Int2Date(datas, &len, date);
-		datas[len] = ' ';
-		state = f_write(&file, datas, len + 1, &lenw);
-		if (state == FR_OK)
-		{
-			util_Int2Time(datas, &len, time);
-			datas[len] = '>';
-			state = f_write(&file, datas, len + 1, &lenw);
-		}
-		if (state == FR_OK)
-		{
-			util_Int2Str(datas, &len, code, 16, 8);
-			datas[len] = ',';
-			state = f_write(&file, datas, len + 1, &lenw);
-			if (state == FR_OK)
-			{
-				util_Int2Str(datas, &len, data, 16, 8);
-				datas[len] = '\n';
-				state = f_write(&file, datas, len + 1, &lenw);
-			}
-		}
-		f_close(&file);
-	}*/
+	(void) time;
+	(void) date;
+	printf("ERROR %u data %lu\r\n", (unsigned) code, (unsigned long) data);
 }
 
 /**
@@ -89,20 +59,22 @@ int error_Init(void)
 
 char error_Work(void)
 {
-	ERROR_CODE e;
-	uint64_t error;
-	//if (sd_Mounted())
-		if (queue_NotEmpty(error_queue))
-		{
-			error_Write(queue_Get(error_queue).code,
-			queue_Get(error_queue).time,
-			queue_Get(error_queue).date,
-			queue_Get(error_queue).data);
-			queue_Pop(error_queue, ERROR_QUEUE_SIZE);
-			return 1;
-		}
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+	if (!queue_NotEmpty(error_queue))
+	{
+		__set_PRIMASK(primask);
+		return 0;
+	}
+	ERROR_CODE code = queue_Get(error_queue).code;
+	uint32_t time = queue_Get(error_queue).time;
+	uint32_t date = queue_Get(error_queue).date;
+	uint32_t data = queue_Get(error_queue).data;
+	(void) queue_Pop(error_queue, ERROR_QUEUE_SIZE);
+	__set_PRIMASK(primask);
 
-	return 0;
+	error_Write(code, time, date, data); // main context only: prints
+	return 1;
 }
 
 /**
@@ -131,7 +103,8 @@ void error_Add(ERROR_CODE code, uint32_t data)
 
 	if (queue_Full(error_queue, ERROR_QUEUE_SIZE))
 	{
-		error_Work();
+		// Full: drop the oldest; may run in an ISR, so no printing here.
+		(void) queue_Pop(error_queue, ERROR_QUEUE_SIZE);
 	}
 	queue_Set(error_queue).code=code;
 	queue_Set(error_queue).data = data;

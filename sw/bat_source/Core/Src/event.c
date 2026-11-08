@@ -120,9 +120,8 @@ void event_Add(EVENTS e, void* callback, void* argument)
 	__set_PRIMASK(primask);
 
 	/*
-	 * Logged outside the critical section: error_Add() can itself call
-	 * error_Work(), so keeping it out of here bounds how long interrupts
-	 * stay masked.
+	 * Logged outside the critical section, which keeps the time with
+	 * interrupts masked short.
 	 *
 	 * Note: the old high half came from the removed CPU-load profiling counter
 	 * and carried no meaning; passing just the event ID now.

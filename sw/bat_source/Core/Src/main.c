@@ -55,6 +55,7 @@
 #include "splash.h"
 #include "watchdog.h"
 #include "fault.h"
+#include "error.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -221,6 +222,7 @@ int main(void)
 	  watchdog_kick();
 
 	  cli_loop();
+	  error_Work();
 
 	  // Drain the queue: one event per pass let events pile up behind the CLI.
 	  while ((e = event_Get()).event != EVENT_VOID) {

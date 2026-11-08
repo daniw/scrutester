@@ -717,7 +717,7 @@ static void update_settings_adc1(void) {
 	LCD_PutStr(16, STATUS_H + 68, text, FONT_TINY, C_WHITE, C_BLACK);
 	snprintf(text, sizeof(text),"i_out      : %8u : %7d mA",  adc_data.raw.i_out  , adc_data.converted.i_out );
 	LCD_PutStr(16, STATUS_H + 83, text, FONT_TINY, C_WHITE, C_BLACK);
-	snprintf(text, sizeof(text),"i_iso      : %8u : %7d mA",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
+	snprintf(text, sizeof(text),"i_iso      : %8u : %7d uA",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
 	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, C_WHITE, C_BLACK);
 
 	snprintf(text, sizeof(text),"Ext V_Term : %8li : %7li mV", adc_data.ext_adc_data[0], adc_data.converted.v_term_ext_mv_filt);

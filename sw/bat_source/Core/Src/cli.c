@@ -993,7 +993,7 @@ void cmd_printADC() {
 		printf(" 	 v_hv    (ADC4_IN5 ) : %u \t: %ld mV\r\n", adc_data.raw.v_hv   , adc_data.converted.v_hv  );
 		printf(" 	 i_bat   (ADC5_IN1 ) : %u \t: %d mA\r\n",  adc_data.raw.i_bat  , adc_data.converted.i_bat );
 		printf(" 	 i_out   (ADC1_IN1)  : %u \t: %d mA\r\n",  adc_data.raw.i_out  , adc_data.converted.i_out );
-		printf(" 	 i_iso   (ADC5_IN2)  : %u \t: %d mA\r\n",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
+		printf(" 	 i_iso   (ADC5_IN2)  : %u \t: %d uA\r\n",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
 
 		printf("ADC Measurements:\n");
 		printf(" 		v_3v3          (ADC5_IN6 ) : %u \t: %u mV\r\n", adc_data.raw.v_3v3        , adc_data.converted.v_3v3       );

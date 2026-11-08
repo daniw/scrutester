@@ -66,8 +66,9 @@ extern ADC_HandleTypeDef hadc5;
 #define ADC_VTERM_GAIN_MV  296.444458 //(2500.0f * 1001/4096/1.0417f)
 #define ADC_IOUT_OFFSET  2060
 #define ADC_IOUT_GAIN_MA   (2500.0f*1000/43.33/4096) // ToDo: Calculate
-#define ADC_IISO_OFFSET_UA  0 // ToDo: Measure. See known issue: 129uA offset on isolation current channel
-#define ADC_IISO_GAIN_MA   0 // ToDo: Calculate
+// I_ISO: 10 V/A sense, INA181A1 G=20 -> 0.2 mV/uA around VREF/2 (ST1-1CA sheet 11).
+#define ADC_IISO_OFFSET_UA  2048 // raw counts at 0 uA (VREF/2)
+#define ADC_IISO_GAIN_UA   (2500.0f / 4096 / 0.2f) // uA per count
 
 #define ADC_EXT_VTERM_GAIN_MV 	0.1431914341802f 		//0.1373291015625 		//(1200.0f/8388608 * 14400/15) (ADC * Resistor divider) Max Value 1152 V
 #define ADC_EXT_VSENS_GAIN_UV	0.7152557f  //(1200.0f/8388608 * 1 * 5)(ADC * ADC GAIN * Resistor divider) Max Value 6V

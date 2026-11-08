@@ -116,7 +116,7 @@ static void config_store_setDefaults(void)
 	config_store.calibration.i_out_offset_ma  = ADC_IOUT_OFFSET;
 	config_store.calibration.i_out_gain       = ADC_IOUT_GAIN_MA;
 	config_store.calibration.i_iso_offset_ua  = ADC_IISO_OFFSET_UA;
-	config_store.calibration.i_iso_gain       = ADC_IISO_GAIN_MA;
+	config_store.calibration.i_iso_gain       = ADC_IISO_GAIN_UA;
 
 	config_store.calibration.v_in_offset_mv = ADC_VIN_OFFSET_MV;
 	config_store.calibration.v_in_gain      = ADC_VIN_GAIN_MV;
