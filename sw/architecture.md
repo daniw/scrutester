@@ -128,13 +128,29 @@ logic, and the protection interlock.
 | `STATEMACHINE_MODE_EMI` | EMI test (debug only: `EMI_DEBUG` in `debug.h`): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (1 %), LV converter regulates `OUT_LV` with the full-range voltage loop of 60V_OUT (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `PROTECTION_EMI_MAX_mV` / `PROTECTION_EMI_MAX_mA` on V_TERM / I_OUT (protection limits); exempt from the inactivity power-off while running. Bench-run before the rework: works, but the LV loop oscillates (untuned). |
 
 Settings sub-modes (`statemachine_settings_modes_t`): `MENU`, `BMS`,
-`DISPLAY`, `CALIBRATION`, `ADC1`, `ADC2`, `PROTECTION`, `ABOUT`, `SERVICE`.
-The list shows Display, About and Service; Service opens a 4-digit PIN entry
+`DISPLAY`, `CALIBRATION`, `ADC1`, `ADC2`, `PROTECTION`, `ABOUT`, `SERVICE`,
+`STORAGE`.
+The list shows Display, About, Storage mode and Service; Service opens a 4-digit PIN entry
 (`SETTINGS_SERVICE_PIN`, encoder digit, OK next, ESC back; wrong PIN shows a
 message for 1 s). A correct PIN unlocks BMS, Calibration, ADC 1/2 and
 Protection (replacing Service) until reset/power-off; the flag is RAM only.
 The CLI is not restricted. `statemachine_settings_list()` builds the visible
 list; `current_menu_index` is the position in it.
+
+**Storage mode** (Settings > Storage mode): shows the SoC (ideal ~50 %) and
+shuts the BMS down on OK. Refused while V_TERM is above
+`CTRL_PARAM_CHARGE_START_VIN_LOW_mV` (a charger would wake the BMS again).
+`statemachine_storage_mode()` switches the outputs off, forces
+`BMS_CTRL_WAKEUP` low (TRM SLUUCI8A 8.5: TS high during shutdown ends in soft
+shutdown) and calls `BQ76905_Shutdown()`, which sends the SHUTDOWN subcommand
+(0x0010) three times, 30 ms apart, blocking I2C (TRM: twice within 4 s, the
+third skips the 10 s delay). The BMS opens CHG/DSG and the device loses power
+(~1 uA in shutdown vs 5.9 uA in SLEEP). If still alive after ~2 s (watchdog
+kicked) it shows "Storage mode failed" and returns to the list. Wake path:
+charger -> K1 (normally closed) powers the MCU -> boot pulses
+`BMS_CTRL_WAKEUP` -> BMS starts with factory defaults -> `BQ76905_init()`
+reconfigures it. Independent of this, the BMS already shuts itself down at
+cell < 2.0 V / stack < 8.0 V (`bq76905_config.h`).
 
 Per-mode data (control mode, relay/shunt mask, enable GPIO, entry flags, ADC
 trigger) is centralised rather than duplicated across `statemachine.c`,

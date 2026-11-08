@@ -45,6 +45,7 @@ typedef enum
 	  STATEMACHINE_SETTINGS_MODE_PROTECTION,
 	  STATEMACHINE_SETTINGS_MODE_ABOUT,
 	  STATEMACHINE_SETTINGS_MODE_SERVICE, /* PIN entry, unlocks the service entries */
+	  STATEMACHINE_SETTINGS_MODE_STORAGE, /* BMS shutdown for storage */
 	  STATEMACHINE_SETTINGS_MODE_LENGTH
 } statemachine_settings_modes_t;
 

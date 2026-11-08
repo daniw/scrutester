@@ -27,6 +27,7 @@
 #include "dac.h"
 #include "config_store.h"
 #include "mode_table.h"
+#include "watchdog.h"
 
 statemachine_t statemachine_handle;
 uint16_t ok_button_pressed;
@@ -193,6 +194,7 @@ uint8_t statemachine_settings_list(statemachine_settings_modes_t *list) {
 
 	list[n++] = STATEMACHINE_SETTINGS_MODE_DISPLAY;
 	list[n++] = STATEMACHINE_SETTINGS_MODE_ABOUT;
+	list[n++] = STATEMACHINE_SETTINGS_MODE_STORAGE;
 	if (!service_unlocked) {
 		list[n++] = STATEMACHINE_SETTINGS_MODE_SERVICE;
 	} else {
@@ -203,6 +205,41 @@ uint8_t statemachine_settings_list(statemachine_settings_modes_t *list) {
 		list[n++] = STATEMACHINE_SETTINGS_MODE_PROTECTION;
 	}
 	return n;
+}
+
+/**
+ * @brief Settings > Storage mode: outputs off, then the BMS shuts the pack
+ * down (device loses power; the charger wakes it). Refused with voltage on
+ * the terminals, a connected charger would wake the BMS again. Returns only
+ * if the BMS did not cut the power.
+ */
+static void statemachine_storage_mode(void) {
+	if (adc_data.converted.v_term_ext_mv >= CTRL_PARAM_STORAGE_MAX_VTERM_mV) {
+		display_storage_message("Remove charger/voltage first");
+		return;
+	}
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+	ctrl_main_stop_control();
+	aux_io_ctrl_set_config(STATEMACHINE_IDLE, bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV);
+	GPIO_SET_BMS_CTRL_WAKEUP(0); // TS high at shutdown ends in soft shutdown
+
+	printf("Storage mode - switching off\r\n");
+	display_storage_message("Storage mode - switching off");
+	BQ76905_Shutdown(&bms);
+	for (uint8_t i = 0; i < 200; i++) { // ~2 s for the power to drop
+		HAL_Delay(10);
+		watchdog_kick();
+	}
+
+	printf("Storage mode failed\r\n");
+	display_storage_message("Storage mode failed");
+	for (uint8_t i = 0; i < 100; i++) {
+		HAL_Delay(10);
+		watchdog_kick();
+	}
+	statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
+	display_show_settings_list(statemachine_handle.current_menu_index);
 }
 
 /**
@@ -577,6 +614,11 @@ void statemachine_step(void) {
 			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
 					&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 				balancing_toggle_manual_override();
+			}
+			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_STORAGE
+					&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+				statemachine_storage_mode();
+				return;
 			}
 			if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {

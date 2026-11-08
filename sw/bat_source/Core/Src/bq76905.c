@@ -200,8 +200,17 @@ inline void BQ76905_ExitDeepsleep(BQ76905_handle* handle){
 
 }
 
+/**
+ * @brief Shuts the BMS down (FETs open, ~1 uA; wake by charger voltage).
+ * Blocking I2C. TRM SLUUCI8A: SHUTDOWN only takes effect when sent twice
+ * within 4 s, a third send skips the 10 s delay. Sent 3x, 30 ms apart.
+ */
 inline void BQ76905_Shutdown(BQ76905_handle* handle){
-	BQ76905_WriteRamRegister(handle,BQ76905_SUBCOMMAND_SHUTDOWN, 0, 0);
+	for (uint8_t i = 0; i < 3; i++) {
+		if (i)
+			HAL_Delay(30);
+		BQ76905_WriteRamRegister(handle,BQ76905_SUBCOMMAND_SHUTDOWN, 0, 0);
+	}
 }
 
 inline void BQ76905_FETEnable(BQ76905_handle* handle){

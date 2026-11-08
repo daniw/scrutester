@@ -607,7 +607,8 @@ static const char *const SETTINGS_ITEMS[STATEMACHINE_SETTINGS_MODE_LENGTH] = {
 		[STATEMACHINE_SETTINGS_MODE_ADC2] = "ADC Readings 2",
 		[STATEMACHINE_SETTINGS_MODE_PROTECTION] = "Protection",
 		[STATEMACHINE_SETTINGS_MODE_ABOUT] = "About",
-		[STATEMACHINE_SETTINGS_MODE_SERVICE] = "Service", };
+		[STATEMACHINE_SETTINGS_MODE_SERVICE] = "Service",
+		[STATEMACHINE_SETTINGS_MODE_STORAGE] = "Storage mode", };
 
 /**
  * @brief Draws the visible Settings list.
@@ -636,7 +637,13 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
 	draw_status_bar(SETTINGS_ITEMS[submenu_index], C_SILVER);
 	draw_footer("ESC: Back",
-			submenu_index == STATEMACHINE_SETTINGS_MODE_BMS ? "OK: Balance" : 0);
+			submenu_index == STATEMACHINE_SETTINGS_MODE_BMS ? "OK: Balance" :
+			submenu_index == STATEMACHINE_SETTINGS_MODE_STORAGE ? "OK: Switch off" : 0);
+
+	if (submenu_index == STATEMACHINE_SETTINGS_MODE_STORAGE) {
+		LCD_PutStr(16, STATUS_H + 12, "Device switches off completely.", FONT_SMALL, TEXT_PRIMARY, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 34, "Wake up: connect the charger.", FONT_SMALL, TEXT_PRIMARY, C_BLACK);
+	}
 
 	if (submenu_index == STATEMACHINE_SETTINGS_MODE_ABOUT) {
 		snprintf(text, sizeof(text), "ScruTester Firmware");
@@ -868,6 +875,17 @@ void display_service_pin_wrong(void) {
 	C_RED, C_BLACK);
 }
 
+static void update_settings_storage(void) {
+	snprintf(text, sizeof(text), "Battery: %u%% (ideal ~50%%)", bms.charge_percentage);
+	LCD_PutStr(16, STATUS_H + 70, text, FONT_SMALL, TEXT_SECONDARY, C_BLACK);
+}
+
+/** @brief Red status line on the Storage mode screen. */
+void display_storage_message(const char *msg) {
+	UG_FillFrame(0, STATUS_H + 100, LCD_WIDTH - 1, STATUS_H + 120, C_BLACK);
+	LCD_PutStr(16, STATUS_H + 100, (char*) msg, FONT_SMALL, C_RED, C_BLACK);
+}
+
 void display_update_settings_detail(uint8_t submenu_index) {
 	switch (submenu_index) {
 	case STATEMACHINE_SETTINGS_MODE_BMS:
@@ -884,6 +902,9 @@ void display_update_settings_detail(uint8_t submenu_index) {
 		break;
 	case STATEMACHINE_SETTINGS_MODE_PROTECTION:
 		update_settings_protection();
+		break;
+	case STATEMACHINE_SETTINGS_MODE_STORAGE:
+		update_settings_storage();
 		break;
 	default:
 		break;
