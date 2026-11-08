@@ -140,7 +140,7 @@ commanded closed while the duty is stepped to the zero-current value),
 \emph{CC ramp} (current reference from \qty{0}{\ampere} to \qty{1}{\ampere}
 over \qty{5}{\second}) and finally the constant-voltage tail. In CV an outer
 loop at \qty{50}{\hertz} regulates four times the highest cell voltage and
-sets the current reference of the CC loop, so the current stays limited. The
+sets the current reference of the CC loop, so the current stays limited. The I part of the CC loop uses the battery current measured by the \ac{BMS}, so the device's own consumption does not reduce the charge current. The
 charge ends once the pack is at end voltage, the current has tapered below
 \qty{100}{\milli\ampere} and the cell spread is at most
 \qty{50}{\milli\volt}, or after one hour of balancing at end voltage or

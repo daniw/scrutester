@@ -314,6 +314,11 @@ The duty relations behind this (see `charge_seq.h`): boost
 charge current; the charge loop writes `D_sek = 0.985 − PI action`, bounded only
 by the PI limits (the former 0.5 SEK duty ceiling was removed).
 
+CC loop feedback: P part on the fast internal `i_out`, I part on the battery
+current from the BMS (`CC2Current`, ~100 ms update, positive = charging), so
+the device's own consumption does not reduce the current into the pack. Also
+used in the recovery run.
+
 **Bench debug build** (`CHARGE_DEBUG` in `debug.h`, off by
 default): gates everything below and the
 periodic/peak CLI printouts in `statemachine.c`, so none of it is in a normal

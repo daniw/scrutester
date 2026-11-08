@@ -111,7 +111,7 @@ void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate, int32_t voltage_meas_mV);
 void ctrl_main_ctrl_charge_current(uint32_t target_mA,
-		int16_t current_meas_mA, int16_t current_meas_accurate);
+		int16_t current_meas_mA, int16_t current_bms_mA);
 void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
 static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas);
@@ -449,7 +449,7 @@ static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas) {
 				ctrl_main_handle.charge_phase == CHG_PHASE_CV ?
 						ctrl_main_handle.charge_cv_current_mA :
 						ctrl_main_handle.current_reference_mA,
-				-meas->i_out, -meas->i_out_ext_mA);
+				-meas->i_out, bms.CurrentRegisters.CC2Current);
 		break;
 	}
 
@@ -826,8 +826,14 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
 	ctrl_apply_buck_burst(duty);
 }
 
+/**
+ * @brief Charge CC loop.
+ * @param target_mA Current setpoint (ramped).
+ * @param current_meas_mA Internal current, positive = charging (P part).
+ * @param current_bms_mA BMS battery current, positive = charging (I part).
+ */
 void ctrl_main_ctrl_charge_current(uint32_t target_mA,
-		int16_t current_meas_mA, int16_t current_meas_accurate) {
+		int16_t current_meas_mA, int16_t current_bms_mA) {
 
 	// Reference 0 -> setpoint over CTRL_PARAM_CHARGE_RAMP_s (ramp starts at 0,
 	// see ctrl_main_charge_start_ramp()); once the ramp has passed 1.0 the
@@ -836,7 +842,7 @@ void ctrl_main_ctrl_charge_current(uint32_t target_mA,
 			1.0F / CTRL_PARAM_CHARGE_RAMP_s);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_current,
-			current_meas_mA / 1000.0F, current_meas_accurate / 1000.0F, 0);
+			current_meas_mA / 1000.0F, current_bms_mA / 1000.0F, 0);
 
 	// Apply Duty inverted, as the secondary Duty is inversed
 	ctrl_apply_inverted_sek_duty(ctrl_pi_charge_current.action);
