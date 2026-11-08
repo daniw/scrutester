@@ -106,13 +106,13 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = { {
 		"10AVoltLimit", CTRL_FREQ }, };
 
 /******************* Function Prototypes **************************/
-void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
+void ctrl_main_ctrl_voltage_buck(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate);
 void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate, int32_t voltage_meas_mV);
 void ctrl_main_ctrl_charge_current(uint32_t target_mA,
 		int16_t current_meas_mA, int16_t current_bms_mA);
-void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
+void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
 static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas);
 static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas);
@@ -617,7 +617,7 @@ static void ctrl_apply_buck_burst(float duty) {
 	ctrl_main_handle.duty = duty * 1000;
 }
 
-void ctrl_main_ctrl_voltage_buck(uint32_t voltage_meas_mV,
+void ctrl_main_ctrl_voltage_buck(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
 			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
@@ -865,7 +865,7 @@ void ctrl_main_charge_cv_step(uint16_t cell_max_mV) {
 			(uint32_t) (ctrl_pi_charge_voltage.action * 1000.0F);
 }
 
-void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
+void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_hv,

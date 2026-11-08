@@ -140,5 +140,6 @@ int8_t icon_store_flash_seed(void) {
 	return 0;
 #else
 	printf("flashIcon Failed: No Icon seed present in software\r\n");
+	return -1;
 #endif
 }
