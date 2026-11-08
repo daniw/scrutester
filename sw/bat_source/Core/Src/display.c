@@ -437,8 +437,8 @@ static void enter_charge(void) {
 
 	draw_status_bar("Charge", entry->accent);
 	draw_output_border(entry->accent, 0);
-	draw_footer("ESC: Back", "OK: Start/Stop");
-	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "V", FONT_SMALL, C_WHITE,
+	draw_footer("ESC: Stop", 0);
+	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "V", FONT_SMALL, TEXT_PRIMARY,
 	C_BLACK);
 	LCD_PutStr(16, SECOND_Y + 36, "Cells", FONT_TINY, C_WHITE_63, C_BLACK);
 }
