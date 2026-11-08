@@ -456,6 +456,7 @@ void display_show_charge_done(const char *msg, uint8_t error) {
 	draw_menu_icon((uint8_t) (entry - menu_order), entry, cx, cy, color, 0);
 	int16_t w = (int16_t) (strlen(msg) * UG_GetFontWidth(FONT_SMALL));
 	LCD_PutStr(cx - w / 2, y, (char*) msg, FONT_SMALL, error ? C_RED : C_WHITE,
+	draw_output_border(C_GREEN, !error);
 			C_BLACK);
 	snprintf(text, sizeof(text), "%u.%03u V   %u%%",
 			bms.VoltageRegisters.StackVoltage / 1000,
@@ -471,7 +472,7 @@ static void update_charge(uint8_t output_active) {
 		return;
 	uint32_t elapsed_s = bms.Accumulator.passedTime / 4;
 
-	draw_output_border(entry->accent, output_active);
+	draw_output_border(C_RED, output_active);
 
 	snprintf(text, sizeof(text), "%2u.%03u", bms.VoltageRegisters.StackVoltage / 1000,
 			bms.VoltageRegisters.StackVoltage % 1000);
