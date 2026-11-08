@@ -21,6 +21,9 @@
 // flash_icon_seed.py --emi for an EMI_DEBUG build.
 #define EMI_DEBUG
 
+// Extra values on the 60V/10A/EMI screens (converter duty).
+//#define UI_DEBUG
+
 // CLI commands that bypass all interlocks: setGPIO, setDAC, setDuty, enPWM,
 // wdtTest. Without it they only print a notice.
 //#define CLI_DEBUG

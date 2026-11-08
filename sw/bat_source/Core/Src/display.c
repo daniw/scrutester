@@ -11,6 +11,7 @@
  */
 
 #include "display.h"
+#include "debug.h"
 #include "menu.h"
 #include "lcd.h"
 #include "ugui_fonts.h"
@@ -43,6 +44,8 @@ static char text[48];
 #define STATUS_H      26
 #define BIG_Y         40
 #define SECOND_Y      130
+#define SET_X         (LCD_WIDTH - 120)
+#define UNIT_DX       (7 * 12 + 4) /* "%3d.%03d" in FONT_SMALL + gap */
 #define FOOTER_H      24
 #define FOOTER_Y      (LCD_HEIGHT - FOOTER_H)
 
@@ -209,23 +212,22 @@ static void enter_active_output(statemachine_modes_t mode, const char *big_unit,
 
 	draw_status_bar(menu_name_for_mode(mode), entry->accent);
 	draw_output_border(entry->accent, 0);
-	draw_footer("ESC: Back", "Hold OUT to enable");
+	draw_footer("ESC: Back", "Turn: set  Hold OUT: on");
 
 	LCD_PutStr(LCD_WIDTH / 2 + 70, BIG_Y + 10, (char*) big_unit, FONT_SMALL,
 	C_WHITE, C_BLACK);
 	LCD_PutStr(16, SECOND_Y, (char*) secondary_label, FONT_TINY, C_WHITE_63,
 	C_BLACK);
-	LCD_PutStr(16, SECOND_Y + 18, (char*) secondary_unit, FONT_TINY, C_WHITE_63,
-	C_BLACK);
-	LCD_PutStr(LCD_WIDTH - 100, SECOND_Y, "SET", FONT_TINY, C_WHITE_63,
-	C_BLACK);
-	LCD_PutStr(LCD_WIDTH - 100, SECOND_Y + 18, (char*) setpoint_unit,
-	FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(16 + UNIT_DX, SECOND_Y + 18, (char*) secondary_unit, FONT_SMALL,
+	C_WHITE, C_BLACK);
+	LCD_PutStr(SET_X, SECOND_Y, "SET", FONT_TINY, C_WHITE_63, C_BLACK);
+	LCD_PutStr(SET_X + UNIT_DX, SECOND_Y + 18, (char*) setpoint_unit,
+	FONT_SMALL, C_WHITE, C_BLACK);
 }
 
 static void update_active_output(statemachine_modes_t mode,
 		uint8_t output_active, int32_t big_value_x100,
-		int32_t secondary_value_x1000, uint32_t setpoint_value_x1000,  int32_t debug_value) {
+		int32_t secondary_value_x1000, uint32_t setpoint_value_x1000) {
 	const menu_entry_t *entry = menu_entry_for_mode(mode);
 	if (entry == NULL)
 		return;
@@ -239,18 +241,19 @@ static void update_active_output(statemachine_modes_t mode,
 	snprintf(text, sizeof(text), "%3d.%03d", (int) (secondary_value_x1000 / 1000),
 			(int) ((secondary_value_x1000 < 0 ?
 					-secondary_value_x1000 : secondary_value_x1000) % 1000));
-	LCD_PutStr(16, SECOND_Y + 36, text, FONT_SMALL, C_WHITE, C_BLACK);
+	LCD_PutStr(16, SECOND_Y + 18, text, FONT_SMALL, C_WHITE, C_BLACK);
 
-
-	snprintf(text, sizeof(text), "%3d.%03d", (int) (debug_value / 1000),
-			(int) ((debug_value < 0 ?
-					-debug_value : debug_value) % 1000));
-	LCD_PutStr(16, SECOND_Y + 54, text, FONT_SMALL, C_WHITE, C_BLACK);
+#ifdef UI_DEBUG
+	snprintf(text, sizeof(text), "duty %3d.%03d",
+			(int) (ctrl_main_handle.duty / 1000),
+			(int) ((ctrl_main_handle.duty < 0 ?
+					-ctrl_main_handle.duty : ctrl_main_handle.duty) % 1000));
+	LCD_PutStr(16, SECOND_Y + 40, text, FONT_TINY, C_WHITE_63, C_BLACK);
+#endif
 
 	snprintf(text, sizeof(text), "%3u.%03u", (unsigned) (setpoint_value_x1000 / 1000),
 			(unsigned) (setpoint_value_x1000 % 1000));
-	LCD_PutStr(LCD_WIDTH - 100, SECOND_Y + 36, text, FONT_SMALL, C_WHITE,
-	C_BLACK);
+	LCD_PutStr(SET_X, SECOND_Y + 18, text, FONT_SMALL, C_WHITE, C_BLACK);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -381,7 +384,7 @@ static void enter_isometer(void) {
 
 	draw_status_bar("Isolation Test", entry->accent);
 	draw_output_border(entry->accent, 0);
-	draw_footer("ESC: Back", "Encoder: test V");
+	draw_footer("ESC: Back", "Turn: test V  Hold OUT: test");
 	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "Mohm", FONT_SMALL, C_WHITE,
 	C_BLACK);
 }
@@ -549,13 +552,13 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 		update_active_output(mode, output_active,
 				adc_data.converted.v_term_ext_mv_filt / 10,
 				adc_data.converted.i_out_ext_mA_filt,
-				ctrl_main_handle.voltage_reference_mV, ctrl_main_handle.duty);
+				ctrl_main_handle.voltage_reference_mV);
 		break;
 	case STATEMACHINE_MODE_10A_OUT:
 		update_active_output(mode, output_active,
 				adc_data.converted.i_out_ext_mA_filt / 10,
 				adc_data.converted.v_term_ext_mv_filt,
-				ctrl_main_handle.current_reference_mA, ctrl_main_handle.duty);
+				ctrl_main_handle.current_reference_mA);
 		break;
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
@@ -578,7 +581,7 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 		update_active_output(mode, output_active,
 				adc_data.converted.v_term_ext_mv_filt / 10,
 				adc_data.converted.i_out_ext_mA_filt,
-				ctrl_main_handle.voltage_reference_mV, ctrl_main_handle.duty);
+				ctrl_main_handle.voltage_reference_mV);
 		break;
 #endif
 	default:
