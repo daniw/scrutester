@@ -101,9 +101,10 @@
 #define CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH 0.2F
 #define CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW 0.0F
 
-#define CTRL_PARAM_HV_IOUT_LIMIT_mA 1
-#define CTRL_PARAM_HV_CURRENT_P 0.001F
-#define CTRL_PARAM_HV_CURRENT_I (0.1F/CTRL_FREQ)
+// Limiter works in mA (P: duty per mA); keep below PROTECTION_ISO_MAX_uA.
+#define CTRL_PARAM_HV_IOUT_LIMIT_uA 1200
+#define CTRL_PARAM_HV_CURRENT_P 0.05F
+#define CTRL_PARAM_HV_CURRENT_I (5.0F/CTRL_FREQ)
 
 // ---- EMI test mode (see EMI_DEBUG in statemachine.h) ---------------
 // HV flyback runs open-loop at a fixed duty while the LV converter regulates

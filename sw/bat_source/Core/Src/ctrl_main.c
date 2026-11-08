@@ -133,7 +133,7 @@ void ctrl_main_init(void) {
 	}
 
 	ctrl_pi_boost_iout_limit.ref = CTRL_PARAM_BOOST_IOUT_LIMIT_mA / 1000.0F;
-	ctrl_pi_hv_iout_limit.ref = CTRL_PARAM_HV_IOUT_LIMIT_mA / 1000.0F;
+	ctrl_pi_hv_iout_limit.ref = CTRL_PARAM_HV_IOUT_LIMIT_uA / 1000.0F;
 	ctrl_pi_10a_vlimit.ref = CTRL_PARAM_10A_COMPLIANCE_mV / 1000.0F;
 }
 
@@ -246,6 +246,9 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	case CTRL_MODE_ISOMETER:
 		ctrl_PID_reset(&ctrl_pi_voltage_hv);
 		ctrl_PID_reset(&ctrl_pi_hv_iout_limit);
+		// Limiter starts at its ceiling (as the 60V/10A limiters).
+		ctrl_pi_hv_iout_limit.prev_I_action =
+				ctrl_pi_hv_iout_limit.sat_limit_high;
 		hrtim_set_freq(HRTIM_CHANNEL_HV, CTRL_PARAM_SW_FREQ_HV);
 		hrtim_set_duty(HRTIM_CHANNEL_HV, 0);
 		hrtim_enable(HRTIM_CHANNEL_HV);
@@ -866,12 +869,11 @@ void ctrl_main_ctrl_voltage_hv(uint32_t voltage_meas_mV,
 			voltage_meas_accurate_mV / 1000.0F, 0);
 
 	ctrl_PID_controller_execute(&ctrl_pi_hv_iout_limit,
-			current_meas_iso_uA / 1000000.0F, current_meas_iso_uA / 1000000.0F,
-			0);
+			current_meas_iso_uA / 1000.0F, current_meas_iso_uA / 1000.0F, 0);
 
 	float duty_limited = ctrl_pi_voltage_hv.action;
 	if (ctrl_pi_hv_iout_limit.action < duty_limited) {
-		//duty_limited = ctrl_pi_hv_iout_limit.action;
+		duty_limited = ctrl_pi_hv_iout_limit.action;
 	}
 
 	// Apply Duty

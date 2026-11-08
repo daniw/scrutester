@@ -187,7 +187,7 @@ severity:
         {\ac{OVP} crowbar and \ac{GDT}s as hardware backstops (\secref{sec_ovp}, \secref{sec_terminal}); treat the first ISOMETER activation after any gain change as a supervised bench test.}
     \FMEAItemCritical
         {[FW] ISOMETER leakage-current limiter not active}
-        {A misplaced line left the limiter's \texttt{if} guarding the duty write instead of the limit, so ISOMETER had no current limit and the duty froze whenever the limiter would have acted. The \texttt{if} is fixed, but the limiter is disabled again because ISOMETER only reached about \qty{102}{\volt} with it.}
+        {A misplaced line left the limiter's \texttt{if} guarding the duty write instead of the limit, so ISOMETER had no current limit and the duty froze whenever the limiter would have acted. The \texttt{if} is fixed and the limiter is active again, now starting at its ceiling and working in mA (\qty{1.2}{\milli\ampere} limit); the earlier version only reached about \qty{102}{\volt}. Pending bench verification.}
         {The flyback is not limited to \qty{1}{\milli\ampere} leakage current by firmware; into a low insulation resistance or a person the current is set only by the voltage loop and the hardware.}
         {Per-mode protection limit on the external \texttt{I\_ISO} (\qty{1.5}{\milli\ampere}, \qty{20}{\milli\second} poll, two-tick debounce) stops the flyback; the \texttt{OCP\_N} hardware current limiter of the flyback (\secref{sec_ocp}) acts independently. Open: make the limiter work at full voltage (re-tune). \todo[inline]{rating proposed, check}}
     \caption{FMEA -- Isolation measurement} \\
