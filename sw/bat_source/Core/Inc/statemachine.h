@@ -44,8 +44,12 @@ typedef enum
 	  STATEMACHINE_SETTINGS_MODE_ADC2,
 	  STATEMACHINE_SETTINGS_MODE_PROTECTION,
 	  STATEMACHINE_SETTINGS_MODE_ABOUT,
+	  STATEMACHINE_SETTINGS_MODE_SERVICE, /* PIN entry, unlocks the service entries */
 	  STATEMACHINE_SETTINGS_MODE_LENGTH
 } statemachine_settings_modes_t;
+
+/* Service PIN: 4 digits, compared on the PIN screen (Settings > Service). */
+#define SETTINGS_SERVICE_PIN "0000"
 
 typedef struct{
 	statemachine_modes_t current_mode;
@@ -63,6 +67,14 @@ void statemachine_step(void);
 void statemachine_switchfromIdle(statemachine_modes_t mode);
 void statemachine_switchtoIdle(void);
 void statemachine_set_setpoint(uint16_t count);
+
+/**
+ * @brief Builds the visible Settings list (public entries, then either
+ *        "Service" or, once unlocked, the service entries).
+ * @param list Output, at least STATEMACHINE_SETTINGS_MODE_LENGTH entries.
+ * @return Number of entries.
+ */
+uint8_t statemachine_settings_list(statemachine_settings_modes_t *list);
 
 #ifdef CHARGE_DEBUG
 /* CHARGE single-step bench test (charge_seq.h): with test mode on, CHARGE

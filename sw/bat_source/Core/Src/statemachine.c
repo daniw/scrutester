@@ -98,6 +98,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode);
 void statemachine_switchtoIdle(void);
 static void statemachine_apply_encoder_setpoint(void);
 static void statemachine_step_calibration(void);
+static void statemachine_step_service_pin(void);
 static void statemachine_enter_mode_generic(statemachine_modes_t mode);
 static uint8_t statemachine_enter_charge(void);
 static uint8_t statemachine_enter_charge_low_current(void);
@@ -110,6 +111,13 @@ static void statemachine_charge_reset_timers(void);
 static void statemachine_charge_finish(const char *msg, uint8_t error);
 static void statemachine_clear_mode_error(void);
 static uint8_t statemachine_ovp_lockout(void);
+
+/* Service entries unlocked (RAM only, cleared by reset/power-off). */
+static uint8_t service_unlocked;
+static uint8_t pin_digits[4];
+static uint8_t pin_pos;
+static uint8_t pin_wait; // ticks left of the "Wrong PIN" message
+static input_encoder_clamp_t pin_clamp;
 
 /* Settings > Calibration sub-UI state -- 0=channel list, 1=zero step,
  * 2=optional gain step (see display_calibration_enter/update()). */
@@ -176,6 +184,75 @@ static void statemachine_apply_encoder_setpoint(void) {
 			&encoder_setpoint_clamp, 0, max);
 	ctrl_main_apply_reference(statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode),
 			ctrl_main_handle.poti_reference);
+}
+
+uint8_t statemachine_settings_list(statemachine_settings_modes_t *list) {
+	uint8_t n = 0;
+
+	list[n++] = STATEMACHINE_SETTINGS_MODE_DISPLAY;
+	list[n++] = STATEMACHINE_SETTINGS_MODE_ABOUT;
+	if (!service_unlocked) {
+		list[n++] = STATEMACHINE_SETTINGS_MODE_SERVICE;
+	} else {
+		list[n++] = STATEMACHINE_SETTINGS_MODE_BMS;
+		list[n++] = STATEMACHINE_SETTINGS_MODE_CALIBRATION;
+		list[n++] = STATEMACHINE_SETTINGS_MODE_ADC1;
+		list[n++] = STATEMACHINE_SETTINGS_MODE_ADC2;
+		list[n++] = STATEMACHINE_SETTINGS_MODE_PROTECTION;
+	}
+	return n;
+}
+
+/**
+ * @brief Back to the Settings list.
+ * @param idx Selected list position.
+ */
+static void statemachine_leave_service_pin(uint8_t idx) {
+	statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
+	statemachine_handle.current_menu_index = idx;
+	input_encoder_reset(idx);
+	display_show_settings_list(idx);
+}
+
+/* Drives the Settings > Service PIN entry: encoder dials a digit, OK =
+ * next/check, ESC = previous digit or back. Wrong PIN: message, then list. */
+static void statemachine_step_service_pin(void) {
+	if (pin_wait) {
+		if (--pin_wait == 0)
+			statemachine_leave_service_pin(statemachine_handle.current_menu_index);
+		return;
+	}
+
+	uint8_t d = (uint8_t) input_encoder_read_clamped(&pin_clamp, 0, 9);
+	if (d != pin_digits[pin_pos]) {
+		pin_digits[pin_pos] = d;
+		display_service_pin(pin_digits, pin_pos);
+	}
+
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		if (pin_pos < 3) {
+			pin_digits[++pin_pos] = 0;
+			input_encoder_clamp_reset(&pin_clamp, 0);
+			display_service_pin(pin_digits, pin_pos);
+			return;
+		}
+		for (uint8_t i = 0; i < 4; i++) {
+			if (pin_digits[i] != SETTINGS_SERVICE_PIN[i] - '0') {
+				display_service_pin_wrong();
+				pin_wait = 1000 / STATEMACHINE_STEP_PERIOD_mS;
+				return;
+			}
+		}
+		service_unlocked = 1;
+		statemachine_leave_service_pin(0);
+	} else if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		if (pin_pos == 0) {
+			statemachine_leave_service_pin(statemachine_handle.current_menu_index);
+			return;
+		}
+		input_encoder_clamp_reset(&pin_clamp, pin_digits[--pin_pos]);
+		display_service_pin(pin_digits, pin_pos);
+	}
 }
 
 /* Drives the Settings > Calibration sub-UI (see calibration_ui_state above).
@@ -463,17 +540,22 @@ void statemachine_step(void) {
 
 	case STATEMACHINE_MODE_SETTINGS:
 		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_MENU) {
-			temp = STATEMACHINE_SETTINGS_MODE_BMS
-					+ (input_encoder_read())
-							% (STATEMACHINE_SETTINGS_MODE_LENGTH - 1);
+			statemachine_settings_modes_t list[STATEMACHINE_SETTINGS_MODE_LENGTH];
+			temp = input_encoder_read() % statemachine_settings_list(list);
 			if (temp != statemachine_handle.current_menu_index) {
 				statemachine_handle.current_menu_index = temp;
 				display_show_settings_list(temp);
 			}
 			if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 				statemachine_handle.settings_mode =
-						(statemachine_settings_modes_t) statemachine_handle.current_menu_index;
-				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
+						list[statemachine_handle.current_menu_index];
+				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_SERVICE) {
+					pin_pos = 0;
+					pin_digits[0] = 0;
+					pin_wait = 0;
+					input_encoder_clamp_reset(&pin_clamp, 0);
+					display_service_pin(pin_digits, pin_pos);
+				} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
 					calibration_ui_state = 0;
 					calibration_selected_channel = CAL_CH_V_TERM;
 					calibration_ensure_adc_mode(calibration_selected_channel);
@@ -485,6 +567,9 @@ void statemachine_step(void) {
 		} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
 			statemachine_step_calibration();
 			return;
+		} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_SERVICE) {
+			statemachine_step_service_pin();
+			return;
 		} else {
 			display_update_settings_detail(statemachine_handle.settings_mode);
 			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
@@ -495,7 +580,7 @@ void statemachine_step(void) {
 				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {
 					balancing_clear_manual_override();
 				}
-				input_encoder_reset(statemachine_handle.settings_mode - STATEMACHINE_SETTINGS_MODE_BMS);
+				input_encoder_reset(statemachine_handle.current_menu_index);
 				statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
 				display_show_settings_list(statemachine_handle.current_menu_index);
 				return;
@@ -967,7 +1052,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_SETTINGS:
 		statemachine_handle.current_mode = mode;
 		statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
-		statemachine_handle.current_menu_index = STATEMACHINE_SETTINGS_MODE_BMS;
+		statemachine_handle.current_menu_index = 0;
 		display_show_settings_list(statemachine_handle.current_menu_index);
 		break;
 

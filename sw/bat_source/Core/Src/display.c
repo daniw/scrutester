@@ -598,19 +598,26 @@ static const char *const SETTINGS_ITEMS[STATEMACHINE_SETTINGS_MODE_LENGTH] = {
 		[STATEMACHINE_SETTINGS_MODE_ADC1] = "ADC Readings 1",
 		[STATEMACHINE_SETTINGS_MODE_ADC2] = "ADC Readings 2",
 		[STATEMACHINE_SETTINGS_MODE_PROTECTION] = "Protection",
-		[STATEMACHINE_SETTINGS_MODE_ABOUT] = "About", };
+		[STATEMACHINE_SETTINGS_MODE_ABOUT] = "About",
+		[STATEMACHINE_SETTINGS_MODE_SERVICE] = "Service", };
 
+/**
+ * @brief Draws the visible Settings list.
+ * @param submenu_index Selected position in the visible list.
+ */
 void display_show_settings_list(uint8_t submenu_index) {
+	statemachine_settings_modes_t list[STATEMACHINE_SETTINGS_MODE_LENGTH];
+	uint8_t n = statemachine_settings_list(list);
+
 	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
 	draw_status_bar("Settings", C_SILVER);
 	draw_footer("ESC: Back", "OK: Open");
 
-	for (int i = STATEMACHINE_SETTINGS_MODE_BMS;
-			i < STATEMACHINE_SETTINGS_MODE_LENGTH; i++) {
-		int16_t y = STATUS_H + 16 + (i - 1) * 22;
+	for (int i = 0; i < n; i++) {
+		int16_t y = STATUS_H + 16 + i * 22;
 		uint8_t selected = (i == submenu_index);
 
-		LCD_PutStr(selected ? 26 : 16, y, (char*) SETTINGS_ITEMS[i], FONT_SMALL,
+		LCD_PutStr(selected ? 26 : 16, y, (char*) SETTINGS_ITEMS[list[i]], FONT_SMALL,
 		C_WHITE, C_BLACK);
 		if (selected)
 			LCD_PutStr(6, y, ">", FONT_SMALL, C_WHITE, C_BLACK);
@@ -822,6 +829,35 @@ static void update_settings_protection(void) {
 		}
 		LCD_PutStr(16, STATUS_H + 8 + i * 15, text, FONT_TINY, level_color(level, C_GREEN), C_BLACK);
 	}
+}
+
+/**
+ * @brief Draws the service PIN entry.
+ * @param digits Entered digits (digits[pos] is the one being dialed).
+ * @param pos Current digit, 0..3.
+ */
+void display_service_pin(const uint8_t *digits, uint8_t pos) {
+	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
+	draw_status_bar(SETTINGS_ITEMS[STATEMACHINE_SETTINGS_MODE_SERVICE], C_SILVER);
+	draw_footer("ESC: Back", "OK: Next");
+	LCD_PutStr(16, STATUS_H + 16, "Enter PIN", FONT_SMALL, C_WHITE, C_BLACK);
+
+	for (uint8_t i = 0; i < 4; i++) {
+		char c[2] = { (i < pos) ? '*' : (i == pos ? (char) ('0' + digits[i]) : '-'), 0 };
+		int16_t x = LCD_WIDTH / 2 - 2 * 40 - 12 + i * 40;
+
+		if (i == pos)
+			UG_FillFrame(x - 4, STATUS_H + 60, x + 36, STATUS_H + 120, C_DIM_GRAY);
+		LCD_PutStr(x, STATUS_H + 70, c, FONT_BIG, C_WHITE,
+				i == pos ? C_DIM_GRAY : C_BLACK);
+	}
+}
+
+/** @brief Shows the wrong-PIN message in place of the PIN digits. */
+void display_service_pin_wrong(void) {
+	UG_FillFrame(0, STATUS_H + 60, LCD_WIDTH - 1, STATUS_H + 120, C_BLACK);
+	LCD_PutStr(LCD_WIDTH / 2 - 54, STATUS_H + 80, "Wrong PIN", FONT_SMALL,
+	C_RED, C_BLACK);
 }
 
 void display_update_settings_detail(uint8_t submenu_index) {

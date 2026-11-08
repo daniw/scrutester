@@ -46,6 +46,10 @@ void display_show_settings_list(uint8_t submenu_index);
 void display_enter_settings_detail(uint8_t submenu_index);
 void display_update_settings_detail(uint8_t submenu_index);
 
+/* Service PIN screen: digits before pos shown as '*', pos highlighted, rest '-'. */
+void display_service_pin(const uint8_t *digits, uint8_t pos);
+void display_service_pin_wrong(void);
+
 /* Calibration sub-screen (STATEMACHINE_SETTINGS_MODE_CALIBRATION). ui_state:
  * 0 = channel list, 1 = zero step, 2 = optional gain step (reference_value is
  * only meaningful/used for ui_state == 2, the encoder-dialed reference). */

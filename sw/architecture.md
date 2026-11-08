@@ -128,7 +128,13 @@ logic, and the protection interlock.
 | `STATEMACHINE_MODE_EMI` | EMI test (debug only: `EMI_DEBUG` in `debug.h`): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (1 %), LV converter regulates `OUT_LV` with the full-range voltage loop of 60V_OUT (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `PROTECTION_EMI_MAX_mV` / `PROTECTION_EMI_MAX_mA` on V_TERM / I_OUT (protection limits); exempt from the inactivity power-off while running. Bench-run before the rework: works, but the LV loop oscillates (untuned). |
 
 Settings sub-modes (`statemachine_settings_modes_t`): `MENU`, `BMS`,
-`DISPLAY`, `CALIBRATION`, `ADC1`, `ADC2`, `PROTECTION`, `ABOUT`.
+`DISPLAY`, `CALIBRATION`, `ADC1`, `ADC2`, `PROTECTION`, `ABOUT`, `SERVICE`.
+The list shows Display, About and Service; Service opens a 4-digit PIN entry
+(`SETTINGS_SERVICE_PIN`, encoder digit, OK next, ESC back; wrong PIN shows a
+message for 1 s). A correct PIN unlocks BMS, Calibration, ADC 1/2 and
+Protection (replacing Service) until reset/power-off; the flag is RAM only.
+The CLI is not restricted. `statemachine_settings_list()` builds the visible
+list; `current_menu_index` is the position in it.
 
 Per-mode data (control mode, relay/shunt mask, enable GPIO, entry flags, ADC
 trigger) is centralised rather than duplicated across `statemachine.c`,
