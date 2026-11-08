@@ -197,6 +197,19 @@ uint16_t protection_get_error_mask(void) {
 	return protection_error_mask;
 }
 
+/**
+ * @brief Current level of one protection source.
+ * @param src Source bit.
+ * @return ERROR, WARNING or OK.
+ */
+protection_level_t protection_get_level(protection_source_t src) {
+	if (protection_error_mask & (uint16_t) src)
+		return PROTECTION_LEVEL_ERROR;
+	if (protection_warning_mask & (uint16_t) src)
+		return PROTECTION_LEVEL_WARNING;
+	return PROTECTION_LEVEL_OK;
+}
+
 const char *protection_source_name(protection_source_t src) {
 	switch (src) {
 	case PROTECTION_SRC_TEMP_SEC:     return "TEMP_SEC";

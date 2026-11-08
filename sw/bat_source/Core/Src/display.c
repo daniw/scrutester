@@ -24,6 +24,8 @@
 #include "config_store.h"
 #include "icon_store.h"
 #include "version.h"
+#include "protection.h"
+#include "protection_param.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -595,6 +597,7 @@ static const char *const SETTINGS_ITEMS[STATEMACHINE_SETTINGS_MODE_LENGTH] = {
 		[STATEMACHINE_SETTINGS_MODE_CALIBRATION] = "Calibration",
 		[STATEMACHINE_SETTINGS_MODE_ADC1] = "ADC Readings 1",
 		[STATEMACHINE_SETTINGS_MODE_ADC2] = "ADC Readings 2",
+		[STATEMACHINE_SETTINGS_MODE_PROTECTION] = "Protection",
 		[STATEMACHINE_SETTINGS_MODE_ABOUT] = "About", };
 
 void display_show_settings_list(uint8_t submenu_index) {
@@ -604,7 +607,7 @@ void display_show_settings_list(uint8_t submenu_index) {
 
 	for (int i = STATEMACHINE_SETTINGS_MODE_BMS;
 			i < STATEMACHINE_SETTINGS_MODE_LENGTH; i++) {
-		int16_t y = STATUS_H + 16 + (i - 1) * 24;
+		int16_t y = STATUS_H + 16 + (i - 1) * 22;
 		uint8_t selected = (i == submenu_index);
 
 		LCD_PutStr(selected ? 26 : 16, y, (char*) SETTINGS_ITEMS[i], FONT_SMALL,
@@ -730,6 +733,36 @@ static void update_settings_adc1(void) {
 	LCD_PutStr(16, STATUS_H + 173, text, FONT_TINY, C_WHITE, C_BLACK);
 }
 
+/**
+ * @brief Colour for a protection level.
+ * @param level Protection level.
+ * @param ok_color Colour used for OK.
+ */
+static UG_COLOR level_color(protection_level_t level, UG_COLOR ok_color) {
+	if (level == PROTECTION_LEVEL_ERROR)
+		return C_RED;
+	if (level == PROTECTION_LEVEL_WARNING)
+		return C_YELLOW;
+	return ok_color;
+}
+
+/**
+ * @brief Draws one NTC row: value or OPEN, coloured by protection level.
+ * @param y Row position.
+ * @param name Row label.
+ * @param raw Raw ADC value.
+ * @param temp Converted temperature in degC.
+ * @param src Matching protection source.
+ */
+static void draw_temp_row(int16_t y, const char *name, uint16_t raw,
+		int16_t temp, protection_source_t src) {
+	if (temp <= PROTECTION_TEMP_ERROR_OPEN_NTC)
+		snprintf(text, sizeof(text), "%-14s: %8u : %7s   ", name, raw, "OPEN");
+	else
+		snprintf(text, sizeof(text), "%-14s: %8u : %7i \260C", name, raw, temp);
+	LCD_PutStr(16, y, text, FONT_TINY, level_color(protection_get_level(src), C_WHITE), C_BLACK);
+}
+
 static void update_settings_adc2(void) {
 	static uint8_t downsample = 0;
 	if(downsample++<10)
@@ -738,16 +771,12 @@ static void update_settings_adc2(void) {
 	adc_convert_data();
 	snprintf(text, sizeof(text), "v_3v3         : %8u : %7u mV",			adc_data.raw.v_3v3, adc_data.converted.v_3v3);
 	LCD_PutStr(16, STATUS_H + 8, text, FONT_TINY, C_WHITE, C_BLACK);
-	snprintf(text, sizeof(text), "temp_sec      : %8u : %7i \260C",			adc_data.raw.temp_sec, adc_data.converted.temp_sec);
-	LCD_PutStr(16, STATUS_H + 23, text, FONT_TINY, C_WHITE, C_BLACK);
+	draw_temp_row(STATUS_H + 23, "temp_sec", adc_data.raw.temp_sec, adc_data.converted.temp_sec, PROTECTION_SRC_TEMP_SEC);
 	snprintf(text, sizeof(text), "v_3v3a        : %8u : %7u mV",			adc_data.raw.v_3v3a, adc_data.converted.v_3v3a);
 	LCD_PutStr(16, STATUS_H + 38, text, FONT_TINY, C_WHITE, C_BLACK);
-	snprintf(text, sizeof(text), "temp_inductor : %8u : %7i \260C",			adc_data.raw.temp_trafo, adc_data.converted.temp_trafo);
-	LCD_PutStr(16, STATUS_H + 53, text, FONT_TINY, C_WHITE, C_BLACK);
-	snprintf(text, sizeof(text), "temp_current  : %8u : %7i \260C",			adc_data.raw.temp_current, adc_data.converted.temp_current);
-	LCD_PutStr(16, STATUS_H + 68, text, FONT_TINY, C_WHITE, C_BLACK);
-	snprintf(text, sizeof(text), "temp_prim     : %8u : %7i \260C",			adc_data.raw.temp_prim, adc_data.converted.temp_prim);
-	LCD_PutStr(16, STATUS_H + 83, text, FONT_TINY, C_WHITE, C_BLACK);
+	draw_temp_row(STATUS_H + 53, "temp_inductor", adc_data.raw.temp_trafo, adc_data.converted.temp_trafo, PROTECTION_SRC_TEMP_TRAFO);
+	draw_temp_row(STATUS_H + 68, "temp_current", adc_data.raw.temp_current, adc_data.converted.temp_current, PROTECTION_SRC_TEMP_CURRENT);
+	draw_temp_row(STATUS_H + 83, "temp_prim", adc_data.raw.temp_prim, adc_data.converted.temp_prim, PROTECTION_SRC_TEMP_PRIM);
 	snprintf(text, sizeof(text), "v_15v         : %8u : %7u mV",			adc_data.raw.v_15v, adc_data.converted.v_15v);
 	LCD_PutStr(16, STATUS_H + 98, text, FONT_TINY, C_WHITE, C_BLACK);
 	snprintf(text, sizeof(text), "v_vcc         : %8u : %7u mV",			adc_data.raw.v_vcc, adc_data.converted.v_vcc);
@@ -763,6 +792,38 @@ static void update_settings_adc2(void) {
 
 }
 
+static void update_settings_protection(void) {
+	static const protection_source_t sources[] = {
+		PROTECTION_SRC_TEMP_SEC, PROTECTION_SRC_TEMP_TRAFO,
+		PROTECTION_SRC_TEMP_CURRENT, PROTECTION_SRC_TEMP_PRIM,
+		PROTECTION_SRC_OVP, PROTECTION_SRC_OCP,
+		PROTECTION_SRC_LIMIT_V, PROTECTION_SRC_LIMIT_I,
+		PROTECTION_SRC_BMS_STALE, PROTECTION_SRC_EXT_ADC,
+	};
+	static const char *const level_text[] = { "OK", "WARN", "ERROR" };
+	const int16_t temps[] = {
+		adc_data.converted.temp_sec, adc_data.converted.temp_trafo,
+		adc_data.converted.temp_current, adc_data.converted.temp_prim,
+	};
+	static uint8_t downsample = 0;
+	if (downsample++ < 10)
+		return;
+	downsample = 0;
+	adc_convert_data();
+
+	for (unsigned i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+		protection_level_t level = protection_get_level(sources[i]);
+		int n = snprintf(text, sizeof(text), "%-13s %-6s", protection_source_name(sources[i]), level_text[level]);
+		if (i < 4 && n > 0) {
+			if (temps[i] <= PROTECTION_TEMP_ERROR_OPEN_NTC)
+				snprintf(text + n, sizeof(text) - n, "  OPEN  ");
+			else
+				snprintf(text + n, sizeof(text) - n, "%4i \260C", temps[i]);
+		}
+		LCD_PutStr(16, STATUS_H + 8 + i * 15, text, FONT_TINY, level_color(level, C_GREEN), C_BLACK);
+	}
+}
+
 void display_update_settings_detail(uint8_t submenu_index) {
 	switch (submenu_index) {
 	case STATEMACHINE_SETTINGS_MODE_BMS:
@@ -776,6 +837,9 @@ void display_update_settings_detail(uint8_t submenu_index) {
 		break;
 	case STATEMACHINE_SETTINGS_MODE_ADC2:
 		update_settings_adc2();
+		break;
+	case STATEMACHINE_SETTINGS_MODE_PROTECTION:
+		update_settings_protection();
 		break;
 	default:
 		break;

@@ -30,6 +30,7 @@ void protection_update(statemachine_modes_t mode);   /* call once per ~100ms sta
 protection_level_t protection_get_worst_level(void);
 uint16_t protection_get_warning_mask(void);
 uint16_t protection_get_error_mask(void);
+protection_level_t protection_get_level(protection_source_t src);
 const char *protection_source_name(protection_source_t src);
 const char *protection_error_text(void);
 void protection_clear_limits(void);
