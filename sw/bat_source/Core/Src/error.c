@@ -34,6 +34,17 @@ struct error_queue
 
 struct error_queue error_queue;
 
+static const char *const error_names[] = {
+	[ERROR_NONE] = "NONE",
+	[ERROR_IIC_READCONF] = "IIC_READCONF",
+	[ERROR_IIC_INIT] = "IIC_INIT",
+	[ERROR_IIC_SELFTEST] = "IIC_SELFTEST",
+	[ERROR_IIC_OVF] = "IIC_OVF",
+	[ERROR_TTC_OVF] = "TTC_OVF",
+	[ERROR_EVENT_OVF] = "EVENT_OVF",
+	[ERROR_EEPROM_TIMEOUT] = "EEPROM_TIMEOUT",
+};
+
 /**
  * Prints a queued error on the CLI.
  * @param code error code.
@@ -45,7 +56,10 @@ void error_Write(ERROR_CODE code, uint32_t time, uint32_t date, uint32_t data)
 {
 	(void) time;
 	(void) date;
-	printf("ERROR %u data %lu\r\n", (unsigned) code, (unsigned long) data);
+	if ((unsigned) code < sizeof(error_names) / sizeof(error_names[0]) && error_names[code])
+		printf("ERROR %s data %lu\r\n", error_names[code], (unsigned long) data);
+	else
+		printf("ERROR %u data %lu\r\n", (unsigned) code, (unsigned long) data);
 }
 
 /**

@@ -162,7 +162,7 @@ int main(void)
    */
   cli_init(&huart2);
   printf("FW %d.%d %s %s\r\n", FW_VERSION_MAJOR, FW_VERSION_MINOR, GIT_HASH, GIT_DATE);
-  watchdog_report_reset_cause();
+  fault_report_reset();
 
   /*
    * Init UI control (LEDs)

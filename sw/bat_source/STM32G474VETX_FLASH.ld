@@ -171,6 +171,16 @@ SECTIONS
     __bss_end__ = _ebss;
   } >RAM
 
+  /* Survives resets: not in .bss/.data, so startup neither zeroes nor loads it.
+   * Before _user_heap_stack so "end" (heap start) lies behind it. */
+  .noinit (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.noinit)
+    *(.noinit*)
+    . = ALIGN(4);
+  } >RAM
+
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */
   ._user_heap_stack :
   {

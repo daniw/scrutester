@@ -24,10 +24,6 @@
  * -- never size it close to the longest legitimate main-loop iteration. */
 #define WATCHDOG_TIMEOUT_MS  2000U
 
-/* Prints a message if the last reset was caused by the watchdog and clears the
- * reset flags. Call once at boot, after the CLI is up. */
-void watchdog_report_reset_cause(void);
-
 /* Starts the watchdog. It cannot be stopped again until the next reset, so call
  * this only once initialisation is done (init has long blocking waits that
  * would otherwise all need kicks). */

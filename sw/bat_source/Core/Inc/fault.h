@@ -10,6 +10,8 @@
 
 #include <stdint.h>
 
+void fault_report_reset(void);
+const char *fault_last_reset_text(void);
 void fault_halt(const char *name, uint32_t addr) __attribute__((noreturn));
 
 #endif /* INC_FAULT_H_ */

@@ -714,7 +714,12 @@ loop. They are **not persisted** and not shown on screen.
 `hrtim_emergency_off()` (register-only: gate-driver enables off, burst/IDLES1
 cleared, all HRTIM outputs disabled), fault name and CFSR/HFSR/fault address on
 USART2, then spin until the IWDG resets the MCU. Before `watchdog_init()` (boot)
-it spins until power-off, with the power stage off.
+it spins until power-off, with the power stage off. Name, address, CFSR and HFSR are also stored in a `.noinit` RAM
+section (linker script, not zeroed at startup); `fault_report_reset()` prints
+"Reset cause: <RCC flags>" and "Last reset: FAULT ..." at boot and clears them.
+`fault_last_reset_text()` gives a screen text ("Restarted after fault (...)" /
+"Restarted by watchdog" / NULL). IWDG flag plus a record = fault, IWDG flag
+alone = hang.
 
 **Watchdog** (`watchdog.c`): the 25 kHz control loop lives in the ADC ISR, so a
 hung main loop would leave the converter running on stale setpoints. The IWDG
@@ -727,8 +732,8 @@ far longer than the timeout) and `gpio_power_off()`'s wait loop. **Rule: any new
 blocking wait that can approach ~1 s must call `watchdog_kick()`.** The LSI
 tolerance is wide, so the real timeout can be well below 2 s. The debugger
 freezes the counter (`__HAL_DBGMCU_FREEZE_IWDG()`), so breakpoints don't reset
-the chip. After a reset `watchdog_report_reset_cause()` prints
-"Reset caused by watchdog" and clears the sticky reset flags. `wdtTest` (CLI)
+the chip. After a reset `fault_report_reset()` prints the reset cause and
+clears the sticky reset flags. `wdtTest` (CLI)
 hangs the main loop on purpose; bench-verified: the board resets and reboots (the power latch rides through, see known issue #15). The kick is
 unconditional per loop iteration — a dead control ISR alone would not trip it
 (see known issue #15).

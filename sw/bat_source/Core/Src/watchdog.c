@@ -9,7 +9,6 @@
 
 #include "main.h"
 #include "watchdog.h"
-#include <stdio.h>
 
 #define WATCHDOG_KEY_RELOAD  0xAAAAU  /* reload the counter                   */
 #define WATCHDOG_KEY_ENABLE  0xCCCCU  /* start the watchdog (irreversible)    */
@@ -26,15 +25,6 @@
 #if (WATCHDOG_TIMEOUT_MS < 1U) || (WATCHDOG_TIMEOUT_MS > 4095U)
 #error "WATCHDOG_TIMEOUT_MS must fit the 12-bit IWDG reload register"
 #endif
-
-void watchdog_report_reset_cause(void) {
-	if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) {
-		printf("Reset caused by watchdog\r\n");
-	}
-	// Clear unconditionally: the flags are sticky across resets, so leaving
-	// them set would make every later boot report a stale cause.
-	__HAL_RCC_CLEAR_RESET_FLAGS();
-}
 
 void watchdog_init(void) {
 	// Freeze the counter while a debugger has the core halted, otherwise every

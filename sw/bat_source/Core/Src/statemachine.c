@@ -20,6 +20,7 @@
 #include "hrtim.h"
 #include "bq76905.h"
 #include "ctrl_param.h"
+#include "fault.h"
 #include "calibration.h"
 #include "protection.h"
 #include "balancing.h"
@@ -155,6 +156,7 @@ void statemachine_init(void) {
 
 	timer_add(STATEMACHINE_STEP_PERIOD_mS, TIMER_TYPE_TICK, EVENT_SM_STEP, 0);
 	statemachine_switchtoIdle();
+	idle_error_pending = fault_last_reset_text(); // shown on the first idle draw
 }
 
 static input_encoder_clamp_t encoder_setpoint_clamp;

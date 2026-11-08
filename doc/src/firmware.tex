@@ -238,7 +238,7 @@ converter output off from \texttt{statemachine\_step()} and shows a red
 banner; the passive meter modes return to IDLE. An \ac{OVP} latch trip
 switches the converters off and shorts the secondary half-bridge until the
 user confirms a reset with OK (three attempts, then power cycle). Fault handlers switch the power stage off at register
-level before they halt, and the independent watchdog (about
+level, record the fault in RAM for the next boot report and halt, and the independent watchdog (about
 \qty{2}{\second}) resets a hung main loop. The mechanism is summarised here; the full
 failure-by-failure treatment, including where this protection does and
 does not currently reach, is in \autoref{sec:fmea}.
