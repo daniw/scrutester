@@ -25,7 +25,6 @@ severity:
 
 \subsection{Battery and \acs{BMS}}
 
-\begin{table}[h!]
     \begin{FMEATable}
     \FMEAItemMinor
         {[HW+FW, closed] Cell overvoltage during charge}
@@ -46,22 +45,25 @@ severity:
         {[FW] Loss of \acs{I2C} communication to \acs{BMS}}
         {I2C4 bus errors/NACKs (known marginal 2.4\,V level-shifter output, see architecture.md \#3) stop host reads of the \ac{BMS}.}
         {Firmware loses SoC/voltage/current visibility and cannot react to thresholds it reads from the \ac{BMS} (e.g.\ CHARGE exit); display shows stale values.}
-        {Queued as \texttt{ERROR\_IIC\_*} (\texttt{error.c}), visible on the \ac{CLI} only -- not persisted or shown on-screen (\texttt{error\_Write()} is an unimplemented stub). \ac{BMS}-internal protection keeps acting as the safety backstop regardless.}
+        {Queued as \texttt{ERROR\_IIC\_*} (\texttt{error.c}) and printed on the \ac{CLI} only -- not persisted or shown on-screen. A transfer hanging for \qty{50}{\milli\second} is aborted and the bus recovered; data older than \qty{3}{\second} is flagged stale (row below). \ac{BMS}-internal protection keeps acting as the safety backstop regardless.}
+    \FMEAItemModerate
+        {[FW] Stale \acs{BMS} data}
+        {The asynchronous \ac{BMS} read cycle stalls (bus error, stuck transfer), so cell voltages, StackVoltage and safety status keep their last values.}
+        {CHARGE would latch CV, terminate or ignore a new \ac{BMS} fault based on frozen readings; the display shows stale values.}
+        {Data older than \qty{3}{\second} without a complete read cycle is \texttt{BMS\_STALE} (\texttt{protection.c}): ERROR in CHARGE (stops the charge), WARNING elsewhere, blocks the CHARGE auto-entry; a stuck read cycle is restarted. Poll rate \qty{10}{\hertz}. \ac{BMS} hardware protection stays the backstop. \todo[inline]{rating proposed, check}}
+    \caption{FMEA -- Battery and BMS} \\
     \end{FMEATable}
-    \caption{FMEA -- Battery and BMS}
-\end{table}
 
 \FloatBarrier
 
 \subsection{Charging}
 
-\begin{table}[h!]
     \begin{FMEATable}
     \FMEAItemCritical
         {[FW] Untuned PI gains cause control-loop instability}
-        {All eight PI loops (\texttt{ctrl\_pid\_table[]} in \texttt{ctrl\_main.c}), including the charge-current/voltage and high-voltage flyback loops, still run placeholder gains -- no bench tuning has been performed.}
+        {Of the ten PI loops (\texttt{ctrl\_pid\_table[]} in \texttt{ctrl\_main.c}) only Buck, Boost, FourSwitch and Current are bench-tuned (at about \qty{13}{\volt} battery voltage, light load). The charge-current/voltage loops, the high-voltage flyback loops and the output limiters (BoostIoutLimit, 10AVoltLimit) still run initial gains.}
         {Overshoot or oscillation of the regulated voltage/current beyond the commanded set-point, potentially exceeding component or cell ratings transiently.}
-        {Hardware backstops only at present: \acs{BMS} autonomous protection, \acs{OVP} crowbar (\secref{sec_ovp}). Treat every first activation of a loop that has not yet been bench-tuned as bring-up, not validated behaviour.}
+        {Per-mode firmware limits on terminal voltage and output current (\texttt{protection\_param.h}, external \ac{ADC}, \qty{20}{\milli\second} poll) stop the converter; hardware backstops: \acs{BMS} autonomous protection, \acs{OVP} crowbar (\secref{sec_ovp}). Treat every first activation of a loop that has not yet been bench-tuned as bring-up, not validated behaviour.}
     \FMEAItemModerate
         {[FW] CV-tail regulation target can diverge from the latch/termination sensor}
         {The CC$\to$CV latch and cycle termination both key off the \ac{BMS} StackVoltage against the same threshold (consistent). Once in CV, though, the loop itself regulates towards $4 \times$ the highest individual cell voltage rather than StackVoltage, to protect the most-charged cell under imbalance.}
@@ -102,15 +104,13 @@ severity:
         {While the deep-discharge recovery charge is active, the CUV bit specifically is excluded from the fault check that would otherwise abort CHARGE -- it is exactly the condition the run exists to clear.}
         {If this masking were broader than intended, a genuine unrelated fault occurring during the same window could be missed by firmware's own CHARGE-exit logic.}
         {The mask is scoped to exactly the CUV bit (bit 6 of Safety Status A); any other \ac{BMS} safety fault bit still aborts the charge immediately, same as a normal charge. Independently, the \ac{BMS}'s own autonomous protections (overvoltage, overcurrent, short-circuit, thermal) and the \ac{OVP} crowbar remain active throughout regardless of this firmware-level check.}
+    \caption{FMEA -- Charging} \\
     \end{FMEATable}
-    \caption{FMEA -- Charging}
-\end{table}
 
 \FloatBarrier
 
 \subsection{Power conversion}
 
-\begin{table}[h!]
     \begin{FMEATable}
     \FMEAItemMinor
         {[HW, closed] Primary half-bridge shoot-through}
@@ -126,78 +126,111 @@ severity:
         {[HW+FW] Output overcurrent coverage differs by mode -- needs review}
         {\texttt{protection.c} only evaluates \texttt{OCP\_N} while ISOMETER is active (``it trips spuriously in other modes'', per the code comment); the \texttt{OCP\_N} circuit is the high-voltage flyback's current limiter (\secref{sec_ocp}, \autoref{fig_hv_conv_i_lim}), not a general converter latch. A separate analog limiter exists on the primary/output current path (\autoref{fig_i_ctrl_feedforward}) but its fault behaviour is not yet written up in \secref{sec_i_ctrl}.}
         {In 60V\_OUT/10A\_OUT/RESISTANCE modes, output overcurrent is caught by the untuned \texttt{BoostIoutLimit} software loop and, ultimately, by \ac{BMS} pack-level protection -- not by a dedicated fast local latch as in ISOMETER.}
-        {\ac{BMS} pack overcurrent-discharge protection remains the backstop.}
+        {The 60V\_OUT \qty{1}{\ampere} limiter acts on the fast internal \texttt{I\_OUT}; per-mode \texttt{I\_OUT} protection limits stop the converter. \ac{BMS} pack overcurrent-discharge protection remains the backstop.}
     \FMEAItemCritical
         {[HW+FW] Live output terminals in EMI test mode}
         {EMI mode closes both output relays while the \ac{HV} flyback runs open loop and the LV converter regulates \texttt{OUT\_LV} (default \qty{40}{\volt}); the terminals carry the LV output plus the \ac{HV} converter on the same node.}
         {Electric shock or damage to a connected load; the firmware abort on \texttt{V\_TERM}/\texttt{I\_OUT} uses the external \ac{ADC} polled every \qty{20}{\milli\second} (about \qty{40}{}--\qty{60}{\milli\second} reaction time).}
         {EMI mode is debug-only (\texttt{EMI\_DEBUG}, not in a normal build); per-mode protection limits stop both converters with an on-screen banner; \ac{OVP} crowbar and secondary short as hardware backstop (\secref{sec_ovp}). Use only on the bench with nothing connected to the terminals.}
+    \FMEAItemModerate
+        {[FW] Shoot-through when the converter stops}
+        {The burst idle level (\texttt{IDLES1}: low side on) was set at boot and never cleared. A disabled \ac{HRTIM} output takes its idle level, so every stop switched the low sides on and the high sides off at the same instant, without dead time; the LMG2100 has no interlock.}
+        {Shoot-through window on the \ac{GaN} half-bridges at every output stop; in AMPMETER the primary low side was held on.}
+        {Fixed in firmware: \texttt{IDLES1} only on the fast leg while the burst runs, cleared before any output is disabled, gate-driver enable dropped before the \ac{PWM} stops. Not yet verified with a scope. \todo[inline]{rating proposed, check}}
+    \FMEAItemModerate
+        {[FW] Parked-leg sync failure}
+        {In buck and boost the parked leg switches only to recharge its bootstrap capacitor. Its short low-side pulse must lie inside the burst idle block of the fast leg (master-timer frame and burst set-up in the \texttt{.ioc}, three-step region change in \texttt{vout\_region.c}). If the idle block misses the pulse, or the burst idles the parked leg instead of the fast one, this sync fails.}
+        {A parked pulse while the fast high side conducts gives a current floor of more than \qty{2}{\ampere} into a short; a missing parked pulse lets the bootstrap capacitor discharge, so the parked high side drops out and the output collapses.}
+        {Burst and region transition host-tested (\texttt{tools/test\_vout\_region.sh}), bench-checked in 10A\_OUT, buck and boost; the master compares assume three idle cycles. No runtime check of the sync. \texttt{VOUT\_SYNC\_BURST\_DISABLE} restores free-running parked pulses. Per-mode current limits and the \qty{1}{\ampere} limiter as backstop. \todo[inline]{rating proposed, check}}
+    \FMEAItemModerate
+        {[FW] Slow external \acs{ADC} in the control loops}
+        {The ADS131M04 delivers a sample only about every \qty{4}{\milli\second} (\qty{246}{\hertz}, plus filter delay), while the control loops run at \qty{25}{\kilo\hertz}.}
+        {A limiter on this signal cannot react to a short within milliseconds (the inductor current rises by about \qty{1.3}{\ampere\per\micro\second} at \qty{13}{\volt}); the integral gains of all loops fed by it are limited by the delay.}
+        {The 60V\_OUT \qty{1}{\ampere} limiter uses the fast internal \texttt{I\_OUT} for both its terms. The integral parts of the voltage, current and charge loops still use the external value. Open: lower the oversampling ratio or move more terms to the internal \ac{ADC}, then re-tune. \todo[inline]{rating proposed, check}}
+    \FMEAItemModerate
+        {[FW] AMPMETER outside the protection interlock}
+        {AMPMETER shorts the secondary half-bridge and has no control loop, so the interlock (which only stopped active control loops) did not act on it; the only voltage check is the \qty{500}{\milli\volt} check at entry.}
+        {An overvoltage, over-temperature or overcurrent event left the half-bridge shorted; an external source connected after entry drives current through the shorted half-bridge.}
+        {Any protection ERROR now leaves AMPMETER to IDLE, which releases the short; per-mode \texttt{I\_OUT} limit \qty{12}{\ampere}. Open: no runtime \texttt{V\_TERM} limit in AMPMETER. \todo[inline]{rating proposed, check}}
+    \FMEAItemModerate
+        {[HW+FW] Continuous crowbar activation after an \acs{OVP} trip}
+        {The \ac{OVP} latch blocks the primary only; the hardware design relies on the microcontroller shorting the secondary half-bridge to relieve the crowbar thyristor (\secref{sec_lv_converter}).}
+        {Without the short the thyristor carries the full fault current until it, the fuse or the \ac{BMS} gives up.}
+        {On \texttt{OVP\_N} low the firmware switches both converters off and shorts the secondary half-bridge until power cycle (\texttt{statemachine\_ovp\_lockout()}), with an on-screen error. Detection is polled every \qty{20}{\milli\second}; \texttt{OVP\_RESET} is never driven, so only a power cycle resets. Open: agree the reset strategy with the hardware design. \todo[inline]{rating proposed, check}}
+    \FMEAItemModerate
+        {[FW] Fault handler leaves the power stage switching}
+        {\texttt{Error\_Handler()} and the HardFault/MemManage/BusFault/UsageFault/NMI handlers used to spin while the \ac{HRTIM} kept switching at the last duty.}
+        {Unregulated converter output until the watchdog resets the microcontroller (about \qty{2}{\second}), or indefinitely before the watchdog is started at boot.}
+        {Fixed in firmware: every handler calls \texttt{fault\_halt()}, which switches the gate-driver enables and all \ac{HRTIM} outputs off at register level before printing the fault and halting. Not yet verified on hardware. \todo[inline]{rating proposed, check}}
+    \caption{FMEA -- Power conversion} \\
     \end{FMEATable}
-    \caption{FMEA -- Power conversion}
-\end{table}
 
 \FloatBarrier
 
 \subsection{Isolation measurement (high voltage)}
 
-\begin{table}[h!]
     \begin{FMEATable}
     \FMEAItemCritical
         {[HW] Isolation current channel offset masks real leakage}
         {A \qty{129}{\micro\ampere} offset on the \texttt{I\_ISO} channel (op-amp input leakage, architecture.md \#5).}
         {Can make the measured insulation resistance appear better than reality, undermining \ReqRef{R:Iso_voltage} exactly when the test should catch a real fault -- a false-safe measurement error.}
-        {\texttt{I\_ISO} is one of \texttt{calibration.c}'s six per-unit calibratable channels (\texttt{zeroCal}/\texttt{gainCal}); a unit that has not been zero-calibrated still carries the full offset.}
+        {ISOMETER (display, leakage limit, protection) uses the external \ac{ADC}'s \texttt{I\_ISO} channel; the internal channel defaults to a gain and offset derived from the schematic. Both are among \texttt{calibration.c}'s seven per-unit calibratable channels (\texttt{zeroCal}/\texttt{gainCal}); a unit that has not been zero-calibrated still carries the full offset.}
     \FMEAItemCritical
         {[HW] Operator contact with high-voltage output during isolation test}
         {ISOMETER energises the output terminals up to \qty{500}{\volt} for the resistance test.}
         {Electric shock.}
-        {Shrouded \qty{4}{\milli\meter} safety jacks (\ReqRef{R:Output}); \texttt{OUT\_SEL\_HV} output routing is only active in ISOMETER (\texttt{mode\_table.c}); colour-changing screen border while ISOMETER is active as an operator-facing indicator (commit \texttt{1ac3eeb}); \ac{GDT}s on the output terminals (\secref{sec_terminal}).}
+        {Shrouded \qty{4}{\milli\meter} safety jacks (\ReqRef{R:Output}); output relays per mode (\texttt{mode\_table.c}; both normally closed, \texttt{OUT\_SEL\_HV} high opens K1 to the LV converter, \texttt{OUT\_SEL\_ISO} high opens K2 to the high-voltage flyback): the LV output modes and AMPMETER open K2, ISOMETER opens K1, VOLTMETER opens both; the flyback is enabled (\texttt{HV\_CTRL\_EN}) only in ISOMETER and in the debug-only EMI mode, which closes both relays while it runs; colour-changing screen border while ISOMETER is active as an operator-facing indicator (commit \texttt{1ac3eeb}); \ac{GDT}s on the output terminals (\secref{sec_terminal}).}
     \FMEAItemCritical
         {[FW] High-voltage flyback loop instability on first bring-up}
         {The HVVoltage/HVCurrent PI loops share the untuned-gains issue above; they previously defaulted to zero gain (silently disabling ISOMETER) and now run real but unverified gains.}
         {Overshoot beyond the \qty{500}{\volt} rating of downstream components at the point where the consequences are worst.}
         {\ac{OVP} crowbar and \ac{GDT}s as hardware backstops (\secref{sec_ovp}, \secref{sec_terminal}); treat the first ISOMETER activation after any gain change as a supervised bench test.}
+    \FMEAItemCritical
+        {[FW] ISOMETER leakage-current limiter not active}
+        {A misplaced line left the limiter's \texttt{if} guarding the duty write instead of the limit, so ISOMETER had no current limit and the duty froze whenever the limiter would have acted. The \texttt{if} is fixed, but the limiter is disabled again because ISOMETER only reached about \qty{102}{\volt} with it.}
+        {The flyback is not limited to \qty{1}{\milli\ampere} leakage current by firmware; into a low insulation resistance or a person the current is set only by the voltage loop and the hardware.}
+        {Per-mode protection limit on the external \texttt{I\_ISO} (\qty{1.5}{\milli\ampere}, \qty{20}{\milli\second} poll, two-tick debounce) stops the flyback; the \texttt{OCP\_N} hardware current limiter of the flyback (\secref{sec_ocp}) acts independently. Open: make the limiter work at full voltage (re-tune). \todo[inline]{rating proposed, check}}
+    \caption{FMEA -- Isolation measurement} \\
     \end{FMEATable}
-    \caption{FMEA -- Isolation measurement}
-\end{table}
 
 \FloatBarrier
 
 \subsection{Thermal}
 
-\begin{table}[h!]
     \begin{FMEATable}
     \FMEAItemModerate
         {[FW] Power-stage over-temperature}
         {4 external \ac{NTC}s (secondary, transformer, current-sense, primary) monitored by \texttt{protection.c}.}
         {Component degradation/failure if reached and not acted on.}
         {\texttt{protection.c} classifies OK/WARNING/ERROR per channel with hysteresis every tick; ERROR forces the output off from \texttt{statemachine\_step()} regardless of mode.}
+    \FMEAItemModerate
+        {[HW+FW] Open or disconnected \acs{NTC}}
+        {An \ac{NTC} or its connection is open, so the channel reads the cold end of the conversion table.}
+        {The over-temperature protection of that spot is lost silently, as a cold reading never reaches WARNING or ERROR.}
+        {A reading at the \qty{-50}{\celsius} table end is classified as ERROR (\texttt{PROTECTION\_TEMP\_ERROR\_OPEN\_NTC}), which blocks the output modes. \todo[inline]{rating proposed, check}}
+    \caption{FMEA -- Thermal} \\
     \end{FMEATable}
-    \caption{FMEA -- Thermal}
-\end{table}
 
 \FloatBarrier
 
 \subsection{Firmware / system-level}
 \label{tab:fmea_mcu_hang}
 
-\begin{table}[h!]
     \begin{FMEATable}
     \FMEAItemCritical
-        {[FW] No microcontroller watchdog}
-        {\texttt{HAL\_IWDG\_MODULE\_ENABLED} and \texttt{HAL\_WWDG\_MODULE\_ENABLED} are both disabled (\texttt{stm32g4xx\_hal\_conf.h}); nothing resets the microcontroller if the main loop hangs.}
-        {If firmware hangs while a converter output is enabled, the output stays in whatever state it was in until a hardware-level protection (\ac{OVP}, \ac{BMS}) intervenes or the device is unplugged -- there is no firmware-level fail-safe of its own.}
-        {None in firmware today; the \ac{BMS}'s autonomous protection and the \ac{OVP} crowbar/dead-time hardware stay active even with an unresponsive microcontroller, so the pack- and converter-level physical protections are the actual backstop. \textbf{Recommendation}: enable the microcontroller's independent watchdog timer (IWDG).}
+        {[FW] Watchdog does not catch every firmware hang}
+        {The independent watchdog (\texttt{watchdog.c}, \qty{2}{\second} nominal, less with the LSI tolerance) is started after the boot initialisation and kicked unconditionally once per main-loop pass. A dead control-loop interrupt (e.g.\ a missing \ac{ADC} trigger) with a running main loop is not detected, nor is a hang during boot.}
+        {With a dead control interrupt the converter keeps switching at its last duty, unregulated, while the \ac{UI} looks normal. A main-loop hang leaves the output regulated to the last set-point for up to the watchdog timeout.}
+        {A main-loop hang resets the microcontroller (bench-verified with \texttt{wdtTest}); fault handlers switch the power stage off before halting; per-mode protection limits act while the main loop runs; the \ac{BMS}'s autonomous protection and the \ac{OVP} crowbar/dead-time hardware stay active with an unresponsive microcontroller. \textbf{Recommendation}: kick only when the control-loop interrupt counter has advanced.}
     \FMEAItemModerate
         {[FW] EEPROM calibration/config corruption}
-        {The header, \texttt{hardware\_data} and \texttt{calibration} blocks each carry a CRC32 (\texttt{config\_store.c}).}
-        {On mismatch, \texttt{config\_store\_init()} silently falls back to default (uncalibrated / placeholder-PID) values for that block; the device keeps operating with degraded measurement accuracy and no on-screen indication -- only a \ac{CLI} \texttt{printf}.}
+        {The header, \texttt{hardware\_data}, \texttt{calibration} and \texttt{gains} blocks each carry a CRC32 (\texttt{config\_store.c}).}
+        {On mismatch, \texttt{config\_store\_init()} silently falls back to default (uncalibrated / default-gain) values for that block; the device keeps operating with degraded measurement accuracy and no on-screen indication -- only a \ac{CLI} \texttt{printf}.}
         {CRC32-per-block check with default fallback prevents operating on garbage data. \textbf{Recommendation}: surface a UI-visible indicator when a block has been defaulted.}
     \FMEAItemMinor
         {[FW] Event / \acs{I2C} queue overflow}
         {The 64-entry event queue and the \ac{I2C} transaction queue are fixed-size and drop new entries when full rather than blocking.}
         {A dropped \texttt{EVENT\_SM\_STEP} delays the next state-machine tick by one 20\,ms period (self-correcting); a dropped \ac{I2C} transaction delays that read to the next cycle.}
-        {Queued as \texttt{ERROR\_EVENT\_OVF}/\texttt{ERROR\_IIC\_OVF} (\texttt{error.c}), \ac{CLI}-visible only, not persisted (\texttt{error\_Write()} stub). Sustained overflow would indicate a starvation bug worth investigating, not a one-off.}
+        {Queued as \texttt{ERROR\_EVENT\_OVF}/\texttt{ERROR\_IIC\_OVF} (\texttt{error.c}) and printed on the \ac{CLI} from the main loop, not persisted. Sustained overflow would indicate a starvation bug worth investigating, not a one-off.}
+    \caption{FMEA -- Firmware / system-level} \\
     \end{FMEATable}
-    \caption{FMEA -- Firmware / system-level}
-\end{table}
