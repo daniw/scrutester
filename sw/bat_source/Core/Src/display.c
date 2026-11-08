@@ -628,13 +628,13 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 		LCD_PutStr(16, STATUS_H + 12, text, FONT_SMALL, C_WHITE, C_BLACK);
 		snprintf(text, sizeof(text), "Serial number: %04d", config_store.hardware_data.serial_number);
 		LCD_PutStr(16, STATUS_H + 34, text, FONT_TINY, C_WHITE_63, C_BLACK);
-		snprintf(text, sizeof(text), "Built %s %s", __DATE__, __TIME__);
+		snprintf(text, sizeof(text), "Commit: %s", GIT_DATE);
 		LCD_PutStr(16, STATUS_H + 52, text, FONT_TINY, C_WHITE_63, C_BLACK);
 		snprintf(text, sizeof(text), "HW revision: %u", aux_io_ctrl_readHW_Revision());
 		LCD_PutStr(16, STATUS_H + 70, text, FONT_TINY, C_WHITE_63, C_BLACK);
 		snprintf(text, sizeof(text), "MCU: STM32G474VET6");
 		LCD_PutStr(16, STATUS_H + 88, text, FONT_TINY, C_WHITE_63, C_BLACK);
-		snprintf(text, sizeof(text), "FW version: %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
+		snprintf(text, sizeof(text), "FW version: %d.%d (%s)", FW_VERSION_MAJOR, FW_VERSION_MINOR, GIT_HASH);
 		LCD_PutStr(16, STATUS_H + 106, text, FONT_TINY, C_WHITE_63, C_BLACK);
 		snprintf(text, sizeof(text), "Designed by daniw & ahorat");
 		LCD_PutStr(16, STATUS_H + 124, text, FONT_TINY, C_WHITE_63, C_BLACK);

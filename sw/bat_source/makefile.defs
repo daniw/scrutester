@@ -1,0 +1,17 @@
+# Included by the CDT-generated makefile (-include ../makefile.defs).
+# Writes Core/Inc/git_version.h, only when changed. "unknown" without git.
+# Pure make functions (GNU make >= 4.2), no shell syntax: Windows + Linux.
+GV_HASH := $(strip $(shell git -C .. describe --always --dirty --abbrev=7))
+GV_DATE := $(strip $(shell git -C .. log -1 --format=%cd --date=format:%Y-%m-%d_%H:%M))
+GV_HASH := $(if $(GV_HASH),$(GV_HASH),unknown)
+GV_DATE := $(if $(GV_DATE),$(subst _, ,$(GV_DATE)),unknown)
+GV_FILE := ../Core/Inc/git_version.h
+
+define GV_TEXT
+#define GIT_HASH "$(GV_HASH)"
+#define GIT_DATE "$(GV_DATE)"
+endef
+
+ifneq ($(file < $(GV_FILE)),$(GV_TEXT))
+$(file > $(GV_FILE),$(GV_TEXT))
+endif

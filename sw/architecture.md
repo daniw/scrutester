@@ -646,6 +646,7 @@ and CHARGE is not auto-entered. `EXT_ADC_DEBUG` prints the values per channel.
 | `menu.c` | Menu tree: order, names, accent colours, procedural icons |
 | `icon_store.c` | Menu icon bitmaps in QSPI flash, with procedural fallback |
 | `input.c` | Encoder/button abstraction with debounce; HW or CLI-simulated; clamped (non-wrapping) encoder read for live setpoints |
+| `version.h` | `FW_VERSION_MAJOR/MINOR` plus `GIT_HASH` (`git describe --always --dirty --abbrev=7`) and `GIT_DATE` (HEAD commit date) from the generated, git-ignored `Core/Inc/git_version.h`, written by `bat_source/makefile.defs` (included by the CubeIDE makefile; pure make functions, only rewritten on change). Shown on Settings > About and as a CLI line at boot. Falls back to `unknown` without git or the header (`__has_include`). |
 | `splash.c` | Boot splash (logo, title, credit) drawn from fill primitives — no bitmap in flash |
 | `ui_ctrl.c` | Status LEDs and ambient-adaptive backlight |
 | `opt3004.c` | Ambient light sensor |
