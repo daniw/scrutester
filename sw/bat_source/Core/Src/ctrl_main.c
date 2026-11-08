@@ -527,10 +527,10 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 #ifdef EMI_DEBUG
 	case CTRL_MODE_EMI:
 #endif
-		ctrl_main_handle.voltage_reference_mV = reference_poti_count * 500; // 500mV Resolution, Max range 63V
+		ctrl_main_handle.voltage_reference_mV = reference_poti_count * 500; // 500 mV per count
 		break;
 	case CTRL_MODE_10A:
-		ctrl_main_handle.current_reference_mA = reference_poti_count * 100; // 100mA Resolution, Max Range 10A
+		ctrl_main_handle.current_reference_mA = reference_poti_count * 100; // 100 mA per count
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 		ctrl_main_handle.voltage_reference_mV = CTRL_PARAM_IDLE_VOLTAGE_1A_mV;

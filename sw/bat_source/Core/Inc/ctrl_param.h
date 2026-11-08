@@ -36,6 +36,10 @@
 #define CTRL_PARAM_BOOST_IOUT_LIMIT_P (0.01F)
 #define CTRL_PARAM_BOOST_IOUT_LIMIT_I (1.0F/CTRL_FREQ)
 
+// Setpoint limits. 60V: below the crowbar (BZT52C68 + gate, >= ~65.5 V worst case).
+#define CTRL_PARAM_60V_VOLTAGE_MAX_mV 65000
+#define CTRL_PARAM_10A_CURRENT_MAX_mA 10000
+
 // ---- Full-range voltage source (60V mode): buck / 4-switch / boost --------
 // Region edges at V_ref/V_in = 1 -/+ MARGIN; buck must reach 0.75 * V_in
 // below its 0.8 duty ceiling.

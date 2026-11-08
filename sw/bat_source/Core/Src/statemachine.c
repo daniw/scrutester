@@ -160,7 +160,14 @@ void statemachine_set_setpoint(uint16_t count) {
 }
 
 static void statemachine_apply_encoder_setpoint(void) {
-	int32_t max = (statemachine_handle.current_mode == STATEMACHINE_MODE_ISOMETER) ? 3 : 127;
+	// Counts: 500 mV / 100 mA per count, see ctrl_main_apply_reference().
+	int32_t max = 127;
+	if (statemachine_handle.current_mode == STATEMACHINE_MODE_ISOMETER)
+		max = 3;
+	else if (statemachine_handle.current_mode == STATEMACHINE_MODE_60V_OUT)
+		max = CTRL_PARAM_60V_VOLTAGE_MAX_mV / 500;
+	else if (statemachine_handle.current_mode == STATEMACHINE_MODE_10A_OUT)
+		max = CTRL_PARAM_10A_CURRENT_MAX_mA / 100;
 #ifdef EMI_DEBUG
 	if (statemachine_handle.current_mode == STATEMACHINE_MODE_EMI)
 		max = CTRL_PARAM_EMI_VOLTAGE_MAX_mV / 500; // 500 mV per count, see ctrl_main_apply_reference()

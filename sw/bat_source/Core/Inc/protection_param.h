@@ -8,7 +8,7 @@
 
 // Per-mode limits on the external ADC (|V_TERM|, |I_OUT|, I_ISO), 0 = no check.
 // Placeholders, to be confirmed on the bench.
-#define PROTECTION_60V_MAX_mV         65000
+#define PROTECTION_60V_MAX_mV         66500 // above CTRL_PARAM_60V_VOLTAGE_MAX_mV
 #define PROTECTION_60V_MAX_mA          1500
 #define PROTECTION_10A_MAX_mV         10000
 #define PROTECTION_10A_MAX_mA         13000
