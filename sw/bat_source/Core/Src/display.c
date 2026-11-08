@@ -137,7 +137,8 @@ static void draw_menu_icon(uint8_t icon_id, const menu_entry_t *entry,
 		if (bmp.width != 0) {
 			LCD_DrawImage(cx - bmp.width / 2, cy - bmp.height / 2, &bmp);
 			if (selected)
-				UG_DrawCircle(cx, cy, bmp.width / 2 + 4, color);
+				UG_DrawCircle(cx - (bmp.width % 2 == 0),
+						cy - (bmp.height % 2 == 0), bmp.width / 2 + 4, color);
 			return;
 		}
 	}
