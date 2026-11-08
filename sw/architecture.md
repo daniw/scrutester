@@ -7,8 +7,8 @@
 ## 1. Hardware Platform
 
 ### Microcontroller
-**STM32G474VET6** (Arm Cortex-M4, 170 MHz)
-- Selected for its High-Resolution Timer (HRTIM, 217 ps resolution) needed for precise converter PWM
+**STM32G474VET6** (Arm Cortex-M4, LQFP-100; rated 170 MHz, run at **160 MHz**: HSI 16 MHz ÷ 2 × 40 ÷ 2 PLL, `SystemClock_Config()` / `.ioc`)
+- Selected for its High-Resolution Timer (HRTIM, ×32 DLL: ~195 ps resolution at 160 MHz) needed for precise converter PWM
 - 512 KB flash, 128 KB SRAM
 - 5× ADC, 2× DAC, HRTIM, I2C, SPI, UART, QUADSPI, RTC
 
@@ -17,7 +17,7 @@
 | IC | Role | Interface |
 |----|------|-----------|
 | BQ76905 (TI) | Battery Management System — 4-cell LiFePO₄ monitoring, protection, passive balancing | I2C4 (0x08) |
-| ADS131M04 (TI) | 4-ch precision sigma-delta ADC for isolation current measurement | SPI3 |
+| ADS131M04 (TI) | 4-ch 24-bit sigma-delta ADC: ch0 `V_TERM`, ch1 `I_OUT`, ch2 `V_SENS`, ch3 `I_ISO` (`adc.c`); OSR 16256 at 8 MHz CLKIN (TIM16) → ~246 Hz | SPI3 |
 | LMG2100R044 ×2 (TI) | GaN half-bridge drivers for primary buck-boost converter | HRTIM GPIO |
 | 1EDN7512B | Gate driver for HV flyback primary switch | HRTIM GPIO |
 | W25N01GV | 1 Gbit QSPI NAND flash — menu icon store, intended for data logging | QUADSPI |
@@ -125,10 +125,10 @@ logic, and the protection interlock.
 | `STATEMACHINE_MODE_SETTINGS` | Settings menu |
 | `STATEMACHINE_MODE_SHUTDOWN` | Controlled power-down sequence |
 | `STATEMACHINE_MODE_CHARGE` | Internal battery charging — auto-entered from IDLE when a 15–24 V supply is detected, not user-selectable |
-| `STATEMACHINE_MODE_EMI` | EMI test (debug only: `EMI_DEBUG` in `debug.h`): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (2 %), LV converter regulates `OUT_LV` with the full-range voltage loop of 60V_OUT (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `PROTECTION_EMI_MAX_mV` / `PROTECTION_EMI_MAX_mA` on V_TERM / I_OUT (protection limits); exempt from the inactivity power-off while running. **Untested on hardware.** |
+| `STATEMACHINE_MODE_EMI` | EMI test (debug only: `EMI_DEBUG` in `debug.h`): both converters switch with no external load. HV flyback open loop at `CTRL_PARAM_EMI_HV_DUTY` (1 %), LV converter regulates `OUT_LV` with the full-range voltage loop of 60V_OUT (encoder setpoint, default `CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV` 40 V), so the LV loop returns the HV energy to the battery. Both relays closed. An OUT press toggles run/stop (not hold-to-enable); aborts above `PROTECTION_EMI_MAX_mV` / `PROTECTION_EMI_MAX_mA` on V_TERM / I_OUT (protection limits); exempt from the inactivity power-off while running. Bench-run before the rework: works, but the LV loop oscillates (untuned). |
 
 Settings sub-modes (`statemachine_settings_modes_t`): `MENU`, `BMS`,
-`DISPLAY`, `CALIBRATION`, `ABOUT`.
+`DISPLAY`, `CALIBRATION`, `ADC1`, `ADC2`, `PROTECTION`, `ABOUT`.
 
 Per-mode data (control mode, relay/shunt mask, enable GPIO, entry flags, ADC
 trigger) is centralised rather than duplicated across `statemachine.c`,
@@ -168,9 +168,17 @@ MCU is still running.
 Executed from the **ADC1 DMA-complete interrupt**, not directly from HRTIM.
 The chain is: HRTIM timer period → HRTIM ADC trigger (with post-scaler) → ADC
 conversion → DMA → `HAL_ADC_ConvCpltCallback()`, which acts only for `hadc1`
-and decimates by 2 (`adc_interrupt_cnt`). With the converter at 1 MHz and an
-HRTIM ADC post-scaler of ÷20, that lands at **25 kHz = `CTRL_FREQ`**
-(ISOMETER: 350 kHz, TRG5 post-scaler ÷7, also 25 kHz).
+and decimates by 2 (`adc_interrupt_cnt`). The trigger is the mode's
+`mode_table[].adc_trigger`; every active mode lands at **25 kHz = `CTRL_FREQ`**:
+
+| Modes | ADC trigger | Source |
+|-------|-------------|--------|
+| 60V_OUT, 10A_OUT, RESISTANCE_1A/1mA, EMI | TRG7 (`ADC_TRIGGER_HRTIM_FIXED`) | Timer D, fixed 1 MHz, no outputs, ÷20. PRIM/SEK change frequency per region, and the sample sits at a fixed point of the sync frame |
+| CHARGE | TRG3 (`ADC_TRIGGER_HRTIM_SEK`) | Timer E (SEK, 1 MHz), ÷20 |
+| ISOMETER | TRG5 (`ADC_TRIGGER_HRTIM_HV`) | Timer C (HV, 350 kHz), ÷7 |
+| IDLE | TRG1 (`ADC_TRIGGER_HRTIM_PRIM`) | Timer B (PRIM), ÷20; no loop |
+| VOLTMETER, AMPMETER, SETTINGS | none | keep the previous trigger |
+
 Only ADC1's DMA transfer-complete IRQ is enabled; ADC2-5 DMA runs without
 IRQs (`adc_start_dma_quiet()`), the data just lands in `adc_data.raw`.
 
@@ -268,8 +276,10 @@ buck and boost.
 | `CTRL_PARAM_CHARGE_RESTART_MARGIN_mV` | 300 mV |
 | `CTRL_PARAM_STACK_VOLTAGE_MIN/MAX_VALID_mV` | 8000 / 20 000 mV |
 
-> **Note**: PID gains remain initial/placeholder values. No tuning has been
-> performed — see Known Issues.
+> **Note**: Buck, Boost, FourSwitch and Current are bench-tuned (`ctrl_param.h`
+> comments; V_in ~13 V, light load). BoostIoutLimit, ChargeCurrent,
+> ChargeVoltage, HVVoltage, HVCurrent and 10AVoltLimit still run initial
+> values — see Known Issues #7.
 
 ### Charging (multi-phase start, then CC/CV)
 Auto-entered from IDLE when the external terminal voltage
@@ -429,7 +439,7 @@ relay-close command, for tuning `PRECHARGE_RATIO` and `RELAY_SETTLE_ms`.
 ADC5 uses 256× hardware oversampling with 4-bit right shift (effective 16-bit result).
 
 `adc_configure_mode()` re-points triggers and channels per operating mode.
-HRTIM ADC triggers: TRG1 ← Timer B (PRIM, ÷20), TRG2 ← Timer C (HV, ÷15),
+HRTIM ADC triggers: TRG1 ← Timer B (PRIM, ÷20), TRG5 ← Timer C (HV, ÷7),
 TRG3 ← Timer E (SEK, ÷20), TRG7 ← Timer D (fixed 1 MHz, no outputs, ÷20 —
 `ADC_TRIGGER_HRTIM_FIXED`, used by 60V/EMI, 10A and RESISTANCE: fixed phase in
 the sync frame; configured in `bat_source.ioc`).
@@ -484,7 +494,7 @@ reported via its error callback and the queue is kept. A failed DMA start is
 reported as an error the same way.
 
 ### SPI
-- **SPI3** (PA10/11/12, CS=PA15): ADS131M04 external ADC. DRDY_N interrupt on PD2; Sync/Reset on PD0. Every data frame is checked against its output CRC (CCITT); a bad frame keeps the old values and counts `crc_errors` (`printADC`).
+- **SPI3** (SCK/MISO/MOSI = PC10/11/12, CS=PA15 GPIO): ADS131M04 external ADC. DRDY_N interrupt on PD2; Sync/Reset on PD0. Every data frame is checked against its output CRC (CCITT); a bad frame keeps the old values and counts `crc_errors` (`printADC`).
 - **SPI4** (PE2–6): LCD display — real hardware SPI peripheral, DMA-driven for
   bulk transfers (`lcd.c`). Only SCK/MISO/MOSI (PE2/PE5/PE6) are the SPI4
   peripheral pins; PE3 (`DISPLAY.WR`, the D/C line) and PE4 (`DISPLAY.CS`) are
@@ -500,7 +510,9 @@ reported as an error the same way.
 |-------|-------|----------------------|------|
 | `HRTIM_CHANNEL_PRIM` | Timer B | 1 | Primary buck-boost |
 | `HRTIM_CHANNEL_HV` | Timer C | 2 | HV flyback |
-| `HRTIM_CHANNEL_SEK` | Timer E | 4 | Secondary winding |
+| `HRTIM_CHANNEL_SEK` | Timer E | 4 | Secondary (output-side) half-bridge |
+| — | Timer D | 3 | No outputs: fixed 1 MHz ADC trigger (TRG7) and burst clock for the parked-leg sync |
+| — | Master | — | 20 µs sync frame (resets B/D and E, burst trigger), `.ioc` |
 | `HRTIM_CHANNEL_ALL` | — | 0xFF (sentinel) | "all channels", disable only |
 
 `hrtim_set_freq()` and `hrtim_set_duty()` reject invalid channels and clamp the
@@ -548,8 +560,11 @@ block) is converted field by field. A newer PSVN (downgrade) uses defaults and
 leaves the EEPROM untouched. Host test: `tools/test_config_store.sh`.
 
 ### Calibration (`calibration.c`)
-Six calibratable channels (`V_TERM`, `V_SENS`, `V_OUT`, `V_HV`, `I_OUT`,
-`I_ISO`), each with a zero step and an optional gain step. Reachable from both
+Seven calibratable channels (`V_TERM`, `V_SENS`, `V_OUT`, `V_HV`, `I_OUT`,
+`I_ISO`, `V_IN`), each with a zero step and an optional gain step. The
+internal `I_ISO` channel defaults to a schematic-derived gain/offset
+(`ADC_IISO_GAIN_UA`, offset 2048 = VREF/2); ISOMETER itself uses the external
+ADC's `I_ISO`. Reachable from both
 the Settings > Calibration screen and the CLI (`zeroCal`, `gainCal`,
 `setOffset`, `setGain`). Persists immediately on each step.
 
@@ -595,9 +610,11 @@ and CHARGE is not auto-entered. `EXT_ADC_DEBUG` prints the values per channel.
 | File (Core/Src/) | Role |
 |------------------|------|
 | `main.c` | Peripheral init, main event loop |
-| `statemachine.c` | 11-mode FSM, UI navigation, protection interlock |
+| `statemachine.c` | FSM over 12 modes (`statemachine_modes_t`; EMI only with `EMI_DEBUG`), UI navigation, protection interlock, OVP lockout |
 | `mode_table.c` | Per-mode descriptor table — single source of truth for mode data |
 | `ctrl_main.c` | Control mode dispatch, per-mode PI loops, PID registry, CHARGE phase handling in the ISR |
+| `vout_region.c` | HAL-free full-range region choice, region transition steps, burst plan (host-tested) |
+| `balancing.c` | Cell balancing mask written to the BMS every tick |
 | `charge_seq.c` | HAL-free CHARGE start sequencing: duty formulas, PRECHARGE ramp, phase stepper, stuck-open detector (host-tested) |
 | `ctrl_PID_control.c` | Generic PI with integrator-clamping anti-windup |
 | `adc.c` | ADC config per mode, scaling, ISR conversion + snapshot |
@@ -608,7 +625,8 @@ and CHARGE is not auto-entered. `EXT_ADC_DEBUG` prints the values per channel.
 | `event.c` | 64-entry event queue |
 | `timer.c` | Software millisecond timers on TIM2 |
 | `list.c` | Fixed-pool list used by `timer.c` |
-| `error.c` | Error code ring buffer (persistence not implemented) |
+| `error.c` | Error code queue, printed on the CLI by `error_Work()` from the main loop (not persisted) |
+| `fault.c` | `fault_halt()`: fault handlers and `Error_Handler` switch the power stage off and print the fault |
 | `watchdog.c` | Independent watchdog (IWDG), register-level; started last in `main()`, kicked once per main-loop iteration |
 | `bq76905.c` | BMS driver (I2C, voltage/current/temp, balancing, SoC) |
 | `ads131m04.c` | External 4-ch ADC driver (SPI, CRC, gain config) |
@@ -636,10 +654,16 @@ and CHARGE is not auto-entered. `EXT_ADC_DEBUG` prints the values per channel.
 Built with STM32CubeIDE (managed build, `-Os`). The bundled ARM toolchain lives
 under `/opt/st/stm32cubeide_*/plugins/…gnu-tools-for-stm32.*/tools/bin/`.
 
-There is no general unit test harness and no host build of the firmware. The one
-host test is **`sw/bat_source/tools/test_charge_seq.sh`**, which compiles the
-HAL-free `charge_seq.c` with gcc and checks the duty formulas, the PRECHARGE ramp
-shape and the phase-stepper ordering. The automated compile check is
+There is no general unit test harness and no host build of the whole firmware.
+Three host tests compile a HAL-free module with host gcc (stub headers in `tools/stub/`):
+- **`tools/test_charge_seq.sh`** — `charge_seq.c`: duty formulas, PRECHARGE
+  ramp, phase stepper, deep-discharge recovery start.
+- **`tools/test_vout_region.sh`** — `vout_region.c`: region choice, duty
+  model, reachable PI limits, burst plan, three-tick region transition.
+- **`tools/test_config_store.sh`** — `config_store.c`: PSVN 2 conversion,
+  same-PSVN load, upgrade, downgrade and blank EEPROM.
+
+The automated compile check is
 **`sw/bat_source/tools/check.sh`**, which syntax-compiles every
 `Core/Src/*.c` with `-Wall -Wextra` using the same flags as `.cproject` and
 diffs the diagnostics against `tools/warnings.baseline`. New warnings fail;
@@ -665,8 +689,16 @@ link, so section sizes and stack headroom still need a full CubeIDE build.
 | `ERROR_EVENT_OVF` | Event queue overflow |
 | `ERROR_EEPROM_TIMEOUT` | EEPROM did not acknowledge |
 
-Errors are queued but **not persisted** — `error_Write()` is an unimplemented
-stub. The queue is guarded against ISR / main-context races.
+Errors are queued (guarded against ISR / main-context races; a full queue
+drops the oldest entry) and printed on the CLI by `error_Work()` from the main
+loop. They are **not persisted** and not shown on screen.
+
+**Fault handlers**: HardFault/MemManage/BusFault/UsageFault/NMI and
+`Error_Handler()` call `fault_halt()` (`fault.c`): IRQs off,
+`hrtim_emergency_off()` (register-only: gate-driver enables off, burst/IDLES1
+cleared, all HRTIM outputs disabled), fault name and CFSR/HFSR/fault address on
+USART2, then spin until the IWDG resets the MCU. Before `watchdog_init()` (boot)
+it spins until power-off, with the power stage off.
 
 **Watchdog** (`watchdog.c`): the 25 kHz control loop lives in the ADC ISR, so a
 hung main loop would leave the converter running on stale setpoints. The IWDG
@@ -688,7 +720,7 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 **Hardware protection layers:**
 1. **BMS** (BQ76905) — over/under-voltage, over-current, over-temperature per cell; watchdog
 2. **OCP latch** — analog overcurrent detection via shunt; blocks gate driver via `OCP_N`
-3. **OVP crowbar** — shorts converter secondary when output voltage exceeds threshold; latch requires explicit `OVP_RESET`
+3. **OVP crowbar** — shorts converter secondary when output voltage exceeds threshold; latch requires explicit `OVP_RESET`. Firmware adds the SEK half-bridge short until power cycle (§5); `OVP_RESET` is never driven
 4. **Active discharge** — MOSFET Q18 safely dissipates stored energy on shutdown
 5. **Firmware** — `protection.c` plus the interlock in `statemachine_step()` (see §5)
 
@@ -713,14 +745,24 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 | 2 | GaN drivers | Bootstrap capacitor discharge limits maximum converter on-time at low duty cycles |
 | 3 | I2C | Level shifter outputs 2.4 V instead of 3.3 V — marginal for some slaves |
 | 4 | Current meas. | ~100 mA noise floor on instrumentation amp output |
-| 5 | Isolation meas. | 129 µA offset on isolation current channel (op-amp input leakage) |
+| 5 | Isolation meas. | 129 µA offset on isolation current channel (op-amp input leakage). Calibratable per unit (`zeroCal`); since `213986a` the internal `I_ISO` channel defaults to a schematic-derived gain/offset instead of 0, ISOMETER uses the external ADC channel. |
 | 6 | Voltage ref | Reference rail requires output load capacitor for stability |
-| 7 | PID tuning | **All PID gains are placeholder values; no tuning has been performed.** This matters more than it used to: the HV loops previously defaulted to zero gain, which silently disabled ISOMETER. They now default to real (untuned) values, so ISOMETER will actually drive the flyback. Treat the first run as a bench bring-up. |
+| 7 | PID tuning | Bench-tuned: Buck, Boost, FourSwitch (V_in ~13 V, light load) and Current (P > 0.01 oscillates, I > 3.5 unstable). Still initial values: BoostIoutLimit (limiter untested), ChargeCurrent (used in the validated charge runs, not tuned on its own), ChargeVoltage, HVVoltage, HVCurrent, 10AVoltLimit (= buck gains), and the EMI parameters. The I gains are limited by the ~246 Hz external ADC that feeds the I-terms (#19). Treat the first run of an untuned loop as a bench bring-up. |
 | 8 | ISOMETER ADC | Fixed (`e5bde9a`): ISOMETER now names its trigger explicitly (`ADC_TRIGGER_HRTIM_HV`, see `mode_table.c`), so the loop rate no longer depends on mode history. The rate was ~11.7 kHz (post-scaler ÷15); TRG5 post-scaler ÷7 now gives exactly `CTRL_FREQ`, gains unchanged (integral action and ramp ~2.1× faster than before on the bench). |
 | 9 | Charge thresholds | The CC→CV latch and cycle termination both key off the BMS `StackVoltage` against `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` (consistent — this corrects an earlier version of this table, which claimed the latch tested `v_in`). The CV tail's own PI loop, however, now regulates towards `4 × highest cell voltage` rather than `StackVoltage` (see §3, Charging). Under significant cell imbalance, the quantity being latched/terminated on (real `StackVoltage`) and the quantity the CV loop is driving towards (extrapolated `4 × max-cell`) can diverge — untested. Termination also now requires the cell-voltage spread to be ≤ 50 mV, which should catch most of this in practice, but the two-sensor tension itself is unresolved. |
 | 10 | Data logging | QSPI flash driver exists and holds the icon store, but logging is not wired into the application |
-| 11 | Error log | `error_Write()` is an unimplemented stub, so queued errors are discarded |
+| 11 | Error log | Since `213986a` `error_Work()` runs in the main loop and `error_Write()` prints each queued error on the CLI; a full queue drops the oldest. Still not persisted and not shown on screen. |
 | 12 | Charge start | The multi-phase CHARGE start (§3) has been run on the bench and works with the current tuning (`CTRL_PARAM_CHARGE_PRECHARGE_*`, `CTRL_PARAM_CHARGE_RAMP_s` — see §3 for the values). An audible oscillation/whine was observed while the voltage first rises, clearing after roughly 1 s; suspected but **not confirmed by a scope capture** to be the open-loop, unregulated `PRECHARGE` exciting the `OUT_LV` LC tank near its resonance (10 µH inductor, 33 µF `OUT_LV` bank C22–C36 → ≈8.8 kHz, audible), since nothing damps it while `V_OUT`/`I_OUT` are unmeasured there. Shortening the ramps and raising `PRECHARGE_RATIO` (now 0.99) reduced it to where it's no longer a problem in practice, but the mechanism itself is unconfirmed. Remaining open items: the relay settle time (`CTRL_PARAM_CHARGE_RELAY_SETTLE_ms`, datasheet not in the repo) and the duty model (unloaded synchronous boost, PRIM at full duty) are still bench assumptions, not measured. A future `OUT_LV` divider on a spare ADC channel would allow closing the PRECHARGE loop and would let `I_BAT` (already sampled during CHARGE) or a real voltage loop actively damp this instead of relying on tuning alone. |
 | 13 | Deep-discharge charging | The CUV recovery path (§3) has been run on the bench and works — K1 stays closed, the BMS's CUV fault is masked correctly for the run, and recovery current reaches the pack through Q6/Q5's body diode as expected. The `CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA` (100 mA) target and the reuse of `CTRL_PARAM_CHARGE_RAMP_s` for both the initial 0→10 % ramp and the later 10→100 % handoff once CUV clears are first-pass values, not independently bench-tuned yet — revisit if either ramp turns out too fast/slow in practice. |
 | 14 | LCD driver speed | Fixed (`515be99`): `SPI_PRESCALER_LCD_WRITE` (`lcd.h`) had been left at 16 (10 MHz) since the very first "getting the LCD running" bring-up commit (`317ef30`), a quarter of the 4/40 MHz that `spi.c`'s static `MX_SPI4_Init()` and `bat_source.ioc` (`SPI4.CalculateBaudRate=40.0 MBits/s`) both already specify — the define's own trailing `//4 // 40MHz` was that commit's leftover note of the value actually wanted. `LCD_ReadCmd()` (only called from `LCD_init()`'s panel-ID reads) is what leaves SPI4 at this rate for the rest of runtime, so every draw after boot — splash, menus, this driver's own bulk `LCD_Fill`/`LCD_WriteData` transfers — ran 4× slower than the hardware is configured for. Restored to 4/40 MHz. **Not yet verified on the bench**: nothing in the repo documents 16 as a deliberate signal-integrity fallback, but that possibility can't be ruled out without hardware; if 40 MHz proves unreliable, try 8 (20 MHz) before reverting. |
 | 15 | Watchdog | Bench-verified: `wdtTest` resets the board and it reboots (the `ON_REQ` power latch rides through the reset). **Not yet checked**: that no legitimate long path (`saveEEPROM`, `flashIcons`, `eraseFlash Full`, long LCD redraws) trips the untuned 2000 ms timeout. Also open: the kick is unconditional per main-loop pass, so a dead control ISR alone would not trip it — a gated kick (also require `adc_interrupt_cnt` to have advanced) would close that. |
+| 16 | Shoot-through at stop | Fixed (`934e5c5`, `de9a358`, `b37b0bf`): `IDLES1` (low side on in burst idle) was set at boot and never cleared, so every `hrtim_disable()` switched the low sides on without dead time. Now set only on the fast leg while the burst runs and cleared before any PWM disable (`hrtim_sync_stop()` before `hrtim_disable()`, also on the parked leg at a region change and in `hrtim_emergency_off()`); `CONV_CTRL_EN` drops before the PWM stops. Not yet scope-checked. |
+| 17 | ISOMETER limiter | The `if` that guarded the duty write instead of the limit is fixed (`934e5c5`: duty always written). The leakage-current limiter itself is commented out again (`598b9da`, ISOMETER only reached ~102 V with it), so ISOMETER has no PI current limit; only the `PROTECTION_ISO_MAX_uA` trip (external ADC, 20 ms poll) and the `OCP_N` latch remain. Open (todo A4). |
+| 18 | Fault handlers | Fixed (`207265f`): see §8, power stage off before the fault handlers spin. |
+| 19 | Ext ADC rate | The ADS131M04 runs at ~246 Hz (OSR 16256). The 60V 1 A limiter now uses the fast internal `i_out` (`78c6851`). The PI I-terms (60V regions, 10A, CHARGE CC, HV) still integrate the external value, which limits the usable I gains. Open. |
+| 20 | Protection interlock | Fixed (`f6d31be`): per-mode V/I limits; AMPMETER/VOLTMETER (no controller) leave to IDLE on any protection ERROR, which also releases the SEK short. Open: AMPMETER has no runtime `V_TERM` limit, only the 500 mV entry check. |
+| 21 | OVP | `84d906e`: OVP latch trip → SEK short until power cycle (§5). Open (todo A2): `OVP_RESET` is never driven, detection is polled (20 ms tick), the reset/recovery strategy is not agreed with HW. |
+| 22 | Ext ADC integrity | Fixed (`fc92dc0`, `f0b8dfd`): every frame checked against its output CRC (bad frame keeps the old values, counted); boot self-test latches `EXT_ADC` on failure. |
+| 23 | BMS data | Fixed (`de1c0a1`): BMS data older than 3 s is `BMS_STALE` (stops CHARGE, blocks its entry); poll 10 Hz. |
+| 24 | Timers / I2C | Fixed (`eecbf20`, `5c0bd41`): software timer loads above 16 bit report an error instead of truncating; I2C transfers time out after 50 ms with bus recovery. |
+| 25 | EEPROM layout | Fixed (`bac4387`): PSVN 3 with separate calibration and gains blocks, all 10 PI rows persisted, calibration kept across PSVN upgrades (§5). |
