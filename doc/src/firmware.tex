@@ -61,6 +61,12 @@ switch statements (control mode, relay/shunt \ac{GPIO} mask, enable
 \texttt{mode\_table.c} -- adding a mode or changing its behaviour means
 editing one row instead of four call sites.
 
+In debug builds the EMI mode additionally runs an EMC immunity monitor
+(\texttt{emc\_monitor.c}) that checks the output, supply rails, cells,
+temperatures and communication error counters against a limit table every
+\qty{20}{\milli\second} and latches excursions with their time, min/max and
+count, shown as a pass/fail list on the display and on the serial interface.
+
 \subsection{Control loop}
 
 The control loop runs from the \ac{ADC}1 \ac{DMA}-complete \ac{ISR}, not

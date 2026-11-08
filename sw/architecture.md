@@ -450,6 +450,26 @@ values are printed on the CLI (~10 Hz, from `statemachine_step()`, not the ISR) 
 charging for bench visibility, plus once the peak |`I_OUT`| in the 0.4 s after the
 relay-close command, for tuning `PRECHARGE_RATIO` and `RELAY_SETTLE_ms`.
 
+### EMI mode: EMC monitor (`emc_monitor.c`, `emc_param.h`)
+
+Debug builds only (`EMI_DEBUG`). While an EMI run is active (`output_on`),
+`statemachine_step_emi()` calls `emc_monitor_step()` every tick. It checks one
+row per channel of the `EMC_CHANNELS` table in `emc_param.h` (name, read
+expression, limits; the only place to edit criteria): V_TERM (setpoint +-2 %,
+min +-0.5 V) and I_OUT (50..150 mA), both unfiltered ext ADC; V_HV (placeholder
+range); the rails 3V3, 3V3A, 5V, 15V (+-5 %) and VCC (+-5 % around its value at the end of blanking, it follows the battery);
+min/max cell (3.0..4.25 V); hottest NTC (< 70 C, an open NTC reads 1000); ext ADC
+CRC errors, BMS-stale and I2C errors (`i2c_error_count()`, must not increase).
+
+Per channel it latches FAIL, min/max, the number of excursions (entries into
+out-of-spec) and the time of the first one. The first `EMC_BLANKING_ms` (2 s)
+after the start are not checked. Start of a run and an OK click reset all
+latches (the OK click also restarts time and blanking). Nothing is persisted.
+Each new excursion prints (first per channel always, then at most one line per second) `EMC FAIL <name> <value> at mm:ss.mmm`; the CLI command
+`emcReport` prints the per-channel summary. The EMI screen is the monitor list
+(value, min/max, OK/FAIL per channel; status bar PASS or FAIL since mm:ss),
+drawn one item per tick.
+
 ---
 
 ## 4. Peripheral Map
@@ -646,6 +666,7 @@ and CHARGE is not auto-entered. `EXT_ADC_DEBUG` prints the values per channel.
 | `ctrl_main.c` | Control mode dispatch, per-mode PI loops, PID registry, CHARGE phase handling in the ISR |
 | `vout_region.c` | HAL-free full-range region choice, region transition steps, burst plan (host-tested) |
 | `balancing.c` | Cell balancing mask written to the BMS every tick |
+| `emc_monitor.c` | EMI-mode EMC immunity monitor (`EMI_DEBUG`); criteria in `emc_param.h` |
 | `charge_seq.c` | HAL-free CHARGE start sequencing: duty formulas, PRECHARGE ramp, phase stepper, stuck-open detector (host-tested) |
 | `ctrl_PID_control.c` | Generic PI with integrator-clamping anti-windup |
 | `adc.c` | ADC config per mode, scaling, ISR conversion + snapshot |

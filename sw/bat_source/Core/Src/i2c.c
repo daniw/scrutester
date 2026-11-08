@@ -73,6 +73,7 @@ I2C_HandleTypeDef hi2c4;
 I2C_HandleTypeDef *i2c_handle = &hi2c4;
 volatile uint8_t i2c_exclusiveAccess;
 static volatile uint32_t i2c_start_tick;
+static volatile uint32_t i2c_errors; // bus errors + timeouts
 
 /**
  * Works through the I2C queue and sends an I2C message. A transfer that
@@ -172,7 +173,12 @@ void HAL_I2C_MasterTxCpltCallback (I2C_HandleTypeDef * hi2c){
 	i2c_Get();
 }
 
+uint32_t i2c_error_count(void) {
+	return i2c_errors; // single aligned word read
+}
+
 void HAL_I2C_ErrorCallback (I2C_HandleTypeDef * hi2c){
+	i2c_errors++;
 	event_Add(EVENT_IIC_ERROR, queue_Get(i2c_queue).error_callback, queue_Get(i2c_queue).argument);
 	queue_Pop(i2c_queue, I2C_QUEUE_SIZE);
 	i2c_Get();
@@ -511,6 +517,7 @@ void i2c_check_timeout(void)
 	{
 		error_Add(ERROR_IIC_INIT, 0);
 	}
+	i2c_errors++;
 	printf("I2C timeout, bus recovered\r\n");
 
 	__disable_irq();

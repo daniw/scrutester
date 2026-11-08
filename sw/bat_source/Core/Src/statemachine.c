@@ -28,6 +28,9 @@
 #include "config_store.h"
 #include "mode_table.h"
 #include "watchdog.h"
+#ifdef EMI_DEBUG
+#include "emc_monitor.h"
+#endif
 
 statemachine_t statemachine_handle;
 uint16_t ok_button_pressed;
@@ -681,6 +684,10 @@ static void statemachine_step_emi(void) {
 			aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 1);
 		}
 	}
+
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK)
+		emc_monitor_reset();
+	emc_monitor_step(statemachine_handle.output_on);
 
 	display_update_mode(statemachine_handle.current_mode, statemachine_handle.output_on);
 }

@@ -27,6 +27,9 @@
 #include "version.h"
 #include "protection.h"
 #include "protection_param.h"
+#ifdef EMI_DEBUG
+#include "emc_monitor.h"
+#endif
 #include <stdio.h>
 #include <string.h>
 
@@ -259,6 +262,73 @@ static void update_active_output(statemachine_modes_t mode,
 			(unsigned) (setpoint_value_x1000 % 1000));
 	LCD_PutStr(SET_X, SECOND_Y + 18, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 }
+
+#ifdef EMI_DEBUG
+/* ---------------------------------------------------------------------- */
+/* EMI: EMC monitor list, see emc_monitor.h                                */
+/* ---------------------------------------------------------------------- */
+
+#define EMI_LIST_Y    (STATUS_H + 16)
+#define EMI_ROW_H     12
+#define EMI_X         4
+#define EMI_STATE_X   (EMI_X + (EMC_ROW_LEN + 1) * 8)
+
+static uint8_t emi_item;
+static char emi_title[24];
+
+static void enter_emi(statemachine_modes_t mode) {
+	const menu_entry_t *entry = menu_entry_for_mode(mode);
+	if (entry == NULL)
+		return;
+
+	draw_status_bar(menu_name_for_mode(mode), entry->accent);
+	draw_footer("ESC: Back", "OUT: Start/Stop  OK: Reset");
+	LCD_PutStr(EMI_X, STATUS_H + 2, "Channel      Value     Min     Max State",
+			FONT_TINY, TEXT_SECONDARY, C_BLACK);
+	emi_title[0] = 0;
+	emi_item = 0;
+}
+
+/* Draws one item per call (rows, then title + info line) to keep the tick short. */
+static void update_emi(void) {
+	uint8_t n = emc_monitor_channel_count();
+
+	if (emi_item < n) {
+		emc_monitor_row_text(emi_item, text, sizeof(text));
+		uint8_t fail = emc_monitor_row_failed(emi_item);
+		int16_t y = EMI_LIST_Y + emi_item * EMI_ROW_H;
+		LCD_PutStr(EMI_X, y, text, FONT_TINY, TEXT_PRIMARY, C_BLACK);
+		LCD_PutStr(EMI_STATE_X, y, fail ? "FAIL" : "OK  ", FONT_TINY,
+				fail ? C_RED : C_GREEN, C_BLACK);
+	} else {
+		emc_status_t st;
+		char title[sizeof(emi_title)];
+		emc_monitor_get_status(&st);
+
+		if (st.failed)
+			snprintf(title, sizeof(title), "EMI FAIL %02lu:%02lu",
+					(unsigned long) (st.first_fail_ms / 60000),
+					(unsigned long) (st.first_fail_ms / 1000 % 60));
+		else
+			snprintf(title, sizeof(title), st.started ? "EMI PASS" : "EMI");
+		if (strcmp(title, emi_title) != 0) {
+			strcpy(emi_title, title);
+			draw_status_bar(title, st.failed ? C_RED : (st.started ? C_GREEN : C_GRAY));
+		}
+
+		uint32_t s = st.elapsed_ms / 1000;
+		uint32_t set = ctrl_main_handle.voltage_reference_mV / 100;
+		snprintf(text, sizeof(text), "SET %2lu.%luV  %-4s %02lu:%02lu   ",
+				(unsigned long) (set / 10), (unsigned long) (set % 10),
+				st.running ? "RUN" : "STOP", (unsigned long) (s / 60),
+				(unsigned long) (s % 60));
+		LCD_PutStr(EMI_X, EMI_LIST_Y + n * EMI_ROW_H + 2, text, FONT_TINY,
+				TEXT_PRIMARY, C_BLACK);
+	}
+	if (++emi_item > n)
+		emi_item = 0;
+}
+#endif /* EMI_DEBUG */
 
 /* ---------------------------------------------------------------------- */
 /* Passive-readout template (Voltmeter / Ampmeter): big value only.        */
@@ -542,8 +612,7 @@ void display_enter_mode(statemachine_modes_t mode) {
 		break;
 #ifdef EMI_DEBUG
 	case STATEMACHINE_MODE_EMI:
-		enter_active_output(mode, "V", "IOUT", "A", "V");
-		draw_footer("ESC: Back", "OUT: Start/Stop");
+		enter_emi(mode);
 		break;
 #endif
 	default:
@@ -583,10 +652,7 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 		break;
 #ifdef EMI_DEBUG
 	case STATEMACHINE_MODE_EMI:
-		update_active_output(mode, output_active,
-				adc_data.converted.v_term_ext_mv_filt / 10,
-				adc_data.converted.i_out_ext_mA_filt,
-				ctrl_main_handle.voltage_reference_mV);
+		update_emi();
 		break;
 #endif
 	default:

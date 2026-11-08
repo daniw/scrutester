@@ -39,6 +39,7 @@
 #include "calibration.h"
 #include "protection.h"
 #include "watchdog.h"
+#include "emc_monitor.h"
 
 #ifdef CLI_ENABLED
 
@@ -117,6 +118,9 @@ void cmd_setSerial(void);
 void cmd_flashIcons(void);
 void cmd_printProtection(void);
 void cmd_wdtTest(void);
+#ifdef EMI_DEBUG
+void cmd_emcReport(void);
+#endif
 #ifdef CHARGE_DEBUG
 void cmd_chargeStep(void);
 void cmd_chargeNext(void);
@@ -167,6 +171,10 @@ void (*cmd_func[])(void) = {
 	cmd_printProtection,
 	cmd_set1ARef,
 	cmd_wdtTest
+#ifdef EMI_DEBUG
+	,
+	cmd_emcReport
+#endif
 #ifdef CHARGE_DEBUG
 	,
 	cmd_chargeStep,
@@ -212,6 +220,10 @@ const char *cmd_str[] = {
 		"pProt",
 		"set1ARef",
 		"wdtTest"
+#ifdef EMI_DEBUG
+		,
+		"emcReport"
+#endif
 #ifdef CHARGE_DEBUG
 		,
 		"chargeStep",
@@ -257,6 +269,10 @@ const char *cmd_arg_str[] = {
 		"pProt",
 		"set1ARef [12-bit DAC value]",
 		"wdtTest -- hang the main loop on purpose; the watchdog should reset the board in ~2 s"
+#ifdef EMI_DEBUG
+		,
+		"emcReport -- EMC monitor summary per channel"
+#endif
 #ifdef CHARGE_DEBUG
 		,
 		"chargeStep [0 disable | 1 enable] -- hold CHARGE after precharge (relay open) until chargeNext",
@@ -1796,6 +1812,13 @@ void cmd_wdtTest(void) {
 	while (1) {
 	}
 }
+
+#ifdef EMI_DEBUG
+/** Prints the EMC monitor summary (value, min/max, state, excursions per channel). */
+void cmd_emcReport(void) {
+	emc_monitor_report();
+}
+#endif
 
 /**
  * Debug dump of the protection module's current classification: worst level,

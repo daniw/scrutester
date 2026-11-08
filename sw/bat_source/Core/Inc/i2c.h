@@ -54,6 +54,9 @@ uint8_t i2c_ReadBlocking(uint8_t address, uint8_t* buf, uint32_t numbytes);
 uint8_t i2c_IsDeviceReadyBlocking(uint8_t address);
 void i2c_check_timeout(void);
 
+/** @brief Bus errors and timeouts since boot. */
+uint32_t i2c_error_count(void);
+
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus
