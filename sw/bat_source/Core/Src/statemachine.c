@@ -134,6 +134,8 @@ static uint8_t pin_digits[4];
 static uint8_t pin_pos;
 static uint8_t pin_wait; // ticks left of the "Wrong PIN" message
 static input_encoder_clamp_t pin_clamp;
+static input_encoder_wrap_t idle_wrap;  // home carousel
+static input_encoder_wrap_t list_wrap;  // Settings list and calibration channel list
 
 /* Settings > Calibration sub-UI state -- 0=channel list, 1=zero step,
  * 2=optional gain step (see display_calibration_enter/update()). */
@@ -167,7 +169,6 @@ void statemachine_init(void) {
 	statemachine_handle.protection_forced_output_off = 0;
 
 	input_init();
-	input_encoder_reset(62);
 
 	timer_add(STATEMACHINE_STEP_PERIOD_mS, TIMER_TYPE_TICK, EVENT_SM_STEP, 0);
 	statemachine_switchtoIdle();
@@ -248,10 +249,11 @@ static void statemachine_storage_mode(void) {
  * @brief Back to the Settings list.
  * @param idx Selected list position.
  */
-static void statemachine_leave_service_pin(uint8_t idx) {
+static void statemachine_back_to_settings_list(uint8_t idx) {
 	statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
 	statemachine_handle.current_menu_index = idx;
 	input_encoder_reset(idx);
+	input_encoder_wrap_reset(&list_wrap, idx);
 	display_show_settings_list(idx);
 }
 
@@ -260,7 +262,7 @@ static void statemachine_leave_service_pin(uint8_t idx) {
 static void statemachine_step_service_pin(void) {
 	if (pin_wait) {
 		if (--pin_wait == 0)
-			statemachine_leave_service_pin(statemachine_handle.current_menu_index);
+			statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
 		return;
 	}
 
@@ -285,10 +287,10 @@ static void statemachine_step_service_pin(void) {
 			}
 		}
 		service_unlocked = 1;
-		statemachine_leave_service_pin(0);
+		statemachine_back_to_settings_list(0);
 	} else if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 		if (pin_pos == 0) {
-			statemachine_leave_service_pin(statemachine_handle.current_menu_index);
+			statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
 			return;
 		}
 		input_encoder_clamp_reset(&pin_clamp, pin_digits[--pin_pos]);
@@ -321,7 +323,7 @@ static void statemachine_step_service_pin(void) {
 static void statemachine_step_calibration(void) {
 	switch (calibration_ui_state) {
 	case 0: { // channel list
-		uint8_t idx = (input_encoder_read()) % CAL_CH_COUNT;
+		uint8_t idx = (uint8_t) input_encoder_read_wrapped(&list_wrap, CAL_CH_COUNT);
 		if (idx != calibration_selected_channel) {
 			calibration_selected_channel = (calibration_channel_t) idx;
 			calibration_ensure_adc_mode(calibration_selected_channel);
@@ -332,9 +334,8 @@ static void statemachine_step_calibration(void) {
 			display_calibration_enter(calibration_selected_channel, 1);
 		}
 		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
-			statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
 			adc_configure_mode(statemachine_handle.current_mode);
-			display_show_settings_list(statemachine_handle.current_menu_index);
+			statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
 		}
 		break;
 	}
@@ -359,6 +360,7 @@ static void statemachine_step_calibration(void) {
 			if (calibration_set_gain(calibration_selected_channel, reference_value)
 					== CALIBRATION_STATUS_OK) {
 				calibration_ui_state = 0;
+				input_encoder_wrap_reset(&list_wrap, calibration_selected_channel);
 				display_calibration_enter(calibration_selected_channel, 0);
 			} else {
 				// Invalid gain (see calibration_set_gain()) -- nothing was
@@ -368,6 +370,7 @@ static void statemachine_step_calibration(void) {
 		}
 		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			calibration_ui_state = 0;
+			input_encoder_wrap_reset(&list_wrap, calibration_selected_channel);
 			display_calibration_enter(calibration_selected_channel, 0);
 		}
 		break;
@@ -496,7 +499,7 @@ void statemachine_step(void) {
 	// Select transition to next state
 	switch (statemachine_handle.current_mode) {
 	case STATEMACHINE_IDLE:
-		temp = (input_encoder_read()) % MENU_ORDER_LENGTH;
+		temp = (uint8_t) input_encoder_read_wrapped(&idle_wrap, MENU_ORDER_LENGTH);
 		if (temp != statemachine_handle.current_menu_index) {
 			statemachine_handle.current_menu_index = temp;
 			display_show_idle(temp);
@@ -592,7 +595,8 @@ void statemachine_step(void) {
 	case STATEMACHINE_MODE_SETTINGS:
 		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_MENU) {
 			statemachine_settings_modes_t list[STATEMACHINE_SETTINGS_MODE_LENGTH];
-			temp = input_encoder_read() % statemachine_settings_list(list);
+			temp = (uint8_t) input_encoder_read_wrapped(&list_wrap,
+					statemachine_settings_list(list));
 			if (temp != statemachine_handle.current_menu_index) {
 				statemachine_handle.current_menu_index = temp;
 				display_show_settings_list(temp);
@@ -609,6 +613,7 @@ void statemachine_step(void) {
 				} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
 					calibration_ui_state = 0;
 					calibration_selected_channel = CAL_CH_V_TERM;
+					input_encoder_wrap_reset(&list_wrap, CAL_CH_V_TERM);
 					calibration_ensure_adc_mode(calibration_selected_channel);
 					display_calibration_enter(calibration_selected_channel, 0);
 				} else {
@@ -636,9 +641,7 @@ void statemachine_step(void) {
 				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {
 					balancing_clear_manual_override();
 				}
-				input_encoder_reset(statemachine_handle.current_menu_index);
-				statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
-				display_show_settings_list(statemachine_handle.current_menu_index);
+				statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
 				return;
 			}
 		}
@@ -1221,6 +1224,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	}
 	aux_io_ctrl_set_config(mode, 0);
 	input_encoder_reset(0);
+	input_encoder_wrap_reset(&list_wrap, 0); // Settings list starts at the top
 	int32_t clamp_start = 0;
 #ifdef EMI_DEBUG
 	// EMI starts at its default setpoint instead of 0 V, so the first OUT
@@ -1344,7 +1348,11 @@ void statemachine_switchtoIdle(void) {
 
 	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
 	dac_sqwave_stop(); // no-op unless RESISTANCE_1A left the DAC square wave running
-	input_encoder_reset(63+statemachine_handle.current_mode);
+	// Carousel shows the entry of the mode just left (first entry if none).
+	const menu_entry_t *left = menu_entry_for_mode(statemachine_handle.current_mode);
+	int32_t idle_idx = left ? (int32_t) (left - menu_order) : 0;
+	input_encoder_wrap_reset(&idle_wrap,
+			idle_idx < MENU_ORDER_LENGTH ? idle_idx : 0);
 	adc_configure_mode(STATEMACHINE_IDLE);
 	statemachine_handle.current_mode = STATEMACHINE_IDLE;
 	statemachine_handle.current_menu_index = 0xFF; /* force a redraw on the next tick */

@@ -113,9 +113,10 @@ uint8_t input_btn_out(void) {
 
 void input_cli_encoder_step(int8_t direction) {
 	if (direction > 0)
-		cli_encoder_count = (cli_encoder_count + 1) & 0x7F;
+		cli_encoder_count = (cli_encoder_count + 1) % INPUT_ENCODER_RANGE;
 	else
-		cli_encoder_count = (cli_encoder_count - 1) & 0x7F;
+		cli_encoder_count = (cli_encoder_count + INPUT_ENCODER_RANGE - 1)
+				% INPUT_ENCODER_RANGE;
 }
 
 void input_cli_pulse_ok(void) {
@@ -130,6 +131,17 @@ void input_cli_toggle_out(void) {
 	cli_out_held = !cli_out_held;
 }
 
+/* Signed step between two raw counts, taking the short way round the wrap. */
+static int32_t input_encoder_delta(uint16_t prev, uint16_t raw) {
+	int32_t delta = (int32_t) raw - (int32_t) prev;
+
+	if (delta > INPUT_ENCODER_RANGE / 2)
+		delta -= INPUT_ENCODER_RANGE;
+	else if (delta < -(INPUT_ENCODER_RANGE / 2))
+		delta += INPUT_ENCODER_RANGE;
+	return delta;
+}
+
 void input_encoder_clamp_reset(input_encoder_clamp_t *clamp, int32_t value) {
 	clamp->position = value;
 	clamp->prev_raw = input_encoder_read();
@@ -137,19 +149,10 @@ void input_encoder_clamp_reset(input_encoder_clamp_t *clamp, int32_t value) {
 
 int32_t input_encoder_read_clamped(input_encoder_clamp_t *clamp, int32_t min, int32_t max) {
 	uint16_t raw = input_encoder_read();
-	int32_t delta = (int32_t) raw - (int32_t) clamp->prev_raw;
 
-	// The raw count wraps at 0/127 (TIM4's ARR=127, or the CLI backend's own
-	// & 0x7F). Re-interpret any delta bigger than half that range as having
-	// gone the short way around the wrap instead -- e.g. 127 -> 1 is really
-	// a step of +2, not +126. A real detent step within one 20 ms tick never
-	// gets close to 64 counts, so this is never ambiguous in practice.
-	if (delta > 64)
-		delta -= 128;
-	else if (delta < -64)
-		delta += 128;
-
-	clamp->position += delta;
+	// A real step within one 20 ms tick never gets close to half the range,
+	// so the short way round the wrap is never ambiguous in practice.
+	clamp->position += input_encoder_delta(clamp->prev_raw, raw);
 	if (clamp->position < min)
 		clamp->position = min;
 	else if (clamp->position > max)
@@ -157,4 +160,20 @@ int32_t input_encoder_read_clamped(input_encoder_clamp_t *clamp, int32_t min, in
 	clamp->prev_raw = raw;
 
 	return clamp->position;
+}
+
+void input_encoder_wrap_reset(input_encoder_wrap_t *wrap, int32_t value) {
+	wrap->position = value;
+	wrap->prev_raw = input_encoder_read();
+}
+
+int32_t input_encoder_read_wrapped(input_encoder_wrap_t *wrap, int32_t n) {
+	uint16_t raw = input_encoder_read();
+	int32_t pos = (wrap->position + input_encoder_delta(wrap->prev_raw, raw)) % n;
+
+	if (pos < 0)
+		pos += n;
+	wrap->position = pos;
+	wrap->prev_raw = raw;
+	return pos;
 }
