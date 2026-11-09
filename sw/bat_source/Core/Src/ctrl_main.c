@@ -122,12 +122,16 @@ static inline void ctrl_limiter_arm(PID_controller_t *lim) {
 	lim->prev_I_action = lim->sat_limit_high;
 }
 
-/* Cap `duty` at the limiter output, with anti-windup of the capped PI. */
+/* Cap `duty` at the limiter output. Anti-windup both ways: the loop not in
+ * control tracks the applied duty (the limiter stays just above it and takes
+ * over at once when the limit is reached). */
 static inline float ctrl_limited_duty(PID_controller_t *pi,
-		const PID_controller_t *lim, float duty) {
+		PID_controller_t *lim, float duty) {
 	if (lim->action < duty) {
 		duty = lim->action;
 		pi->prev_I_action = duty - pi->P_action;
+	} else {
+		lim->prev_I_action = duty - lim->P_action;
 	}
 	return duty;
 }
@@ -874,10 +878,8 @@ static void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
 	ctrl_PID_controller_execute(&ctrl_pi_hv_iout_limit,
 			current_meas_iso_uA / 1000.0F, current_meas_iso_uA / 1000.0F);
 
-	float duty_limited = ctrl_pi_voltage_hv.action;
-	if (ctrl_pi_hv_iout_limit.action < duty_limited) {
-		duty_limited = ctrl_pi_hv_iout_limit.action;
-	}
+	float duty_limited = ctrl_limited_duty(&ctrl_pi_voltage_hv,
+			&ctrl_pi_hv_iout_limit, ctrl_pi_voltage_hv.action);
 
 	// Apply Duty
 	hrtim_set_duty(HRTIM_CHANNEL_HV, duty_limited);
