@@ -15,22 +15,7 @@ Core/Src/cli.c: duplicateCondition:The if condition is the same as the previous 
 Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 1) requires 'int' but the argument type is 'unsigned int'.
 Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 2) requires 'int' but the argument type is 'unsigned int'.
 Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 3) requires 'int' but the argument type is 'unsigned int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'unsigned int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/cli.c: invalidPrintfArgType_uint:%lu in format string (no. 1) requires 'unsigned long' but the argument type is 'unsigned int'.
-Core/Src/cli.c: invalidPrintfArgType_uint:%lx in format string (no. 1) requires 'unsigned long' but the argument type is 'unsigned int'.
-Core/Src/cli.c: invalidPrintfArgType_uint:%lx in format string (no. 2) requires 'unsigned long' but the argument type is 'unsigned int'.
+Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'unsigned long'.
 Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
 Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
 Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
@@ -48,18 +33,6 @@ Core/Src/ctrl_main.c: redundantInitialization:Redundant initialization for 'bp'.
 Core/Src/ctrl_main.c: redundantInitialization:Redundant initialization for 'duty_run'. The initialized value is overwritten before it is read.
 Core/Src/dac.c: constParameterPointer:Parameter 'dacHandle' can be declared as pointer to const
 Core/Src/dac.c: constParameterPointer:Parameter 'dacHandle' can be declared as pointer to const
-Core/Src/display.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/display.c: invalidPrintfArgType_sint:%li in format string (no. 2) requires 'long' but the argument type is 'signed int'.
 Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 1) requires 'unsigned int' but the argument type is 'signed int'.
 Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 1) requires 'unsigned int' but the argument type is 'signed int'.
 Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 1) requires 'unsigned int' but the argument type is 'signed int'.
@@ -68,13 +41,11 @@ Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 2) requir
 Core/Src/display.c: invalidPrintfArgType_uint:%u in format string (no. 2) requires 'unsigned int' but the argument type is 'signed int'.
 Core/Src/display.c: variableScope:The scope of the variable 'pixel_buf' can be reduced.
 Core/Src/driver_pca9554.c: constParameterPointer:Parameter 'hpca9554' can be declared as pointer to const
-Core/Src/event.c: uninitvar:Uninitialized variables: e.callback, e.argument
 Core/Src/event.c: variableScope:The scope of the variable 'newhead' can be reduced.
 Core/Src/event.c: variableScope:The scope of the variable 'oldhead' can be reduced.
 Core/Src/hrtim.c: constParameterPointer:Parameter 'hrtimHandle' can be declared as pointer to const
 Core/Src/hrtim.c: constParameterPointer:Parameter 'hrtimHandle' can be declared as pointer to const
 Core/Src/hrtim.c: constParameterPointer:Parameter 'hrtimHandle' can be declared as pointer to const
-Core/Src/icon_store.c: missingReturn:Found an exit path from function with non-void return type that has missing return statement
 Core/Src/list.c: arithOperationsOnVoidPointer:'ret' is of type 'void *'. When using void pointers in calculations, the behaviour is undefined.
 Core/Src/list.c: constParameterPointer:Parameter 'data' can be declared as pointer to const
 Core/Src/list.c: variableScope:The scope of the variable 'found' can be reduced.
@@ -95,12 +66,6 @@ Core/Src/quadspi.c: constParameterPointer:Parameter 'qspiHandle' can be declared
 Core/Src/quadspi.c: constParameterPointer:Parameter 'qspiHandle' can be declared as pointer to const
 Core/Src/rtc.c: constParameterPointer:Parameter 'rtcHandle' can be declared as pointer to const
 Core/Src/rtc.c: constParameterPointer:Parameter 'rtcHandle' can be declared as pointer to const
-Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'signed int'.
-Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 2) requires 'long' but the argument type is 'signed int'.
-Core/Src/statemachine.c: invalidPrintfArgType_sint:%ld in format string (no. 3) requires 'long' but the argument type is 'signed int'.
 Core/Src/statemachine.c: invalidPrintfArgType_uint:%u in format string (no. 5) requires 'unsigned int' but the argument type is 'signed int'.
 Core/Src/statemachine.c: knownConditionTrueFalse:Condition 'step_mA==0' is always false
 Core/Src/syscalls.c: constParameterPointer:Parameter 'ptr' can be declared as pointer to const
@@ -114,10 +79,8 @@ Core/Src/tim.c: constParameterPointer:Parameter 'tim_encoderHandle' can be decla
 Core/Src/timer.c: constParameterPointer:Parameter 'htim' can be declared as pointer to const
 Core/Src/usart.c: constParameterPointer:Parameter 'uartHandle' can be declared as pointer to const
 Core/Src/usart.c: constParameterPointer:Parameter 'uartHandle' can be declared as pointer to const
-Core/Src/w25n01gv.c: invalidPrintfArgType_uint:%lX in format string (no. 1) requires 'unsigned long' but the argument type is 'unsigned int'.
 Core/Src/w25n01gv.c: redundantAssignment:Variable 'reg_conf' is reassigned a value before the old one has been used.
 Core/Src/w25n01gv.c: redundantAssignment:Variable 'reg_conf' is reassigned a value before the old one has been used.
-Core/Src/w25n01gv.c: redundantAssignment:Variable 'status' is reassigned a value before the old one has been used.
 Core/Src/w25n01gv.c: unreadVariable:Variable 'status' is assigned a value that is never used.
 Core/Src/w25n01gv.c: unreadVariable:Variable 'status' is assigned a value that is never used.
 Core/Src/w25n01gv.c: unreadVariable:Variable 'status' is assigned a value that is never used.

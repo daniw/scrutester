@@ -98,11 +98,13 @@ if command -v cppcheck >/dev/null 2>&1; then
     for src in Core/Src/*.c; do
         [ "$src" = "Core/Src/icon_seed_data.c" ] || CPP_SRCS+=("$src")
     done
+    # int32_t/uint32_t are long on arm-none-eabi; cppcheck's std.cfg says int.
     cppcheck --quiet --enable=warning,style,performance,portability \
         --inline-suppr --suppress=missingIncludeSystem \
         --template='{file}:{line}:{id}:{message}' \
-        --platform=unix32 \
+        --platform=arm32-wchar_t4 \
         -DUSE_HAL_DRIVER -DSTM32G474xx -D__GNUC__=12 -D__ARM_ARCH_7EM__ \
+        -Dint32_t=long -Duint32_t='unsigned long' \
         "${INCLUDES[@]}" \
         "${CPP_SRCS[@]}" 2>"$CPP_CURRENT"
 else
