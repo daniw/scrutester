@@ -1147,6 +1147,10 @@ void adc_convert_fast_data(void){
 	adc_converted_isr.i_iso_ext_uA  = (adc_data.ext_adc_data[3] - adc_data.i_iso_ext_offset) * adc_data.i_iso_ext_gain;
 }
 
+int32_t adc_v_term_ext_mv_now(void) {
+	return (int32_t) ((adc_data.ext_adc_data[0] - adc_data.v_term_ext_offset) * adc_data.v_term_ext_gain);
+}
+
 /**
  * Low-pass (ADC_EXT_FILT_ALPHA) of the ext ADC values into the *_filt fields.
  * Runs once per statemachine_step() tick (fixed 50 Hz), seeded on the first

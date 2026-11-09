@@ -17,7 +17,7 @@ PNG_DIR = os.path.join(ROOT, 'png')
 os.makedirs(PNG_DIR, exist_ok=True)
 
 ORDER = ['60v_source', '10a_source', 'milliohmmeter', 'ohmmeter', 'isolation',
-         'voltmeter', 'ampmeter', 'charge', 'settings', 'emi']
+         'voltmeter', 'ampmeter', 'charge', 'settings', 'emi', 'stopwatch']
 
 def render(svg_path, png_path, size):
     subprocess.run(

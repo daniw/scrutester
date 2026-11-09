@@ -12,6 +12,7 @@
 #include "stdint.h"
 #include "statemachine.h"
 #include "calibration.h"
+#include "stopwatch.h"
 
 void display_init(void);
 
@@ -40,6 +41,18 @@ void display_enter_mode(statemachine_modes_t mode);
 /* Live data refresh for a mode's detail screen -- call every statemachine_step() tick while active.
  * output_active selects the accent-border "energized" indicator (hold-to-enable / latched modes). */
 void display_update_mode(statemachine_modes_t mode, uint8_t output_active);
+
+/* VOLTMETER timing views (stopwatch.h): mode pick, stop level, run/result. */
+typedef enum {
+	VT_VIEW_READOUT = 0, /* plain voltmeter, not drawn here */
+	VT_VIEW_KIND,
+	VT_VIEW_LEVEL,
+	VT_VIEW_RUN
+} display_vt_view_t;
+void display_vtimer_enter(display_vt_view_t view, stopwatch_vt_kind_t kind);
+/* Per tick. level_mV: stop level being edited (VT_VIEW_LEVEL). */
+void display_vtimer_update(display_vt_view_t view, stopwatch_vt_kind_t kind,
+		int32_t level_mV);
 
 /* Settings: vertical list of sub-screens. */
 void display_show_settings_list(uint8_t submenu_index);

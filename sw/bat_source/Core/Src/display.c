@@ -27,6 +27,8 @@
 #include "version.h"
 #include "protection.h"
 #include "protection_param.h"
+#include "stopwatch.h"
+#include "stm32g4xx_hal.h"
 #ifdef EMI_DEBUG
 #include "emc_monitor.h"
 #endif
@@ -371,6 +373,122 @@ static void update_passive_readout(int32_t value_x100) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* Stopwatch mode: mm:ss.cc and state                                      */
+/* ---------------------------------------------------------------------- */
+
+#define SW_TIME_CHARS 8 /* "mm:ss.cc" */
+#define SW_TIME_X     ((LCD_WIDTH - SW_TIME_CHARS * 32) / 2)
+#define SW_TIME_Y     (STATUS_H + 70)
+
+static uint8_t sw_footer_key;
+
+static void enter_stopwatch(statemachine_modes_t mode) {
+	const menu_entry_t *entry = menu_entry_for_mode(mode);
+	if (entry == NULL)
+		return;
+
+	draw_status_bar(menu_name_for_mode(mode), entry->accent);
+	sw_footer_key = 0xFF;
+}
+
+static void update_stopwatch(void) {
+	uint32_t ms = stopwatch_elapsed_ms(HAL_GetTick());
+	uint8_t running = stopwatch_running();
+	uint8_t key = running | ((ms != 0) << 1);
+
+	if (key != sw_footer_key) {
+		sw_footer_key = key;
+		draw_footer(running ? "ESC: Stop" : (ms ? "ESC: Reset" : "ESC: Back"),
+				running ? "OK: Stop" : "OK: Start");
+	}
+	LCD_PutStr(SW_TIME_X, STATUS_H + 30, running ? "RUNNING" : "STOPPED",
+			FONT_MED, running ? C_GREEN : TEXT_SECONDARY, C_BLACK);
+	snprintf(text, sizeof(text), "%02u:%02u.%02u", (unsigned) (ms / 60000 % 100),
+			(unsigned) (ms / 1000 % 60), (unsigned) (ms / 10 % 100));
+	LCD_PutStr(SW_TIME_X, SW_TIME_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
+}
+
+/* ---------------------------------------------------------------------- */
+/* VOLTMETER timing views                                                  */
+/* ---------------------------------------------------------------------- */
+
+#define VT_MAX_MS 999999u
+#define VT_TIME_Y (STATUS_H + 62)
+
+static const char *const VT_KIND_TEXT[VT_KIND_COUNT] = {
+	[VT_KIND_IMD] = "IMD: start with OK    ",
+	[VT_KIND_DISCHARGE] = "Discharge: start -5 % ",
+};
+static uint8_t vt_last_state;
+
+/* Voltage in 0.1 V steps; the sign is not shown below 1 V (as the readout). */
+static void vt_put_volt(int16_t x, int16_t y, const UG_FONT *font, int32_t mV) {
+	int32_t dV = mV / 100;
+
+	snprintf(text, sizeof(text), "%4d.%d V", (int) (dV / 10),
+			(int) ((dV < 0 ? -dV : dV) % 10));
+	LCD_PutStr(x, y, text, (UG_FONT*) font, TEXT_PRIMARY, C_BLACK);
+}
+
+void display_vtimer_enter(display_vt_view_t view, stopwatch_vt_kind_t kind) {
+	UG_FillFrame(0, STATUS_H, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
+	draw_status_bar(menu_name_for_mode(STATEMACHINE_MODE_VOLTMETER),
+			menu_entry_for_mode(STATEMACHINE_MODE_VOLTMETER)->accent);
+	vt_last_state = 0xFF;
+
+	switch (view) {
+	case VT_VIEW_KIND:
+		draw_footer("ESC: Back", "Turn: pick  OK: Next");
+		LCD_PutStr(16, STATUS_H + 40, "Timing mode:", FONT_SMALL, TEXT_SECONDARY, C_BLACK);
+		break;
+	case VT_VIEW_LEVEL:
+		draw_footer("ESC: Back", kind == VT_KIND_IMD ? "Turn: level  OK: Start" : "Turn: level  OK: Arm");
+		LCD_PutStr(16, STATUS_H + 40, "Stop when below:", FONT_SMALL, TEXT_SECONDARY, C_BLACK);
+		break;
+	case VT_VIEW_RUN:
+		LCD_PutStr(16 + 7 * 32 + 8, VT_TIME_Y, "s", FONT_BIG, TEXT_PRIMARY, C_BLACK);
+		break;
+	default:
+		break;
+	}
+}
+
+void display_vtimer_update(display_vt_view_t view, stopwatch_vt_kind_t kind,
+		int32_t level_mV) {
+	vt_put_volt(16, STATUS_H + 6, FONT_MED, adc_data.converted.v_term_ext_mv_filt);
+
+	if (view == VT_VIEW_KIND) {
+		for (int i = 0; i < VT_KIND_COUNT; i++) {
+			snprintf(text, sizeof(text), "%c %s", i == kind ? '>' : ' ', VT_KIND_TEXT[i]);
+			LCD_PutStr(16, STATUS_H + 70 + i * 30, text, FONT_SMALL, TEXT_PRIMARY, C_BLACK);
+		}
+	} else if (view == VT_VIEW_LEVEL) {
+		vt_put_volt(16, STATUS_H + 70, FONT_BIG, level_mV);
+	} else if (view == VT_VIEW_RUN) {
+		stopwatch_vt_state_t s = stopwatch_vt_state();
+		uint32_t ms = stopwatch_vt_elapsed_ms(HAL_GetTick());
+
+		if (s != vt_last_state) {
+			vt_last_state = s;
+			draw_footer(s == VT_DONE ? "ESC: Back" : "ESC: Cancel", s == VT_DONE ? "OK: Again" : 0);
+			LCD_PutStr(16, STATUS_H + 32, s == VT_ARMED ? "ARMED  " : (s == VT_RUNNING ? "RUNNING" : "DONE   "),
+					FONT_SMALL, s == VT_DONE ? C_GREEN : C_ORANGE, C_BLACK);
+			UG_FillFrame(0, STATUS_H + 130, LCD_WIDTH - 1, FOOTER_Y - 1, C_BLACK);
+			if (s == VT_DONE) {
+				LCD_PutStr(16, STATUS_H + 130, "Start", FONT_SMALL, TEXT_SECONDARY, C_BLACK);
+				vt_put_volt(100, STATUS_H + 130, FONT_SMALL, stopwatch_vt_start_mV());
+				LCD_PutStr(16, STATUS_H + 156, "Stop", FONT_SMALL, TEXT_SECONDARY, C_BLACK);
+				vt_put_volt(100, STATUS_H + 156, FONT_SMALL, stopwatch_vt_stop_mV());
+			}
+		}
+		if (ms > VT_MAX_MS)
+			ms = VT_MAX_MS;
+		snprintf(text, sizeof(text), "%3u.%03u", (unsigned) (ms / 1000), (unsigned) (ms % 1000));
+		LCD_PutStr(16, VT_TIME_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
+	}
+}
+
+/* ---------------------------------------------------------------------- */
 /* Resistance 1A / 1mA                                                     */
 /* ---------------------------------------------------------------------- */
 
@@ -610,6 +728,9 @@ void display_enter_mode(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_CHARGE:
 		enter_charge();
 		break;
+	case STATEMACHINE_MODE_STOPWATCH:
+		enter_stopwatch(mode);
+		break;
 #ifdef EMI_DEBUG
 	case STATEMACHINE_MODE_EMI:
 		enter_emi(mode);
@@ -649,6 +770,9 @@ void display_update_mode(statemachine_modes_t mode, uint8_t output_active) {
 		break;
 	case STATEMACHINE_MODE_CHARGE:
 		update_charge(output_active);
+		break;
+	case STATEMACHINE_MODE_STOPWATCH:
+		update_stopwatch();
 		break;
 #ifdef EMI_DEBUG
 	case STATEMACHINE_MODE_EMI:

@@ -1,5 +1,5 @@
 """
-Generates the 10 icon SVG masters into ../svg/.
+Generates the 11 icon SVG masters into ../svg/.
 
 Usage: python3 gen_icons.py
 (run from anywhere -- paths are relative to this script's location)
@@ -25,6 +25,7 @@ COLORS = {
     'charge':         '#00ff00',
     'settings':       '#dedede',
     'emi':            '#ee82ee',
+    'stopwatch':      '#ff7f50',
 }
 
 def gauge(cx, cy, r, color, sw_arc, sw_tick, needle_len, needle_deg, needle_w, hub_r):
@@ -120,6 +121,23 @@ def emi_icon(color):
     body += f'<text x="{cx}" y="200" font-family="{FONT}" font-weight="bold" font-size="30" fill="{color}" text-anchor="middle">EMI</text>'
     return body
 
+def stopwatch_icon(color):
+    """Round watch face with crown, side button, ticks and hands."""
+    cx, cy, r = 128, 140, 56
+    body = badge_ring(color)
+    body += f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="8"/>'
+    body += f'<rect x="{cx-8}" y="52" width="16" height="14" fill="{color}"/>'
+    body += f'<line x1="{cx}" y1="64" x2="{cx}" y2="{cy-r}" stroke="{color}" stroke-width="8"/>'
+    x1, y1 = pt(cx, cy, r + 4, 45)
+    x2, y2 = pt(cx, cy, r + 16, 45)
+    body += f'<line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" stroke="{color}" stroke-width="10" stroke-linecap="round"/>'
+    for deg in (90, 0, -90, 180):
+        body += tick(cx, cy, r - 8, r - 18, deg, stroke=color, stroke_width=5, stroke_linecap="round")
+    nx, ny = pt(cx, cy, 38, 60)
+    body += f'<line x1="{cx}" y1="{cy}" x2="{nx:.2f}" y2="{ny:.2f}" stroke="{color}" stroke-width="7" stroke-linecap="round"/>'
+    body += f'<circle cx="{cx}" cy="{cy}" r="7" fill="{color}"/>'
+    return body
+
 ICONS = {
     '60v_source':    voltage_source_icon(COLORS['60v_source'], '60V'),
     '10a_source':    current_source_icon(COLORS['10a_source'], '10A'),
@@ -131,6 +149,7 @@ ICONS = {
     'charge':        charge_icon(COLORS['charge']),
     'settings':      gear_icon(COLORS['settings']),
     'emi':           emi_icon(COLORS['emi']),
+    'stopwatch':     stopwatch_icon(COLORS['stopwatch']),
 }
 
 if __name__ == '__main__':

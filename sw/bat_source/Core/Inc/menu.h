@@ -18,9 +18,9 @@
  * that aren't shown in the home carousel but still need their
  * accent/icon looked up by mode elsewhere. */
 #ifdef EMI_DEBUG
-#define MENU_TOTAL_LENGTH 10
+#define MENU_TOTAL_LENGTH 11
 #else
-#define MENU_TOTAL_LENGTH 9
+#define MENU_TOTAL_LENGTH 10
 #endif
 
 /* Number of modes shown in the home carousel - the first MENU_ORDER_LENGTH
@@ -29,9 +29,9 @@
  * menu_entry_at()/encoder navigation but still found by
  * menu_entry_for_mode(). */
 #ifdef EMI_DEBUG
-#define MENU_ORDER_LENGTH 9
+#define MENU_ORDER_LENGTH 10
 #else
-#define MENU_ORDER_LENGTH 8
+#define MENU_ORDER_LENGTH 9
 #endif
 
 typedef void (*menu_icon_draw_fn)(int16_t cx, int16_t cy, int16_t r, UG_COLOR color);
@@ -42,7 +42,7 @@ typedef struct {
 	menu_icon_draw_fn draw_icon;
 } menu_entry_t;
 
-/* Carousel order: 60V, 10A, Resistance 4W/2W, Isolation, Voltmeter, Ampmeter, Settings.
+/* Carousel order: 60V, 10A, Resistance 4W/2W, Isolation, Voltmeter, Ampmeter, Stopwatch, Settings.
  * Charge is appended after (see MENU_TOTAL_LENGTH) - it's auto-entered, not user-selectable. */
 extern const menu_entry_t menu_order[MENU_TOTAL_LENGTH];
 

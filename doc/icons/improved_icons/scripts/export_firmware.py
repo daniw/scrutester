@@ -29,6 +29,7 @@ ORDER = [
     ('isolation', 'isolation'),
     ('voltmeter', 'voltmeter'),
     ('ampmeter', 'ampmeter'),
+    ('stopwatch', 'stopwatch'),
     ('emi', 'emi'),
     ('settings', 'settings'),
     ('charge', 'charge'),

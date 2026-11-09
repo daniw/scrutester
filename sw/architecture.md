@@ -120,8 +120,9 @@ logic, and the protection interlock.
 | `STATEMACHINE_MODE_RESISTANCE_1A` | Milliohmmeter, 1 A pulsed excitation |
 | `STATEMACHINE_MODE_RESISTANCE_1mA` | Ohmmeter, 1 mA excitation |
 | `STATEMACHINE_MODE_ISOMETER` | Insulation resistance test (HV flyback active) |
-| `STATEMACHINE_MODE_VOLTMETER` | Passive voltage measurement |
+| `STATEMACHINE_MODE_VOLTMETER` | Passive voltage measurement; OK opens the voltage timer (see §"Stopwatch") |
 | `STATEMACHINE_MODE_AMPMETER` | Passive current measurement (SEK half-bridge shorted) |
+| `STATEMACHINE_MODE_STOPWATCH` | Manual stopwatch, no outputs (see §"Stopwatch"); carousel entry after AMPMETER |
 | `STATEMACHINE_MODE_SETTINGS` | Settings menu |
 | `STATEMACHINE_MODE_SHUTDOWN` | Controlled power-down sequence |
 | `STATEMACHINE_MODE_CHARGE` | Internal battery charging — auto-entered from IDLE when a 15–24 V supply is detected, not user-selectable |
@@ -184,6 +185,15 @@ timeout fires, `gpio_power_off()` (`gpio.c`) runs — also used by the CLI's
 `turnOff`: deasserts `ON_REQ`, waits ~100 ms to confirm the on/off controller
 actually cut power, and re-asserts it (logging that shutdown failed) if the
 MCU is still running.
+
+### Stopwatch (`stopwatch.c`, issue #5)
+HAL-free module, times are passed in from `HAL_GetTick()` (host test `tools/test_stopwatch.sh`).
+
+- **STOPWATCH mode** (own carousel entry, relays as IDLE, no converter): `mm:ss.cc`, OK start/stop, ESC stops a running watch, resets a stopped one and leaves when it reads 0. A stop prints `STOPWATCH 12.345 s` on the CLI; the time stays on the screen until reset.
+- **VOLTMETER timing views**: OK in the readout opens mode pick (encoder) -> stop level (encoder, 0.5 V steps, default 60.0 V) -> run/result. *IMD* starts at once on OK, *Discharge* arms and starts when V_TERM falls below 95 % of the voltage at arming (refused if that is already at or below the stop level). Both stop on the first sample below the stop level (falling edge only). ARMED / RUNNING / DONE is shown with the time (`sss.mmm s`), and after DONE the start/stop voltages stay below it until OK (again) or ESC. CLI: `STOPWATCH IMD 4.835 s (start 571.2 V, stop 59.8 V)`.
+- **Sampling**: `HAL_SPI_TxRxCpltCallback()` calls `stopwatch_sample(adc_v_term_ext_mv_now(), HAL_GetTick())` after every ext ADC frame (ISR, ~246 Hz, unfiltered V_TERM), so the resolution is one ADC period (~4 ms). The ISR only advances ARMED -> RUNNING -> DONE and writes the fields before the state; the main context reads the state first.
+- A running watch or an armed/running voltage timer counts as activity (no inactivity power-off); leaving to IDLE resets both.
+- Icon: `stopwatch` is the 8th icon (after ampmeter, before EMI) of `icon_seed_data.c`; devices need a `flashIcons` reflash.
 
 ### Control Loop (`ctrl_main.h/c`, `ctrl_PID_control.h/c`)
 
@@ -661,7 +671,8 @@ and CHARGE is not auto-entered. `EXT_ADC_DEBUG` prints the values per channel.
 | File (Core/Src/) | Role |
 |------------------|------|
 | `main.c` | Peripheral init, main event loop |
-| `statemachine.c` | FSM over 12 modes (`statemachine_modes_t`; EMI only with `EMI_DEBUG`), UI navigation, protection interlock, OVP lockout |
+| `stopwatch.c` | Manual stopwatch and voltage-triggered timer (HAL-free, host-tested) |
+| `statemachine.c` | FSM over 13 modes (`statemachine_modes_t`; EMI only with `EMI_DEBUG`), UI navigation, protection interlock, OVP lockout |
 | `mode_table.c` | Per-mode descriptor table — single source of truth for mode data |
 | `ctrl_main.c` | Control mode dispatch, per-mode PI loops, PID registry, CHARGE phase handling in the ISR |
 | `vout_region.c` | HAL-free full-range region choice, region transition steps, burst plan (host-tested) |

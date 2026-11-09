@@ -51,6 +51,7 @@
 #include "w25n01gv.h"
 #include "icon_store.h"
 #include "ads131m04.h"
+#include "stopwatch.h"
 #include "protection.h"
 #include "splash.h"
 #include "watchdog.h"
@@ -328,8 +329,10 @@ void SystemClock_Config(void)
  * External ADC finished SPI communication
  */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
-	if (hspi == ext_adc.hspi)
+	if (hspi == ext_adc.hspi) {
 		ADS131M04_handleSPIComplete(&ext_adc);
+		stopwatch_sample(adc_v_term_ext_mv_now(), HAL_GetTick());
+	}
 }
 
 

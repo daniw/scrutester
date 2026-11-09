@@ -30,9 +30,9 @@
  * icon_count check rejects a store seeded by the other variant -- the
  * carousel then falls back to the vector icons until `flashIcons` is rerun. */
 #ifdef EMI_DEBUG
-#define ICON_STORE_ICON_COUNT  10
+#define ICON_STORE_ICON_COUNT  11
 #else
-#define ICON_STORE_ICON_COUNT  9
+#define ICON_STORE_ICON_COUNT  10
 #endif
 #define ICON_STORE_ICON_WIDTH  ICON_STORE_ICON_SIZE
 #define ICON_STORE_ICON_HEIGHT ICON_STORE_ICON_SIZE

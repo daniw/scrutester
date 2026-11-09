@@ -86,6 +86,16 @@ static void icon_charge(int16_t cx, int16_t cy, int16_t r, UG_COLOR color) {
 	UG_DrawLine(x0 + 3, cy, x1 - 3, cy, color);
 }
 
+static void icon_stopwatch(int16_t cx, int16_t cy, int16_t r, UG_COLOR color) {
+	int16_t fy = cy + r / 6, fr = r / 2;
+
+	UG_DrawCircle(cx, cy, r, color);
+	UG_DrawCircle(cx, fy, fr, color);
+	UG_FillFrame(cx - r / 10, fy - fr - r / 5, cx + r / 10, fy - fr, color);
+	UG_DrawLine(cx, fy, cx, fy - fr * 2 / 3, color);
+	UG_DrawLine(cx, fy, cx + fr / 2, fy - fr / 3, color);
+}
+
 #ifdef EMI_DEBUG
 static void icon_emi(int16_t cx, int16_t cy, int16_t r, UG_COLOR color) {
 	icon_draw_letter(cx, cy, r, color, "E");
@@ -120,6 +130,7 @@ const menu_entry_t menu_order[MENU_TOTAL_LENGTH] = {
 	{ STATEMACHINE_MODE_ISOMETER,       C_RED,             icon_isometer },
 	{ STATEMACHINE_MODE_VOLTMETER,      C_SKY_BLUE,        icon_voltmeter },
 	{ STATEMACHINE_MODE_AMPMETER,       C_GOLD,            icon_ampmeter },
+	{ STATEMACHINE_MODE_STOPWATCH,      C_CORAL,           icon_stopwatch },
 #ifdef EMI_DEBUG
 	{ STATEMACHINE_MODE_EMI,            C_VIOLET,          icon_emi },
 #endif
@@ -140,6 +151,7 @@ static const char *const MODE_NAMES[STATEMACHINE_MODE_RESERVED + 1] = {
 	[STATEMACHINE_MODE_CHARGE] = "Charge",
 	[STATEMACHINE_MODE_AMPMETER] = "Ampmeter",
 	[STATEMACHINE_MODE_EMI] = "EMI Test",
+	[STATEMACHINE_MODE_STOPWATCH] = "Stopwatch",
 	[STATEMACHINE_MODE_RESERVED] = "Reserved",
 };
 

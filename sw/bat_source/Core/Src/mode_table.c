@@ -181,4 +181,13 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .flags       = MODE_F_LED_OUT_ON | MODE_F_OUTPUT_ON_ZERO,
         .adc_trigger = ADC_TRIGGER_HRTIM_FIXED,
     },
+
+    /* Manual stopwatch: nothing driven, relays as IDLE. */
+    [STATEMACHINE_MODE_STOPWATCH] = {
+        .ctrl_mode   = CTRL_MODE_OFF,
+        .aux_io_mask = GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_EN,
+        .enable_gpio = 0,
+        .flags       = 0,
+        .adc_trigger = ADC_TRIGGER_NONE,
+    },
 };

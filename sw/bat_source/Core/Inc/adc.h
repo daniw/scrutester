@@ -232,6 +232,8 @@ typedef struct {
 
 
 void adc_init(int32_t* ext_adc_data);
+/** V_TERM from the latest ext ADC sample (mV), callable from the SPI ISR. */
+int32_t adc_v_term_ext_mv_now(void);
 void adc_start(void);
 void adc_convert_fast_data(void);
 void adc_convert_data(void);

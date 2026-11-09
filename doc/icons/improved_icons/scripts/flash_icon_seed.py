@@ -16,7 +16,7 @@ On-flash layout (see icon_store.c for the authoritative source):
     block 1..N          : one icon's raw RGB565 pixel bytes each, padded
                           with 0xFF (NAND erased state) to the full block
 
-N is 9 (default firmware build) or 10 with the EMI icon via --emi
+N is 10 (default firmware build) or 11 with the EMI icon via --emi
 (firmware built with -DEMI_DEBUG); the firmware's
 ICON_STORE_ICON_COUNT follows the same switch and rejects a store seeded
 for the other variant.

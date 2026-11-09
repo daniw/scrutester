@@ -56,6 +56,7 @@ static const protection_limit_t protection_limits[STATEMACHINE_MODE_RESERVED] = 
 	[STATEMACHINE_MODE_AMPMETER]        = { 0, PROTECTION_AMPMETER_MAX_mA, 0 },
 	[STATEMACHINE_MODE_CHARGE]          = { PROTECTION_CHARGE_MAX_mV, PROTECTION_CHARGE_MAX_mA, 0 },
 	[STATEMACHINE_MODE_EMI]             = { PROTECTION_EMI_MAX_mV, PROTECTION_EMI_MAX_mA, 0 },
+	[STATEMACHINE_MODE_STOPWATCH]       = { 0, 0, 0 },
 };
 
 static uint16_t protection_limit_latch;

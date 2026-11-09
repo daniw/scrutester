@@ -28,6 +28,7 @@
 #include "config_store.h"
 #include "mode_table.h"
 #include "watchdog.h"
+#include "stopwatch.h"
 #ifdef EMI_DEBUG
 #include "emc_monitor.h"
 #endif
@@ -71,6 +72,14 @@ static uint8_t charge_await_notified;
 #define STATEMACHINE_INACTIVITY_TIMEOUT_TICKS ((10UL * 60UL * 1000UL) / STATEMACHINE_STEP_PERIOD_mS)
 static uint16_t inactivity_ticks;
 
+// VOLTMETER voltage timer (stopwatch.h): view, mode and stop level.
+static display_vt_view_t vt_view;
+static stopwatch_vt_kind_t vt_kind;
+static int32_t vt_level_mV = 60000;
+static input_encoder_clamp_t vt_clamp;
+#define VT_LEVEL_STEP_mV 500
+#define VT_LEVEL_MAX_STEPS 2000
+
 // Error banner shown on the current mode screen (cleared on restart).
 static uint8_t mode_error_shown;
 // Banner to draw after the next idle redraw.
@@ -108,6 +117,8 @@ static void statemachine_enter_mode_generic(statemachine_modes_t mode);
 static uint8_t statemachine_enter_charge(void);
 static uint8_t statemachine_enter_charge_low_current(void);
 static void statemachine_step_charge(void);
+static uint8_t statemachine_step_stopwatch(void);
+static uint8_t statemachine_step_voltmeter(void);
 #ifdef EMI_DEBUG
 static void statemachine_step_emi(void);
 #endif
@@ -475,6 +486,7 @@ void statemachine_step(void) {
 	uint8_t active = (raw_encoder != last_raw_encoder)
 			|| ok_button_pressed || esc_button_pressed || out_button_pressed
 			|| ctrl_main_handle.mode == CTRL_MODE_CHARGE
+			|| stopwatch_busy()
 #ifdef EMI_DEBUG
 			|| ctrl_main_handle.mode == CTRL_MODE_EMI
 #endif
@@ -565,9 +577,18 @@ void statemachine_step(void) {
 		/* fall through to update display !! */
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
-	case STATEMACHINE_MODE_VOLTMETER:
 	case STATEMACHINE_MODE_AMPMETER:
 		display_update_mode(statemachine_handle.current_mode, statemachine_handle.output_on);
+		break;
+
+	case STATEMACHINE_MODE_VOLTMETER:
+		if (statemachine_step_voltmeter())
+			return;
+		break;
+
+	case STATEMACHINE_MODE_STOPWATCH:
+		if (statemachine_step_stopwatch())
+			return;
 		break;
 
 	case STATEMACHINE_MODE_CHARGE:
@@ -646,6 +667,102 @@ void statemachine_step(void) {
 		statemachine_switchtoIdle();
 	}
 
+}
+
+/**
+ * @brief Stopwatch mode: OK start/stop, ESC stops, resets or leaves.
+ * @return 1 if ESC was used here (no exit to idle).
+ */
+static uint8_t statemachine_step_stopwatch(void) {
+	uint32_t now = HAL_GetTick();
+	uint8_t was_running = stopwatch_running();
+	uint8_t esc = esc_button_pressed == STATEMACHINE_BUTTON_CLICK;
+	uint8_t used = esc && (was_running || stopwatch_elapsed_ms(now));
+
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK || (used && was_running))
+		stopwatch_toggle(now);
+	else if (used)
+		stopwatch_clear();
+	if (was_running && !stopwatch_running()) {
+		uint32_t ms = stopwatch_elapsed_ms(now);
+		printf("STOPWATCH %lu.%03lu s\r\n", (unsigned long) (ms / 1000),
+				(unsigned long) (ms % 1000));
+	}
+	display_update_mode(STATEMACHINE_MODE_STOPWATCH, 0);
+	return used;
+}
+
+static void statemachine_vt_goto(display_vt_view_t view) {
+	vt_view = view;
+	if (view == VT_VIEW_READOUT) {
+		display_enter_mode(STATEMACHINE_MODE_VOLTMETER);
+	} else {
+		display_vtimer_enter(view, vt_kind);
+		input_encoder_clamp_reset(&vt_clamp,
+				view == VT_VIEW_KIND ? vt_kind : vt_level_mV / VT_LEVEL_STEP_mV);
+	}
+}
+
+static void statemachine_vt_print_result(void) {
+	static const char *const names[VT_KIND_COUNT] = { "IMD", "Discharge" };
+	uint32_t ms = stopwatch_vt_elapsed_ms(0);
+	int32_t a = stopwatch_vt_start_mV() / 100, b = stopwatch_vt_stop_mV() / 100;
+
+	printf("STOPWATCH %s %lu.%03lu s (start %ld.%ld V, stop %ld.%ld V)\r\n",
+			names[stopwatch_vt_kind()], (unsigned long) (ms / 1000),
+			(unsigned long) (ms % 1000), (long) (a / 10), (long) (a % 10),
+			(long) (b / 10), (long) (b % 10));
+}
+
+/**
+ * @brief VOLTMETER: plain readout or the timing views.
+ * @return 1 if ESC was used here (no exit to idle).
+ */
+static uint8_t statemachine_step_voltmeter(void) {
+	uint8_t ok = ok_button_pressed == STATEMACHINE_BUTTON_CLICK;
+	uint8_t esc = esc_button_pressed == STATEMACHINE_BUTTON_CLICK;
+	uint8_t used = esc && vt_view != VT_VIEW_READOUT;
+
+	switch (vt_view) {
+	case VT_VIEW_READOUT:
+		if (ok)
+			statemachine_vt_goto(VT_VIEW_KIND);
+		break;
+	case VT_VIEW_KIND:
+		vt_kind = input_encoder_read_clamped(&vt_clamp, 0, VT_KIND_COUNT - 1);
+		if (ok)
+			statemachine_vt_goto(VT_VIEW_LEVEL);
+		else if (esc)
+			statemachine_vt_goto(VT_VIEW_READOUT);
+		break;
+	case VT_VIEW_LEVEL:
+		vt_level_mV = VT_LEVEL_STEP_mV
+				* input_encoder_read_clamped(&vt_clamp, 1, VT_LEVEL_MAX_STEPS);
+		if (ok) {
+			if (stopwatch_vt_arm(vt_kind, vt_level_mV,
+					adc_data.converted.v_term_ext_mv_filt, HAL_GetTick()))
+				statemachine_vt_goto(VT_VIEW_RUN);
+			else
+				display_show_mode_error("Voltage below stop level");
+		} else if (esc) {
+			statemachine_vt_goto(VT_VIEW_KIND);
+		}
+		break;
+	case VT_VIEW_RUN:
+		if (stopwatch_vt_take_done())
+			statemachine_vt_print_result();
+		if (esc || (ok && stopwatch_vt_state() == VT_DONE)) {
+			stopwatch_vt_cancel();
+			statemachine_vt_goto(VT_VIEW_LEVEL);
+		}
+		break;
+	}
+
+	if (vt_view == VT_VIEW_READOUT)
+		display_update_mode(STATEMACHINE_MODE_VOLTMETER, 0);
+	else
+		display_vtimer_update(vt_view, vt_kind, vt_level_mV);
+	return used;
 }
 
 #ifdef EMI_DEBUG
@@ -1091,6 +1208,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
+	case STATEMACHINE_MODE_STOPWATCH:
 		aux_io_ctrl_set_config(mode, 0); // relays before the converter starts
 		statemachine_enter_mode_generic(mode);
 		break;
@@ -1247,4 +1365,6 @@ void statemachine_switchtoIdle(void) {
 	ui_ctrl_ledSenseOff();
 	inactivity_ticks = 0;
 	mode_error_shown = 0;
+	stopwatch_reset();
+	vt_view = VT_VIEW_READOUT;
 }
