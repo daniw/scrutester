@@ -117,6 +117,21 @@ static void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
 static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas);
 static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas);
 
+/* Start a limiter at its ceiling: from 0 it holds the duty back. */
+static inline void ctrl_limiter_arm(PID_controller_t *lim) {
+	lim->prev_I_action = lim->sat_limit_high;
+}
+
+/* Cap `duty` at the limiter output, with anti-windup of the capped PI. */
+static inline float ctrl_limited_duty(PID_controller_t *pi,
+		const PID_controller_t *lim, float duty) {
+	if (lim->action < duty) {
+		duty = lim->action;
+		pi->prev_I_action = duty - pi->P_action;
+	}
+	return duty;
+}
+
 /**
  * Initializes the controllers
  */
@@ -163,10 +178,8 @@ static void ctrl_main_start_voltage_wide(void) {
 	ctrl_PID_reset(&ctrl_pi_voltage_4sw);
 	ctrl_PID_reset(&ctrl_pi_voltage_boost);
 	ctrl_PID_reset(&ctrl_pi_boost_iout_limit);
-	// Start the limiter at its ceiling: from 0 it held the duty back
-	// while the voltage PI wound up, overshooting 5 V to ~9 V.
-	ctrl_pi_boost_iout_limit.prev_I_action =
-			ctrl_pi_boost_iout_limit.sat_limit_high;
+	// From 0 the limiter held the duty back while the PI wound up (5 V -> ~9 V).
+	ctrl_limiter_arm(&ctrl_pi_boost_iout_limit);
 	// Start as buck from 0 duty; the ramped reference walks the regions.
 	vout_region = VOUT_REGION_BUCK;
 	vout_vin_filt_mV = 0.0F;
@@ -230,8 +243,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		ctrl_PID_reset(&ctrl_pi_voltage_buck);
 		ctrl_PID_reset(&ctrl_pi_current);
 		ctrl_PID_reset(&ctrl_pi_10a_vlimit);
-		// Limiter starts at its ceiling (as the 60V current limiter).
-		ctrl_pi_10a_vlimit.prev_I_action = ctrl_pi_10a_vlimit.sat_limit_high;
+		ctrl_limiter_arm(&ctrl_pi_10a_vlimit);
 		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_HIGH);
 		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_LOW);
 		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW); // Needs to be low!!
@@ -246,9 +258,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	case CTRL_MODE_ISOMETER:
 		ctrl_PID_reset(&ctrl_pi_voltage_hv);
 		ctrl_PID_reset(&ctrl_pi_hv_iout_limit);
-		// Limiter starts at its ceiling (as the 60V/10A limiters).
-		ctrl_pi_hv_iout_limit.prev_I_action =
-				ctrl_pi_hv_iout_limit.sat_limit_high;
+		ctrl_limiter_arm(&ctrl_pi_hv_iout_limit);
 		hrtim_set_freq(HRTIM_CHANNEL_HV, CTRL_PARAM_SW_FREQ_HV);
 		hrtim_set_duty(HRTIM_CHANNEL_HV, 0);
 		hrtim_enable(HRTIM_CHANNEL_HV);
@@ -707,8 +717,7 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 		// action = P + I, so preload I with what is left after this tick's P.
 		pi->prev_I_action = d - pi->P_gain * (pi->ref - v_out_V);
 		// The limiter's duty scale differs per region.
-		ctrl_pi_boost_iout_limit.prev_I_action =
-				ctrl_pi_boost_iout_limit.sat_limit_high;
+		ctrl_limiter_arm(&ctrl_pi_boost_iout_limit);
 		vout_trans_from = vout_region;
 		vout_trans_step = 0;
 		vout_region = next;
@@ -721,12 +730,7 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 	ctrl_PID_controller_execute(&ctrl_pi_boost_iout_limit,
 			meas->i_out / 1000.0F, meas->i_out / 1000.0F);
 
-	float duty = pi->action;
-	if (ctrl_pi_boost_iout_limit.action < duty) {
-		duty = ctrl_pi_boost_iout_limit.action;
-		// Anti-windup against the limiter's cap.
-		pi->prev_I_action = duty - pi->P_action;
-	}
+	float duty = ctrl_limited_duty(pi, &ctrl_pi_boost_iout_limit, pi->action);
 
 	// `duty` is the average over a 20 us frame; the burst plan splits it into
 	// run duty and idle cycles (sync block; buck also skips below the HRTIM
@@ -814,12 +818,8 @@ static void ctrl_main_ctrl_current(int16_t current_meas_mA,
 	ctrl_PID_controller_execute(&ctrl_pi_10a_vlimit, voltage_meas_mV / 1000.0F,
 			voltage_meas_mV / 1000.0F);
 
-	float duty = ctrl_pi_current.action;
-	if (ctrl_pi_10a_vlimit.action < duty) {
-		duty = ctrl_pi_10a_vlimit.action;
-		// Anti-windup against the limiter's cap.
-		ctrl_pi_current.prev_I_action = duty - ctrl_pi_current.P_action;
-	}
+	float duty = ctrl_limited_duty(&ctrl_pi_current, &ctrl_pi_10a_vlimit,
+			ctrl_pi_current.action);
 	ctrl_apply_buck_burst(duty);
 }
 
