@@ -453,6 +453,9 @@ w25n01gv_status_t w25n01gv_reset(w25n01gv_handle *hw25n01gv) {
 	cmd.DdrHoldHalfCycle    = QSPI_DDR_HHC_ANALOG_DELAY;
 	cmd.SIOOMode            = QSPI_SIOO_INST_EVERY_CMD;
 	status = w25n01gv_wait_busy(hw25n01gv);
+	if (status != W25N01GV_OK) {
+		return status;
+	}
 	status = (w25n01gv_status_t) HAL_QSPI_Command(hw25n01gv->hqspi, &cmd, hw25n01gv->timeout);
 	/*if (status == W25N01GV_OK) {
 		uint8_t pData;
