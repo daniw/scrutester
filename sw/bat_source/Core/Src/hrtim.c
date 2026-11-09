@@ -447,6 +447,10 @@ void hrtim_start_timer(void) {
 }
 
 
+/* Usable PERxR / CMP1xR window of the HRTIM */
+#define HRTIM_MIN_COUNT 0x60
+#define HRTIM_MAX_COUNT 0xFFDF
+
 /**
  * Clamps a PERxR value to what the HRTIM can actually use.
  *
@@ -460,10 +464,10 @@ void hrtim_start_timer(void) {
  * existing silent-clamp behaviour.
  */
 static uint32_t hrtim_clamp_period(uint32_t period) {
-	if (period < 0x60)
-		period = 0x60;
-	else if (period > 0xFFDF)
-		period = 0xFFDF;
+	if (period < HRTIM_MIN_COUNT)
+		period = HRTIM_MIN_COUNT;
+	else if (period > HRTIM_MAX_COUNT)
+		period = HRTIM_MAX_COUNT;
 	return period;
 }
 
@@ -480,11 +484,7 @@ static uint32_t hrtim_duty_to_compare(uint32_t period, float value) {
 		value = 1.0F;
 	duty = (period * value);
 	// Enforce more strict limit imposed by HRTIM
-	if (duty < 0x60)
-		duty = 0x60;
-	else if (duty > 0xFFDF)
-		duty = 0xFFDF;
-	return duty;
+	return hrtim_clamp_period(duty);
 }
 
 /**
@@ -593,6 +593,15 @@ void hrtim_disable(uint8_t channel) {
 	}
 }
 
+/** Burst controller off, idle levels (IDLM/IDLES1) of PRIM and SEK cleared. */
+static void hrtim_clear_burst_idle(void) {
+	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].OUTxR &= ~(HRTIM_OUTR_IDLM1
+			| HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].OUTxR &= ~(HRTIM_OUTR_IDLM1
+			| HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+}
+
 /**
  * @brief Gate-driver enables off, burst/IDLES1 cleared, all HRTIM outputs
  *        disabled. Register writes only, safe from fault handlers.
@@ -600,11 +609,7 @@ void hrtim_disable(uint8_t channel) {
 void hrtim_emergency_off(void) {
 	CONV_CTRL_EN_GPIO_Port->BRR = CONV_CTRL_EN_Pin;
 	HV_CTRL_EN_GPIO_Port->BRR = HV_CTRL_EN_Pin;
-	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
-	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].OUTxR &= ~(HRTIM_OUTR_IDLM1
-			| HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
-	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].OUTxR &= ~(HRTIM_OUTR_IDLM1
-			| HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+	hrtim_clear_burst_idle();
 	hrtim_disable(HRTIM_CHANNEL_ALL);
 }
 
@@ -696,9 +701,7 @@ void hrtim_sync_start(uint8_t fast_channel) {
  */
 void hrtim_sync_stop(void) {
 #ifdef VOUT_SYNC_BURST_ENABLED
-	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
-	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].OUTxR &= ~(HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
-	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].OUTxR &= ~(HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+	hrtim_clear_burst_idle();
 	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].RSTxR = 0;
 	HRTIM1->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_D].RSTxR = 0;
 	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].RSTxR = 0;

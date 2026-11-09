@@ -12,10 +12,6 @@ Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as 
 Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
 Core/Src/cli.c: arrayIndexThenCheck:Array index 'number_of_args' is used before limits check.
 Core/Src/cli.c: duplicateCondition:The if condition is the same as the previous if condition
-Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 1) requires 'int' but the argument type is 'unsigned int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 2) requires 'int' but the argument type is 'unsigned int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%d in format string (no. 3) requires 'int' but the argument type is 'unsigned int'.
-Core/Src/cli.c: invalidPrintfArgType_sint:%ld in format string (no. 1) requires 'long' but the argument type is 'unsigned long'.
 Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
 Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
 Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
