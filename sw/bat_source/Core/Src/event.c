@@ -138,13 +138,10 @@ void event_Add(EVENTS e, void* callback, void* argument)
  */
 EVENT_STRUCT event_Get(void)
 {
-	EVENT_STRUCT e;
-	e.event = EVENT_VOID;
+	EVENT_STRUCT e = { .event = EVENT_VOID };
 	if (queue_NotEmpty(event_queue))
 	{
-		e.event = queue_Get(event_queue).event;
-		e.callback = queue_Get(event_queue).callback;
-		e.argument = queue_Get(event_queue).argument;
+		e = queue_Get(event_queue);
 		queue_Pop(event_queue, EVENT_QUEUE_SIZE);
 		if (e.event == EVENT_SM_STEP)
 			event_sm_step_pending = 0;
