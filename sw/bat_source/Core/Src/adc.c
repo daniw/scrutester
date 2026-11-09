@@ -1198,6 +1198,17 @@ void adc_snapshot_converted(void) {
 	adc_filter_ext();
 }
 
+/**
+ * @brief  10 * num / den for the resistance readings.
+ * @return UINT32_MAX without current (den <= 0), 0 for a negative num (offset noise).
+ */
+static uint32_t adc_ratio_x10(int32_t num, int32_t den)
+{
+	if (den <= 0) return UINT32_MAX;
+	if (num <= 0) return 0;
+	return (uint32_t) (10 * (int64_t) num / den);
+}
+
 void adc_convert_data(void){
 
 	// Fast ADC Data are automatically converted in the step function
@@ -1214,8 +1225,8 @@ void adc_convert_data(void){
 	// RESISTANCE_1mA/Ohmmeter, which uses a continuous, unpulsed reference)
 	// keeps the original unconditional, per-tick computation unchanged.
 	if (adc_injected_mode != STATEMACHINE_MODE_RESISTANCE_1A || dac_sqwave_is_high()) {
-		if (adc_data.converted.i_out_ext_mA != 0) {
-			uint32_t r_mOhmx10_raw = 10*adc_data.converted.v_sens_ext_uv / adc_data.converted.i_out_ext_mA;
+		if (adc_data.converted.i_out_ext_mA > 0) {
+			uint32_t r_mOhmx10_raw = adc_ratio_x10(adc_data.converted.v_sens_ext_uv, adc_data.converted.i_out_ext_mA);
 			if (adc_injected_mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 				if (adc_data.r_mOhmx10 == UINT32_MAX) {
 					// No valid filter history yet - seed with the fresh
@@ -1232,7 +1243,7 @@ void adc_convert_data(void){
 			} else {
 				adc_data.r_mOhmx10 = r_mOhmx10_raw;
 			}
-			adc_data.r_Ohmx10 = 10*adc_data.converted.v_term_ext_mv / adc_data.converted.i_out_ext_mA ;
+			adc_data.r_Ohmx10 = adc_ratio_x10(adc_data.converted.v_term_ext_mv, adc_data.converted.i_out_ext_mA);
 		}
 		else {
 			adc_data.r_mOhmx10 = UINT32_MAX;
