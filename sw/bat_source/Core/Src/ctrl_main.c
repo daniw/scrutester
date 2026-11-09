@@ -524,6 +524,27 @@ uint8_t ctrl_main_charge_take_peak(int32_t *peak_mA) {
 }
 
 /**
+ * @brief Highest encoder count (poti count) valid for a mode.
+ * @param mode Control mode
+ */
+uint16_t ctrl_main_poti_max(ctrl_mode_t mode) {
+	switch (mode) {
+	case CTRL_MODE_60V:
+		return CTRL_PARAM_60V_VOLTAGE_MAX_mV / CTRL_MAIN_MV_PER_COUNT;
+	case CTRL_MODE_10A:
+		return CTRL_PARAM_10A_CURRENT_MAX_mA / CTRL_MAIN_MA_PER_COUNT;
+	case CTRL_MODE_ISOMETER:
+		return sizeof(ctrl_main_iso_values) / sizeof(ctrl_main_iso_values[0]) - 1;
+#ifdef EMI_DEBUG
+	case CTRL_MODE_EMI:
+		return CTRL_PARAM_EMI_VOLTAGE_MAX_mV / CTRL_MAIN_MV_PER_COUNT;
+#endif
+	default:
+		return 127;
+	}
+}
+
+/**
  * Computes the reference value for the given (target) mode from the poti
  * count. Takes mode explicitly rather than reading ctrl_main_handle.mode, so
  * it can be called continuously from statemachine.c to keep the reference
@@ -539,10 +560,10 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 #ifdef EMI_DEBUG
 	case CTRL_MODE_EMI:
 #endif
-		ctrl_main_handle.voltage_reference_mV = reference_poti_count * 500; // 500 mV per count
+		ctrl_main_handle.voltage_reference_mV = reference_poti_count * CTRL_MAIN_MV_PER_COUNT;
 		break;
 	case CTRL_MODE_10A:
-		ctrl_main_handle.current_reference_mA = reference_poti_count * 100; // 100 mA per count
+		ctrl_main_handle.current_reference_mA = reference_poti_count * CTRL_MAIN_MA_PER_COUNT;
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 		ctrl_main_handle.voltage_reference_mV = CTRL_PARAM_IDLE_VOLTAGE_1A_mV;
