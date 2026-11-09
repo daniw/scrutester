@@ -198,8 +198,8 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		ctrl_main_handle.charge_cv_phase = 0;
 		ctrl_main_handle.charge_i_peak_mA = 0;
 		ctrl_main_handle.charge_peak_ticks = 0;
-		// The CC loop is NOT preloaded here any more: the old preload of
-		// CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH wrote SEK duty ~0, i.e.
+		// The CC loop is NOT preloaded here: a preload with
+		// CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH would write SEK duty ~0, i.e.
 		// the maximum-current end. It is preloaded with the zero-current
 		// duty at the CLOSE -> CC_RAMP hand-over instead
 		// (ctrl_main_charge_handover()).
@@ -329,10 +329,9 @@ void ctrl_main_start_ctrl_charge_low_current(void) {
  * start_ctrl() is the mirror image: the loop only starts acting once the
  * frequencies, duties and PID state are fully set up.
  *
- * Before the interrupt priorities were split, TIM2 and the ADC DMA interrupt
- * shared priority 0 and could not preempt each other, so this ordering was
- * merely tidy. It is now what keeps the two contexts consistent -- do not
- * reorder either function's tail without re-checking that.
+ * TIM2 and the ADC DMA interrupt have different priorities and can preempt
+ * each other, so this ordering is what keeps the two contexts consistent --
+ * do not reorder either function's tail without re-checking that.
  */
 void ctrl_main_stop_control(void) {
 	ctrl_main_handle.mode = CTRL_MODE_OFF;

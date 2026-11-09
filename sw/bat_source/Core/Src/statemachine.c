@@ -942,8 +942,8 @@ static void statemachine_step_charge(void) {
 	ctrl_main_charge_cv_step(cell_max);
 
 #ifdef CHARGE_DEBUG
-	// Debug output. It used to be printed from the control ISR, where the
-	// blocking UART write stalled the 25 kHz loop for several milliseconds.
+	// Debug output, printed here because a blocking UART write in the
+	// control ISR would stall the 25 kHz loop for several milliseconds.
 	int32_t peak_mA;
 	if (ctrl_main_charge_take_peak(&peak_mA)) {
 		printf("CHARGE: peak |I_OUT| after the relay-close command: %ldmA\r\n", peak_mA);
@@ -1129,11 +1129,10 @@ static uint8_t statemachine_enter_charge_low_current(void) {
  * instead), SETTINGS (special-cased: sets up its own submenu state) and
  * AMPMETER's refusal check (handled by the caller *before* this runs - the
  * rest of AMPMETER's entry, including MODE_F_SEK_FORCE_SHORT below, is
- * ordinary table-driven behaviour). This is a direct transcription of what
- * each pre-refactor case in this switch did; see mode_table.h for the
- * per-flag rationale and mode_table.c for the per-mode data it was built
- * from. Only ever invoked from case labels naming a real mode, so mode is
- * always < STATEMACHINE_MODE_RESERVED here -- the check below is pure
+ * ordinary table-driven behaviour). See mode_table.h for the per-flag
+ * rationale and mode_table.c for the per-mode data. Only ever invoked
+ * from case labels naming a real mode, so mode is always
+ * < STATEMACHINE_MODE_RESERVED here -- the check below is pure
  * defense-in-depth for mode_table[]'s indexing contract, not a reachable
  * path. */
 static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
@@ -1150,8 +1149,8 @@ static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
 	statemachine_handle.current_mode = mode;
 	adc_configure_mode(mode);
 
-	// Must run after adc_configure_mode(mode): every pre-refactor case that
-	// auto-starts the control loop configured the ADC first.
+	// Must run after adc_configure_mode(mode): the control loop needs the
+	// mode's ADC trigger.
 	if (d->flags & MODE_F_AUTOSTART_CTRL) {
 		aux_io_ctrl_manual_set_io(d->enable_gpio, 1);
 		ctrl_main_start_ctrl(d->ctrl_mode);

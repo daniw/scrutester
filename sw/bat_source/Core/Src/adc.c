@@ -980,12 +980,9 @@ void adc_start(void){
 static statemachine_modes_t adc_injected_mode = STATEMACHINE_IDLE;
 
 // Applies mode_table[mode].adc_trigger to the shared hadc1..4 ExternalTrigConv
-// field -- the part of adc_configure_mode() that used to be four repeated
-// assignment lines per case. ADC_TRIGGER_NONE means "leave hadc1..4 exactly
-// as whichever mode ran before this one left them" (see mode_table.h) --
-// ADC_TRIGGER_NONE means "leave the shared trigger as the previous mode left
-// it", which is correct for the passive/idle modes that do not drive a
-// converter (they read channels hadc1 samples continuously anyway). Every
+// field. ADC_TRIGGER_NONE means "leave the shared trigger as the previous
+// mode left it", which is correct for the passive/idle modes that do not
+// drive a converter (they read channels hadc1 samples continuously anyway). Every
 // mode that runs a control loop names its converter's trigger explicitly.
 static void adc_apply_shared_trigger(statemachine_modes_t mode) {
 	if (mode >= STATEMACHINE_MODE_RESERVED) {
@@ -1072,9 +1069,9 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		adc_start_dma_quiet(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
 		break;
 	case STATEMACHINE_MODE_ISOMETER:
-		// adc_apply_shared_trigger() above pointed hadc1..4 at HV (TRG2),
+		// adc_apply_shared_trigger() above pointed hadc1..4 at HV (TRG5),
 		// the converter this mode drives. See mode_table.c's ISOMETER entry
-		// for the resulting loop rate, which is NOT CTRL_FREQ.
+		// for the resulting loop rate (CTRL_FREQ).
 		sConfig.Channel = ADC_CHANNEL_5;
 		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
 			Error_Handler();

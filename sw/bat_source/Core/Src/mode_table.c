@@ -1,11 +1,7 @@
 /*
  * mode_table.c
  *
- * See mode_table.h for the field/flag rationale. Each entry below is a
- * direct transcription of what the pre-refactor code did for that mode in
- * statemachine.c's statemachine_switchfromIdle(), ctrl_main.c's
- * statemachine_mode_to_ctrl_mode(), adc.c's adc_configure_mode() and
- * aux_io_ctrl.c's aux_io_ctrl_mode_config[] -- see the per-entry comments.
+ * See mode_table.h for the field/flag rationale; per-entry comments below.
  *
  *  Created on: Jul 31, 2026
  */
@@ -54,8 +50,7 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
     },
 
     /* Auto-starts the control loop and the ~1A DAC test pulse immediately on
-     * entry (not hold-OUT) - output_on is left untouched by design (matches
-     * the pre-refactor case, which never assigned it either). */
+     * entry (not hold-OUT) - output_on is forced to 1. */
     [STATEMACHINE_MODE_RESISTANCE_1A] = {
         .ctrl_mode   = CTRL_MODE_RESISTANCE_1A,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_DISCHARGE,
@@ -81,10 +76,8 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
 
     /* Hold-OUT-to-enable via GPIO_HV_CTRL_EN, output_on forced to 0.
      *
-     * Triggers off HV (TRG2 / Timer C), the converter this mode actually
-     * controls. It previously assigned no trigger at all, so hadc1 kept
-     * whichever one the last mode left and the control-loop rate depended on
-     * mode history.
+     * Triggers off HV (TRG5 / Timer C), the converter this mode actually
+     * controls, so the loop rate does not depend on mode history.
      *
      * HV at CTRL_PARAM_SW_FREQ_HV (350 kHz), TRG5 post-scaler 7 and the
      * halving in HAL_ADC_ConvCpltCallback() give exactly CTRL_FREQ. */
@@ -96,8 +89,7 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .adc_trigger = ADC_TRIGGER_HRTIM_HV,
     },
 
-    /* Passive readout, no control loop, output_on left untouched (matches
-     * the pre-refactor case, which never assigned it). */
+    /* Passive readout, no control loop, output_on left untouched. */
     [STATEMACHINE_MODE_VOLTMETER] = {
         .ctrl_mode   = CTRL_MODE_OFF,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_OUT_SEL_HV | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
@@ -120,9 +112,8 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .adc_trigger = ADC_TRIGGER_NONE,
     },
 
-    /* Never entered through statemachine_switchfromIdle() (falls to its
-     * default: no-op, same as the pre-refactor switch) - aux_io_mask is
-     * still real, used by aux_io_ctrl_mode_config[]'s pre-refactor entry. */
+    /* Not driven by this table: statemachine_switchfromIdle() has its own
+     * case calling gpio_shutdown(). aux_io_mask is still real. */
     [STATEMACHINE_MODE_SHUTDOWN] = {
         .ctrl_mode   = CTRL_MODE_OFF,
         .aux_io_mask = GPIO_MASK_OUT_SEL_ISO | GPIO_MASK_SHUNT_EN | GPIO_MASK_DISCHARGE,
@@ -153,8 +144,7 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
     /* No control loop (CTRL_MODE_OFF); entry additionally requires the
      * v_term >= 500mV refusal check special-cased in
      * statemachine_switchfromIdle() before this table is consulted, and
-     * hrtim_sek_force_short() afterwards. output_on left untouched (matches
-     * the pre-refactor case, which never assigned it). adc_trigger is
+     * hrtim_sek_force_short() afterwards. output_on left untouched. adc_trigger is
      * ADC_TRIGGER_NONE, but -- unlike ISOMETER/RESISTANCE_1mA above -- this
      * is intentional, not a bug: AMPMETER is a passive readout of i_out,
      * which hadc1 already samples continuously regardless of mode. */
