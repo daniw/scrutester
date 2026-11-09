@@ -54,7 +54,7 @@ static unsigned vout_burst_leg;       // VOUT_LEG_*, 0 = burst off
 static uint32_t vout_freq_prim;
 static uint32_t vout_freq_sek;
 
-const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
+static const uint16_t ctrl_main_iso_values[4] = { 125, 250, 500, 1000 };
 
 // CLI setPI IDs are positional (row index), see `help setPI`.
 const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = { {
@@ -106,13 +106,13 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = { {
 		"10AVoltLimit", CTRL_FREQ }, };
 
 /******************* Function Prototypes **************************/
-void ctrl_main_ctrl_voltage_buck(int32_t voltage_meas_mV,
+static void ctrl_main_ctrl_voltage_buck(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate);
-void ctrl_main_ctrl_current(int16_t current_meas_mA,
+static void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate, int32_t voltage_meas_mV);
-void ctrl_main_ctrl_charge_current(uint32_t target_mA,
+static void ctrl_main_ctrl_charge_current(uint32_t target_mA,
 		int16_t current_meas_mA, int16_t current_bms_mA);
-void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
+static void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
 static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas);
 static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas);
@@ -128,7 +128,7 @@ void ctrl_main_init(void) {
 	// hardcoded safety limits rather than field-tunable values.
 	for (int i = 0; i < CTRL_PID_TABLE_LEN; i++) {
 		const ctrl_pid_entry_t *e = &ctrl_pid_table[i];
-		ctrl_PID_controller_init(e->ctrl, *e->cal_p, *e->cal_i, 0, e->sat_high,
+		ctrl_PID_controller_init(e->ctrl, *e->cal_p, *e->cal_i, e->sat_high,
 				e->sat_low);
 	}
 
@@ -438,7 +438,6 @@ static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas) {
 			float ref_A = ctrl_pi_charge_current.ref;
 			ctrl_main_handle.charge_cv_current_mA = (uint32_t) (ref_A * 1000.0F);
 			ctrl_pi_charge_voltage.prev_I_action = ref_A;
-			ctrl_pi_charge_voltage.sat_flag = 0;
 			ctrl_main_handle.charge_cv_phase = 1;
 			ctrl_main_handle.charge_phase = CHG_PHASE_CV;
 		}
@@ -616,13 +615,13 @@ static void ctrl_apply_buck_burst(float duty) {
 	ctrl_main_handle.duty = duty * 1000;
 }
 
-void ctrl_main_ctrl_voltage_buck(int32_t voltage_meas_mV,
+static void ctrl_main_ctrl_voltage_buck(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
 			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_buck,
-			voltage_meas_mV / 1000.0F, voltage_meas_accurate_mV / 1000.0F, 0);
+			voltage_meas_mV / 1000.0F, voltage_meas_accurate_mV / 1000.0F);
 
 	ctrl_apply_buck_burst(ctrl_pi_voltage_buck.action);
 }
@@ -707,7 +706,6 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 		float d = vout_region_duty_for_ratio(next, m);
 		// action = P + I, so preload I with what is left after this tick's P.
 		pi->prev_I_action = d - pi->P_gain * (pi->ref - v_out_V);
-		pi->sat_flag = 0;
 		// The limiter's duty scale differs per region.
 		ctrl_pi_boost_iout_limit.prev_I_action =
 				ctrl_pi_boost_iout_limit.sat_limit_high;
@@ -719,9 +717,9 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 				* CTRL_FREQ);
 	}
 
-	ctrl_PID_controller_execute(pi, v_out_V, v_acc_V, 0);
+	ctrl_PID_controller_execute(pi, v_out_V, v_acc_V);
 	ctrl_PID_controller_execute(&ctrl_pi_boost_iout_limit,
-			meas->i_out / 1000.0F, meas->i_out / 1000.0F, 0);
+			meas->i_out / 1000.0F, meas->i_out / 1000.0F);
 
 	float duty = pi->action;
 	if (ctrl_pi_boost_iout_limit.action < duty) {
@@ -770,7 +768,7 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 	// Only the fast leg follows the burst: PRIM in buck, SEK in boost.
 	if (legs.burst != vout_burst_leg) {
 		if (legs.burst == 0)
-			hrtim_burst_enable(0);
+			hrtim_burst_stop();
 		else
 			hrtim_burst_select_leg(
 					legs.burst == VOUT_LEG_SEK ?
@@ -805,16 +803,16 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
  * @param current_meas_accurate External ADC current (I part).
  * @param voltage_meas_mV Fast internal v_out.
  */
-void ctrl_main_ctrl_current(int16_t current_meas_mA,
+static void ctrl_main_ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate, int32_t voltage_meas_mV) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_current,
 			ctrl_main_handle.current_reference_mA / 1000.0F, 10.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_current, current_meas_mA / 1000.0F,
-			current_meas_accurate / 1000.0F, 0);
+			current_meas_accurate / 1000.0F);
 	ctrl_PID_controller_execute(&ctrl_pi_10a_vlimit, voltage_meas_mV / 1000.0F,
-			voltage_meas_mV / 1000.0F, 0);
+			voltage_meas_mV / 1000.0F);
 
 	float duty = ctrl_pi_current.action;
 	if (ctrl_pi_10a_vlimit.action < duty) {
@@ -831,7 +829,7 @@ void ctrl_main_ctrl_current(int16_t current_meas_mA,
  * @param current_meas_mA Internal current, positive = charging (P part).
  * @param current_bms_mA BMS battery current, positive = charging (I part).
  */
-void ctrl_main_ctrl_charge_current(uint32_t target_mA,
+static void ctrl_main_ctrl_charge_current(uint32_t target_mA,
 		int16_t current_meas_mA, int16_t current_bms_mA) {
 
 	// Reference 0 -> setpoint over CTRL_PARAM_CHARGE_RAMP_s (ramp starts at 0,
@@ -841,7 +839,7 @@ void ctrl_main_ctrl_charge_current(uint32_t target_mA,
 			1.0F / CTRL_PARAM_CHARGE_RAMP_s);
 
 	ctrl_PID_controller_execute(&ctrl_pi_charge_current,
-			current_meas_mA / 1000.0F, current_bms_mA / 1000.0F, 0);
+			current_meas_mA / 1000.0F, current_bms_mA / 1000.0F);
 
 	// Apply Duty inverted, as the secondary Duty is inversed
 	ctrl_apply_inverted_sek_duty(ctrl_pi_charge_current.action);
@@ -859,22 +857,22 @@ void ctrl_main_charge_cv_step(uint16_t cell_max_mV) {
 	ctrl_pi_charge_voltage.ref = ctrl_main_handle.voltage_reference_mV / 1000.0F;
 	ctrl_pi_charge_voltage.sat_limit_high =
 			ctrl_main_handle.current_reference_mA / 1000.0F;
-	ctrl_PID_controller_execute(&ctrl_pi_charge_voltage, v_V, v_V, 0);
+	ctrl_PID_controller_execute(&ctrl_pi_charge_voltage, v_V, v_V);
 	ctrl_main_handle.charge_cv_current_mA =
 			(uint32_t) (ctrl_pi_charge_voltage.action * 1000.0F);
 }
 
-void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
+static void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_hv,
 			ctrl_main_handle.voltage_iso_reference_V, 10.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_voltage_hv, voltage_meas_mV / 1000.0F,
-			voltage_meas_accurate_mV / 1000.0F, 0);
+			voltage_meas_accurate_mV / 1000.0F);
 
 	ctrl_PID_controller_execute(&ctrl_pi_hv_iout_limit,
-			current_meas_iso_uA / 1000.0F, current_meas_iso_uA / 1000.0F, 0);
+			current_meas_iso_uA / 1000.0F, current_meas_iso_uA / 1000.0F);
 
 	float duty_limited = ctrl_pi_voltage_hv.action;
 	if (ctrl_pi_hv_iout_limit.action < duty_limited) {

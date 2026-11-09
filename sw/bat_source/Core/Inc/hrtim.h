@@ -66,7 +66,7 @@ void hrtim_set_duty(uint8_t channel, float value);
 void hrtim_sync_start(uint8_t fast_channel);
 void hrtim_burst_select_leg(uint8_t fast_channel);
 void hrtim_sync_stop(void);
-void hrtim_burst_enable(uint8_t enable);
+void hrtim_burst_stop(void);
 void hrtim_burst_set_idle_cycles(unsigned cycles);
 void hrtim_set_prim_sek(uint32_t prim_freq, float prim_duty, uint32_t sek_freq, float sek_duty);
 void hrtim_set_freq_duty(uint8_t channel, uint32_t freq, float duty);

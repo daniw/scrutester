@@ -26,7 +26,6 @@ typedef enum {
 
 
 typedef struct{
-	uint16_t poti_reference;
 	uint16_t voltage_iso_reference_V;
 	uint32_t voltage_reference_mV;
 	uint32_t current_reference_mA;

@@ -197,10 +197,10 @@ static void statemachine_apply_encoder_setpoint(void) {
 	if (statemachine_handle.current_mode == STATEMACHINE_MODE_EMI)
 		max = CTRL_PARAM_EMI_VOLTAGE_MAX_mV / 500; // 500 mV per count, see ctrl_main_apply_reference()
 #endif
-	ctrl_main_handle.poti_reference = (uint16_t) input_encoder_read_clamped(
+	uint16_t poti_reference = (uint16_t) input_encoder_read_clamped(
 			&encoder_setpoint_clamp, 0, max);
 	ctrl_main_apply_reference(statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode),
-			ctrl_main_handle.poti_reference);
+			poti_reference);
 }
 
 uint8_t statemachine_settings_list(statemachine_settings_modes_t *list) {

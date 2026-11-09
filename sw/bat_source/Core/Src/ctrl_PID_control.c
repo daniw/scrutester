@@ -12,8 +12,7 @@
  * Initialises Control structure
  */
 void ctrl_PID_controller_init(PID_controller_t *contr, float kp, float ki,
-		float kd, float sat_high, float sat_low) {
-	(void) kd;
+		float sat_high, float sat_low) {
 	contr->ref = 0;
 
 	contr->P_gain = kp;
@@ -26,18 +25,15 @@ void ctrl_PID_controller_init(PID_controller_t *contr, float kp, float ki,
 
 	contr->sat_limit_high = sat_high;
 	contr->sat_limit_low = sat_low;
-	contr->sat_flag = 0;
 }
 
 /**
  * Executes the PID Controller
  * @param data_in_P value used for the P part
  * @param data_in_I value used for the I part
- * @param data_in_D unused (no D part)
  */
 void ctrl_PID_controller_execute(PID_controller_t *contr, float data_in_P,
-		float data_in_I, float data_in_D) {
-	(void) data_in_D;
+		float data_in_I) {
 	contr->P_action = contr->P_gain * (contr->ref - data_in_P);
 
 	contr->I_action = (double) (contr->I_gain * (contr->ref - data_in_I))
@@ -55,17 +51,11 @@ void ctrl_PID_controller_execute(PID_controller_t *contr, float data_in_P,
 	if (contr->action > contr->sat_limit_high) {
 		contr->action = contr->sat_limit_high;
 		contr->I_action = contr->sat_limit_high - contr->P_action;
-		contr->sat_flag = 1;
 	} else if (contr->action < contr->sat_limit_low) {
 		contr->action = contr->sat_limit_low;
 		contr->I_action = contr->sat_limit_low - contr->P_action;
-		contr->sat_flag = 1;
-	} else {
-		contr->sat_flag = 0;
 	}
 	contr->prev_I_action = contr->I_action;
-
-	contr->I_action_out = contr->I_action;
 }
 
 void ctrl_PID_reset(PID_controller_t *contr)
@@ -73,5 +63,4 @@ void ctrl_PID_reset(PID_controller_t *contr)
 	contr->action = 0;
 	contr->I_action = 0;
 	contr->prev_I_action = 0;
-	contr->sat_flag = 0;
 }

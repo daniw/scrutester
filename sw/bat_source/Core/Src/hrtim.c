@@ -23,8 +23,6 @@
 /* USER CODE BEGIN 0 */
 #include "stdio.h"
 #include "ctrl_param.h"
-
-static void hrtim_sync_init(void);
 /* USER CODE END 0 */
 
 HRTIM_HandleTypeDef hhrtim1;
@@ -407,6 +405,37 @@ void HAL_HRTIM_MspDeInit(HRTIM_HandleTypeDef* hrtimHandle)
 }
 
 /* USER CODE BEGIN 1 */
+/*
+ * Parked-leg sync and pulse skipping (60V, 10A and RESISTANCE modes).
+ *
+ * The parked (50 kHz) leg's low pulse must fall where the fast leg's low side
+ * is on. The master timer (configured in the .ioc) defines a 20 us frame:
+ * compare 1 resets Timers B and D, compare 3 resets Timer E half a frame
+ * later, so the parked pulse lands at the same frame time in buck and boost.
+ * The burst controller (clock Timer D, trigger master compare 2) idles a
+ * block of fast cycles around that time: low side on, high side off. Only the
+ * fast leg follows the burst -- in up/down mode a timer enters/leaves burst
+ * idle only at its own roll-over, every 10 us for the 50 kHz leg.
+ *
+ * Master compares 2/3 in the .ioc assume CTRL_PARAM_VOUT_SYNC_CYCLES = 3.
+ */
+static void hrtim_sync_init(void) {
+#ifdef VOUT_SYNC_BURST_ENABLED
+	const uint8_t timers[2] = { HRTIM_CHANNEL_PRIM, HRTIM_CHANNEL_SEK };
+	for (unsigned i = 0; i < 2; i++) {
+		HRTIM1->sTimerxRegs[timers[i]].OUTxR |= HRTIM_OUTR_DIDL1 | HRTIM_OUTR_DIDL2;
+		HRTIM1->sTimerxRegs[timers[i]].OUTxR &= ~(HRTIM_OUTR_IDLES2
+				| HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2);
+	}
+
+	// Not in the .ioc: trigger, and preload so a new idle length applies at
+	// the next frame.
+	HRTIM1->sCommonRegs.BMTRGR = HRTIM_BMTRGR_MSTCMP2;
+	HRTIM1->sCommonRegs.BMCMPR = CTRL_PARAM_VOUT_SYNC_CYCLES;
+	HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BMPREN;
+#endif
+}
+
 /**
  * Starts all HRTIM Channel counters, including the master (frame for the
  * parked-leg sync) and Timer D (fixed 1 MHz ADC trigger, see adc.h).
@@ -477,7 +506,6 @@ void hrtim_set_freq(uint8_t channel, uint32_t freq) {
 	period = HRTIM_PERIOD_FROM_FREQ(freq);
 	period = hrtim_clamp_period(period);
 	HRTIM1->sTimerxRegs[channel].PERxR = period;
-	//HRTIM1->sTimerxRegs[channel].TIMxCR = (HRTIM1->sTimerxRegs[channel].TIMxCR & (~ HRTIM_PRESCALERRATIO_DIV4)) | HRTIM_PRESCALERRATIO_MUL32;
 }
 
 /**
@@ -628,37 +656,6 @@ void hrtim_sek_restore(void) {
 
 	hrtim_sek_shorted = 0;
 }
-/*
- * Parked-leg sync and pulse skipping (60V, 10A and RESISTANCE modes).
- *
- * The parked (50 kHz) leg's low pulse must fall where the fast leg's low side
- * is on. The master timer (configured in the .ioc) defines a 20 us frame:
- * compare 1 resets Timers B and D, compare 3 resets Timer E half a frame
- * later, so the parked pulse lands at the same frame time in buck and boost.
- * The burst controller (clock Timer D, trigger master compare 2) idles a
- * block of fast cycles around that time: low side on, high side off. Only the
- * fast leg follows the burst -- in up/down mode a timer enters/leaves burst
- * idle only at its own roll-over, every 10 us for the 50 kHz leg.
- *
- * Master compares 2/3 in the .ioc assume CTRL_PARAM_VOUT_SYNC_CYCLES = 3.
- */
-static void hrtim_sync_init(void) {
-#ifdef VOUT_SYNC_BURST_ENABLED
-	const uint8_t timers[2] = { HRTIM_CHANNEL_PRIM, HRTIM_CHANNEL_SEK };
-	for (unsigned i = 0; i < 2; i++) {
-		HRTIM1->sTimerxRegs[timers[i]].OUTxR |= HRTIM_OUTR_DIDL1 | HRTIM_OUTR_DIDL2;
-		HRTIM1->sTimerxRegs[timers[i]].OUTxR &= ~(HRTIM_OUTR_IDLES2
-				| HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2);
-	}
-
-	// Not in the .ioc: trigger, and preload so a new idle length applies at
-	// the next frame.
-	HRTIM1->sCommonRegs.BMTRGR = HRTIM_BMTRGR_MSTCMP2;
-	HRTIM1->sCommonRegs.BMCMPR = CTRL_PARAM_VOUT_SYNC_CYCLES;
-	HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BMPREN;
-#endif
-}
-
 /**
  * Puts only the fast leg (HRTIM_CHANNEL_PRIM or _SEK) under burst idle control
  * and enables the burst. IDLM is changed with BME = 0, as changing it during a
@@ -709,16 +706,11 @@ void hrtim_sync_stop(void) {
 }
 
 /**
- * Enables/disables the burst controller (off in the 4-switch region).
+ * Disables the burst controller (off in the 4-switch region).
  */
-void hrtim_burst_enable(uint8_t enable) {
+void hrtim_burst_stop(void) {
 #ifdef VOUT_SYNC_BURST_ENABLED
-	if (enable)
-		HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BME;
-	else
-		HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
-#else
-	(void) enable;
+	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
 #endif
 }
 
