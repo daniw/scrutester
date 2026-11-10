@@ -373,28 +373,8 @@ static void statemachine_step_calibration(void) {
 	}
 }
 
-void statemachine_step(void) {
-	uint8_t temp;
-
-	i2c_check_timeout();
-
-	// Due to race conditions
-	adc_snapshot_converted();
-	adc_convert_data();
-	ui_ctrl_step();
-
-	display_refresh_battery_icon();
-	// Update protection and turn off if necessary
-	protection_update(statemachine_handle.current_mode);
-
-	// Unconditional every tick (not just while STATEMACHINE_MODE_CHARGE is
-	// active) -- see balancing.c: this guarantees the balancing mask gets
-	// written back to 0 on the tick after charging stops for any reason.
-	balancing_update();
-
-	if (statemachine_ovp_lockout())
-		return;
-
+/** @brief Protection trip/recovery for the current mode. */
+static void statemachine_protection_step(void) {
 	uint8_t protection_error = protection_get_worst_level() == PROTECTION_LEVEL_ERROR;
 	if (statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode) != CTRL_MODE_OFF) {
 		if (protection_error) {
@@ -440,8 +420,10 @@ void statemachine_step(void) {
 	// Latched limit trips are released with OUT, so a restart needs a new press.
 	if (!input_btn_out())
 		protection_clear_limits();
+}
 
-	// Handle Buttons press
+/** @brief Updates the OK/ESC/OUT click counters. */
+static void statemachine_buttons_update(void) {
 	if (input_btn_ok())
 		ok_button_pressed += 1;
 	else
@@ -458,14 +440,10 @@ void statemachine_step(void) {
 			out_button_pressed += 1;
 	} else
 		out_button_pressed = 0;
+}
 
-	// Re-arm the CHARGE auto-entry once the charger has been unplugged.
-	if (charge_lockout
-			&& adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_START_VIN_LOW_mV) {
-		charge_lockout = 0;
-	}
-
-
+/** @brief Inactivity timer; powers the device off on timeout. */
+static void statemachine_inactivity_step(void) {
 	uint16_t raw_encoder = input_encoder_read();
 	uint8_t active = (raw_encoder != last_raw_encoder)
 			|| ok_button_pressed || esc_button_pressed || out_button_pressed
@@ -488,76 +466,183 @@ void statemachine_step(void) {
 		gpio_power_off();
 		inactivity_ticks = 0;
 	}
+}
+
+/** @brief IDLE: carousel, mode selection and CHARGE auto-entry. */
+static void statemachine_idle_step(void) {
+	uint8_t temp = (uint8_t) input_encoder_read_wrapped(&idle_wrap, MENU_ORDER_LENGTH);
+	if (temp != statemachine_handle.current_menu_index) {
+		statemachine_handle.current_menu_index = temp;
+		display_show_idle(temp);
+		if (idle_error_pending) {
+			display_show_idle_error(idle_error_pending);
+			idle_error_pending = NULL;
+		}
+	}
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		statemachine_switchfromIdle(menu_entry_at(temp)->mode);
+	}
+
+	if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK)
+		statemachine_switchfromIdle(STATEMACHINE_MODE_SHUTDOWN);
+
+	// CHARGE is auto-entered, not menu/button-selected: whenever idle and
+	// a 15-24V supply is detected at the output with no BMS fault
+	// latched, start charging on our own -- unless the last charge was
+	// ended by ESC/a fault and the charger has not been removed since
+	// (charge_lockout), or the BMS has not delivered a plausible stack
+	// voltage yet (it reads 0 before the first poll, which would pass the
+	// "below end voltage" test below), or the ext ADC self-test failed.
+	uint8_t entry_ok = !charge_lockout && !BQ76905_data_stale(&bms)
+			&& !(protection_get_error_mask() & PROTECTION_SRC_EXT_ADC);
+	if (entry_ok
+			&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)
+			&& !(bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB)
+			&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV
+			&& bms.VoltageRegisters.StackVoltage <= CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV
+			&& bms.VoltageRegisters.StackVoltage
+					< CTRL_PARAM_CHARGE_END_VOLTAGE_mV - CTRL_PARAM_CHARGE_RESTART_MARGIN_mV) {
+		statemachine_switchfromIdle(STATEMACHINE_MODE_CHARGE);
+	} else if (entry_ok
+			&& (bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)
+			&& !(bms.SafetyRegisters.safetyStatusA & (uint8_t) ~BQ76905_SAFETY_STATUS_A_CUV)
+			&& !bms.SafetyRegisters.safetyStatusB
+			&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
+		// Deep-discharge/CUV recovery: called directly, not through
+		// statemachine_switchfromIdle() -- see
+		// statemachine_enter_charge()'s comment.
+		statemachine_enter_charge(1);
+	}
+}
+
+/** @brief 60V/10A/ISOMETER: encoder setpoint and OUT start/stop. */
+static void statemachine_output_step(void) {
+	statemachine_apply_encoder_setpoint();
+	// Start once on the press edge, stop on release.
+	if (out_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		statemachine_clear_mode_error();
+		statemachine_handle.output_on = 1;
+		ctrl_main_start_ctrl(
+				statemachine_mode_to_ctrl_mode(
+						statemachine_handle.current_mode));
+		aux_io_ctrl_manual_set_io(
+				mode_table[statemachine_handle.current_mode].enable_gpio,
+				1);
+	} else if (out_button_pressed == STATEMACHINE_BUTTON_RELEASED) {
+		statemachine_handle.output_on = 0;
+		aux_io_ctrl_manual_set_io(
+				mode_table[statemachine_handle.current_mode].enable_gpio,
+				0);
+		ctrl_main_stop_control();
+	}
+}
+
+/** @brief SETTINGS list: selection and entering a detail screen. */
+static void statemachine_settings_menu_step(void) {
+	statemachine_settings_modes_t list[STATEMACHINE_SETTINGS_MODE_LENGTH];
+	uint8_t temp = (uint8_t) input_encoder_read_wrapped(&list_wrap,
+			statemachine_settings_list(list));
+	if (temp != statemachine_handle.current_menu_index) {
+		statemachine_handle.current_menu_index = temp;
+		display_show_settings_list(temp);
+	}
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		statemachine_handle.settings_mode =
+				list[statemachine_handle.current_menu_index];
+		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_SERVICE) {
+			pin_pos = 0;
+			pin_digits[0] = 0;
+			pin_wait = 0;
+			input_encoder_clamp_reset(&pin_clamp, 0);
+			display_service_pin(pin_digits, pin_pos);
+		} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
+			calibration_ui_state = 0;
+			calibration_selected_channel = CAL_CH_V_TERM;
+			input_encoder_wrap_reset(&list_wrap, CAL_CH_V_TERM);
+			calibration_ensure_adc_mode(calibration_selected_channel);
+			display_calibration_enter(calibration_selected_channel, 0);
+		} else {
+			display_enter_settings_detail(statemachine_handle.settings_mode);
+		}
+	}
+}
+
+/**
+ * @brief SETTINGS mode dispatch (list, calibration, service, details).
+ * @return 1 if the tick is done (skips the common ESC handling).
+ */
+static uint8_t statemachine_settings_step(void) {
+	if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_MENU) {
+		statemachine_settings_menu_step();
+	} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
+		statemachine_step_calibration();
+		return 1;
+	} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_SERVICE) {
+		statemachine_step_service_pin();
+		return 1;
+	} else {
+		display_update_settings_detail(statemachine_handle.settings_mode);
+		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
+				&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			balancing_toggle_manual_override();
+		}
+		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_STORAGE
+				&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			statemachine_storage_mode();
+			return 1;
+		}
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {
+				balancing_clear_manual_override();
+			}
+			statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void statemachine_step(void) {
+	i2c_check_timeout();
+
+	// Due to race conditions
+	adc_snapshot_converted();
+	adc_convert_data();
+	ui_ctrl_step();
+
+	display_refresh_battery_icon();
+	// Update protection and turn off if necessary
+	protection_update(statemachine_handle.current_mode);
+
+	// Unconditional every tick (not just while STATEMACHINE_MODE_CHARGE is
+	// active) -- see balancing.c: this guarantees the balancing mask gets
+	// written back to 0 on the tick after charging stops for any reason.
+	balancing_update();
+
+	if (statemachine_ovp_lockout())
+		return;
+
+	statemachine_protection_step();
+	statemachine_buttons_update();
+
+	// Re-arm the CHARGE auto-entry once the charger has been unplugged.
+	if (charge_lockout
+			&& adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_START_VIN_LOW_mV) {
+		charge_lockout = 0;
+	}
+
+	statemachine_inactivity_step();
 
 	// Select transition to next state
 	switch (statemachine_handle.current_mode) {
 	case STATEMACHINE_IDLE:
-		temp = (uint8_t) input_encoder_read_wrapped(&idle_wrap, MENU_ORDER_LENGTH);
-		if (temp != statemachine_handle.current_menu_index) {
-			statemachine_handle.current_menu_index = temp;
-			display_show_idle(temp);
-			if (idle_error_pending) {
-				display_show_idle_error(idle_error_pending);
-				idle_error_pending = NULL;
-			}
-		}
-		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
-			statemachine_switchfromIdle(menu_entry_at(temp)->mode);
-		}
-
-		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK)
-			statemachine_switchfromIdle(STATEMACHINE_MODE_SHUTDOWN);
-
-		// CHARGE is auto-entered, not menu/button-selected: whenever idle and
-		// a 15-24V supply is detected at the output with no BMS fault
-		// latched, start charging on our own -- unless the last charge was
-		// ended by ESC/a fault and the charger has not been removed since
-		// (charge_lockout), or the BMS has not delivered a plausible stack
-		// voltage yet (it reads 0 before the first poll, which would pass the
-		// "below end voltage" test below), or the ext ADC self-test failed.
-		uint8_t entry_ok = !charge_lockout && !BQ76905_data_stale(&bms)
-				&& !(protection_get_error_mask() & PROTECTION_SRC_EXT_ADC);
-		if (entry_ok
-				&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)
-				&& !(bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB)
-				&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV
-				&& bms.VoltageRegisters.StackVoltage <= CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV
-				&& bms.VoltageRegisters.StackVoltage
-						< CTRL_PARAM_CHARGE_END_VOLTAGE_mV - CTRL_PARAM_CHARGE_RESTART_MARGIN_mV) {
-			statemachine_switchfromIdle(STATEMACHINE_MODE_CHARGE);
-		} else if (entry_ok
-				&& (bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)
-				&& !(bms.SafetyRegisters.safetyStatusA & (uint8_t) ~BQ76905_SAFETY_STATUS_A_CUV)
-				&& !bms.SafetyRegisters.safetyStatusB
-				&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
-			// Deep-discharge/CUV recovery: called directly, not through
-			// statemachine_switchfromIdle() -- see
-			// statemachine_enter_charge()'s comment.
-			statemachine_enter_charge(1);
-		}
+		statemachine_idle_step();
 		break;
 
 	case STATEMACHINE_MODE_60V_OUT:
 	case STATEMACHINE_MODE_10A_OUT:
 	case STATEMACHINE_MODE_ISOMETER:
-		statemachine_apply_encoder_setpoint();
-		// Start once on the press edge, stop on release.
-		if (out_button_pressed == STATEMACHINE_BUTTON_CLICK) {
-			statemachine_clear_mode_error();
-			statemachine_handle.output_on = 1;
-			ctrl_main_start_ctrl(
-					statemachine_mode_to_ctrl_mode(
-							statemachine_handle.current_mode));
-			aux_io_ctrl_manual_set_io(
-					mode_table[statemachine_handle.current_mode].enable_gpio,
-					1);
-		} else if (out_button_pressed == STATEMACHINE_BUTTON_RELEASED) {
-			statemachine_handle.output_on = 0;
-			aux_io_ctrl_manual_set_io(
-					mode_table[statemachine_handle.current_mode].enable_gpio,
-					0);
-			ctrl_main_stop_control();
-		}
+		statemachine_output_step();
 		/* fall through to update display !! */
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
@@ -586,58 +671,8 @@ void statemachine_step(void) {
 #endif
 
 	case STATEMACHINE_MODE_SETTINGS:
-		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_MENU) {
-			statemachine_settings_modes_t list[STATEMACHINE_SETTINGS_MODE_LENGTH];
-			temp = (uint8_t) input_encoder_read_wrapped(&list_wrap,
-					statemachine_settings_list(list));
-			if (temp != statemachine_handle.current_menu_index) {
-				statemachine_handle.current_menu_index = temp;
-				display_show_settings_list(temp);
-			}
-			if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
-				statemachine_handle.settings_mode =
-						list[statemachine_handle.current_menu_index];
-				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_SERVICE) {
-					pin_pos = 0;
-					pin_digits[0] = 0;
-					pin_wait = 0;
-					input_encoder_clamp_reset(&pin_clamp, 0);
-					display_service_pin(pin_digits, pin_pos);
-				} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
-					calibration_ui_state = 0;
-					calibration_selected_channel = CAL_CH_V_TERM;
-					input_encoder_wrap_reset(&list_wrap, CAL_CH_V_TERM);
-					calibration_ensure_adc_mode(calibration_selected_channel);
-					display_calibration_enter(calibration_selected_channel, 0);
-				} else {
-					display_enter_settings_detail(statemachine_handle.settings_mode);
-				}
-			}
-		} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
-			statemachine_step_calibration();
+		if (statemachine_settings_step())
 			return;
-		} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_SERVICE) {
-			statemachine_step_service_pin();
-			return;
-		} else {
-			display_update_settings_detail(statemachine_handle.settings_mode);
-			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
-					&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
-				balancing_toggle_manual_override();
-			}
-			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_STORAGE
-					&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
-				statemachine_storage_mode();
-				return;
-			}
-			if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
-				if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {
-					balancing_clear_manual_override();
-				}
-				statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
-				return;
-			}
-		}
 		break;
 
 	default:
