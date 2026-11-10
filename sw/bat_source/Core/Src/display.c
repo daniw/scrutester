@@ -447,7 +447,8 @@ void display_vtimer_enter(display_vt_view_t view, stopwatch_vt_kind_t kind) {
 		LCD_PutStr(16, STATUS_H + 40, "Stop when below:", FONT_SMALL, TEXT_SECONDARY, C_BLACK);
 		break;
 	case VT_VIEW_RUN:
-		LCD_PutStr(16 + 7 * 32 + 8, VT_TIME_Y, "s", FONT_BIG, TEXT_PRIMARY, C_BLACK);
+		// FONT_BIG has no lowercase: unit in FONT_MED on the digits' baseline
+		LCD_PutStr(16 + 7 * 32 + 8, VT_TIME_Y + 53 - 26 - 8, "s", FONT_MED, TEXT_PRIMARY, C_BLACK);
 		break;
 	default:
 		break;
@@ -456,7 +457,8 @@ void display_vtimer_enter(display_vt_view_t view, stopwatch_vt_kind_t kind) {
 
 void display_vtimer_update(display_vt_view_t view, stopwatch_vt_kind_t kind,
 		int32_t level_mV) {
-	vt_put_volt(16, STATUS_H + 6, FONT_MED, adc_data.converted.v_term_ext_mv_filt);
+	vt_put_volt((LCD_WIDTH - 8 * 16) / 2, STATUS_H + 6, FONT_MED,
+			adc_data.converted.v_term_ext_mv_filt); // "%4d.%d V", centred
 
 	if (view == VT_VIEW_KIND) {
 		for (int i = 0; i < VT_KIND_COUNT; i++) {
