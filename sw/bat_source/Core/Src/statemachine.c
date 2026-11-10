@@ -1087,6 +1087,23 @@ static void statemachine_charge_finish(const char *msg, uint8_t error) {
 	display_show_charge_done(msg, error);
 }
 
+/* Shared tail of every mode entry: the next mode starts at setpoint 0
+ * (EMI: its default). */
+static void statemachine_entry_tail(statemachine_modes_t mode) {
+	input_encoder_reset(0);
+	input_encoder_wrap_reset(&list_wrap, 0); // Settings list starts at the top
+	(void) mode; // only used by EMI_DEBUG
+	int32_t clamp_start = 0;
+#ifdef EMI_DEBUG
+	// EMI starts at its default setpoint instead of 0 V, so the first OUT
+	// press runs the intended test without dialling up first.
+	if (mode == STATEMACHINE_MODE_EMI)
+		clamp_start = CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV / CTRL_MAIN_MV_PER_COUNT;
+#endif
+	input_encoder_clamp_reset(&encoder_setpoint_clamp, clamp_start);
+	inactivity_ticks = 0;
+}
+
 /* CHARGE entry. Normal start: called from statemachine_switchfromIdle().
  * Unlike the other modes the relays are set BEFORE the converter starts: the
  * sequence begins with K1 (converter output to the jacks) open. Returns 0
@@ -1096,9 +1113,7 @@ static void statemachine_charge_finish(const char *msg, uint8_t error) {
  * `recovery`: deep-discharge/CUV recovery. The BMS has latched a cell
  * undervoltage fault (DSG FET open, V_IN ~0) and the device runs on charger
  * power fed through K1 into OUT_LV -- see statemachine_switchtoIdle(). Called
- * directly from the IDLE auto-entry check (which already checked the window),
- * not through statemachine_switchfromIdle(), because that function's shared
- * tail resets the encoder and would reconfigure the relays, reopening K1. */
+ * directly from the IDLE auto-entry check (which already checked the window). */
 static uint8_t statemachine_enter_charge(uint8_t recovery) {
 	if (!recovery
 			&& !charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
@@ -1126,11 +1141,7 @@ static uint8_t statemachine_enter_charge(uint8_t recovery) {
 	aux_io_ctrl_manual_set_io(mode_table_get(STATEMACHINE_MODE_CHARGE)->enable_gpio, 1);
 	statemachine_handle.output_on = 1;
 
-	if (recovery) {
-		input_encoder_reset(0);
-		input_encoder_clamp_reset(&encoder_setpoint_clamp, 0);
-		inactivity_ticks = 0;
-	}
+	statemachine_entry_tail(STATEMACHINE_MODE_CHARGE);
 
 	display_enter_mode(STATEMACHINE_MODE_CHARGE);
 	if (recovery)
@@ -1189,23 +1200,6 @@ static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
 	display_enter_mode(mode);
 }
 
-/* Shared tail of every mode entry: the next mode starts at setpoint 0
- * (EMI: its default). */
-static void statemachine_entry_tail(statemachine_modes_t mode) {
-	input_encoder_reset(0);
-	input_encoder_wrap_reset(&list_wrap, 0); // Settings list starts at the top
-	(void) mode; // only used by EMI_DEBUG
-	int32_t clamp_start = 0;
-#ifdef EMI_DEBUG
-	// EMI starts at its default setpoint instead of 0 V, so the first OUT
-	// press runs the intended test without dialling up first.
-	if (mode == STATEMACHINE_MODE_EMI)
-		clamp_start = CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV / CTRL_MAIN_MV_PER_COUNT;
-#endif
-	input_encoder_clamp_reset(&encoder_setpoint_clamp, clamp_start);
-	inactivity_ticks = 0;
-}
-
 void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	printf("Switch from Idle to %d\r\n", mode);
 
@@ -1242,9 +1236,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		return;
 
 	case STATEMACHINE_MODE_CHARGE:
-		if (!statemachine_enter_charge(0))
-			return; // refused: skip the shared tail, like AMPMETER above
-		statemachine_entry_tail(mode); // relays already set by the entry
+		statemachine_enter_charge(0); // sets relays and runs the tail itself
 		return;
 
 	case STATEMACHINE_MODE_SETTINGS:
