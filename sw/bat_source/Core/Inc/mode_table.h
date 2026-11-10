@@ -4,15 +4,14 @@
  * Single source of truth for per-statemachine_modes_t data that used to be
  * spread (and kept in lockstep by hand) across four places:
  *   - statemachine.c's statemachine_switchfromIdle() switch
- *   - ctrl_main.c's statemachine_mode_to_ctrl_mode() switch
+ *   - the former ctrl_main.c ctrl_mode switch (now mode_table_ctrl_mode())
  *   - adc.c's adc_configure_mode() switch (the shared hadc1..4 trigger part)
  *   - aux_io_ctrl.c's aux_io_ctrl_mode_config[] table (the model this follows)
  *
  * mode_table[] is indexed 0..STATEMACHINE_MODE_RESERVED-1, i.e. every real
  * statemachine_modes_t value (STATEMACHINE_IDLE..STATEMACHINE_MODE_AMPMETER).
  * STATEMACHINE_MODE_RESERVED itself is not a real mode and is never indexed;
- * callers must bounds-check `mode < STATEMACHINE_MODE_RESERVED` first (see
- * aux_io_ctrl_set_config()/statemachine_mode_to_ctrl_mode() for the pattern).
+ * go through mode_table_get(), which range-guards (NULL if out of range).
  *
  *  Created on: Jul 31, 2026
  */
@@ -84,6 +83,21 @@ typedef struct {
     uint32_t    adc_trigger; /* ADC_TRIGGER_HRTIM_{PRIM,SEK}, or ADC_TRIGGER_NONE */
 } mode_descriptor_t;
 
-extern const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED];
+/**
+ * @brief Range-guarded mode_table[] lookup.
+ * @param mode statemachine mode.
+ * @return its descriptor, or NULL if mode >= STATEMACHINE_MODE_RESERVED.
+ */
+const mode_descriptor_t *mode_table_get(statemachine_modes_t mode);
+
+/**
+ * @brief Maps a statemachine mode to its ctrl_mode_t.
+ *
+ * The enums differ after ISOMETER, so never pass current_mode straight to
+ * ctrl_main_start_ctrl(). Modes without a control loop map to CTRL_MODE_OFF.
+ * @param mode statemachine mode.
+ * @return ctrl_mode_t, CTRL_MODE_OFF if none applies or mode is out of range.
+ */
+ctrl_mode_t mode_table_ctrl_mode(statemachine_modes_t mode);
 
 #endif /* INC_MODE_TABLE_H_ */

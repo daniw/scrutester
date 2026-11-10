@@ -243,7 +243,7 @@ truth. Each row carries the live controller, its EEPROM-backed gain fields
 ### Full-range voltage source (60V_OUT)
 
 The LV converter is a 4-switch buck-boost, `V_out = D_prim·V_in/(1 − D_sek)`.
-`ctrl_main_ctrl_voltage_wide()` picks the region from `m = V_ref/V_in`
+`ctrl_voltage_wide()` picks the region from `m = V_ref/V_in`
 (`vout_region.c`, host-tested by `tools/test_vout_region.sh`), using the ramped
 reference so the start-up ramp walks through the regions by itself:
 

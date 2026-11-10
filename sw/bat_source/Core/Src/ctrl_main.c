@@ -38,7 +38,7 @@ PID_controller_t ctrl_pi_10a_vlimit;
 _Static_assert(CTRL_PARAM_CHARGE_CV_RATE_HZ * STATEMACHINE_STEP_PERIOD_mS == 1000,
 		"CV loop runs at the statemachine tick");
 
-// Full-range 60V mode state, ISR-owned (ctrl_main_ctrl_voltage_wide()).
+// Full-range 60V mode state, ISR-owned (ctrl_voltage_wide()).
 static vout_region_t vout_region;
 static float vout_duty_prim; // last commanded, used to hand over between regions
 static float vout_duty_sek;
@@ -106,16 +106,16 @@ const ctrl_pid_entry_t ctrl_pid_table[CTRL_PID_TABLE_LEN] = { {
 		"10AVoltLimit", CTRL_FREQ }, };
 
 /******************* Function Prototypes **************************/
-static void ctrl_main_ctrl_voltage_buck(int32_t voltage_meas_mV,
+static void ctrl_voltage_buck(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate);
-static void ctrl_main_ctrl_current(int16_t current_meas_mA,
+static void ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate, int32_t voltage_meas_mV);
-static void ctrl_main_ctrl_charge_current(uint32_t target_mA,
+static void ctrl_charge_current(uint32_t target_mA,
 		int16_t current_meas_mA, int16_t current_bms_mA);
-static void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
+static void ctrl_voltage_hv(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA);
-static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas);
-static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas);
+static void ctrl_charge(const ADC_CONVERTED_DATA *meas);
+static void ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas);
 
 /* Start a limiter at its ceiling: from 0 it holds the duty back. */
 static inline void ctrl_limiter_arm(PID_controller_t *lim) {
@@ -156,28 +156,8 @@ void ctrl_main_init(void) {
 	ctrl_pi_10a_vlimit.ref = CTRL_PARAM_10A_COMPLIANCE_mV / 1000.0F;
 }
 
-/**
- * Maps a statemachine_modes_t to its ctrl_mode_t counterpart, via a
- * mode_table[] lookup - see mode_table.h/.c. The two enums are positionally
- * identical only up through ISOMETER and diverge after that
- * (STATEMACHINE_MODE_VOLTMETER=6 vs CTRL_MODE_CHARGE=6) - callers must go
- * through this instead of passing statemachine_handle.current_mode directly
- * to ctrl_main_start_ctrl(). Modes with no ctrl_mode_t counterpart
- * (AMPMETER, VOLTMETER, SETTINGS, SHUTDOWN, IDLE) correctly map to
- * CTRL_MODE_OFF, since none of them drive the control loop.
- * @param mode statemachine mode to translate.
- * @return the matching ctrl_mode_t, or CTRL_MODE_OFF if none applies (also
- *   the out-of-range/mode >= STATEMACHINE_MODE_RESERVED fallback).
- */
-ctrl_mode_t statemachine_mode_to_ctrl_mode(statemachine_modes_t mode) {
-	if (mode >= STATEMACHINE_MODE_RESERVED) {
-		return CTRL_MODE_OFF;
-	}
-	return mode_table[mode].ctrl_mode;
-}
-
 /* LV start of the full-range voltage loop (60V, EMI). */
-static void ctrl_main_start_voltage_wide(void) {
+static void ctrl_start_voltage_wide(void) {
 	ctrl_PID_reset(&ctrl_pi_voltage_buck);
 	ctrl_PID_reset(&ctrl_pi_voltage_4sw);
 	ctrl_PID_reset(&ctrl_pi_voltage_boost);
@@ -205,7 +185,7 @@ static void ctrl_main_start_voltage_wide(void) {
 }
 
 /* Resets the charge loops and peak tracking (both charge starts). */
-static void ctrl_main_charge_reset(void) {
+static void ctrl_charge_reset(void) {
 	ctrl_PID_reset(&ctrl_pi_voltage_buck);
 	ctrl_PID_reset(&ctrl_pi_charge_current);
 	ctrl_PID_reset(&ctrl_pi_charge_voltage);
@@ -216,9 +196,9 @@ static void ctrl_main_charge_reset(void) {
 
 /* CHARGE start: open-loop PRECHARGE boost (relay open, OUT_LV not
  * measurable), the ISR ramps PRIM/SEK from here. */
-static void ctrl_main_start_charge(void) {
+static void ctrl_start_charge(void) {
 	ctrl_main_apply_reference(CTRL_MODE_CHARGE, 0);
-	ctrl_main_charge_reset();
+	ctrl_charge_reset();
 	// The CC loop is NOT preloaded here: a preload with
 	// CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH would write SEK duty ~0, i.e.
 	// the maximum-current end. It is preloaded with the zero-current
@@ -239,7 +219,7 @@ static void ctrl_main_start_charge(void) {
 }
 
 /* 10A / RESISTANCE start: buck current loop with voltage limiter. */
-static void ctrl_main_start_current(void) {
+static void ctrl_start_current(void) {
 	ctrl_PID_reset(&ctrl_pi_voltage_buck);
 	ctrl_PID_reset(&ctrl_pi_current);
 	ctrl_PID_reset(&ctrl_pi_10a_vlimit);
@@ -257,7 +237,7 @@ static void ctrl_main_start_current(void) {
 }
 
 /* ISOMETER start: HV flyback voltage loop with current limiter. */
-static void ctrl_main_start_isometer(void) {
+static void ctrl_start_isometer(void) {
 	ctrl_PID_reset(&ctrl_pi_voltage_hv);
 	ctrl_PID_reset(&ctrl_pi_hv_iout_limit);
 	ctrl_limiter_arm(&ctrl_pi_hv_iout_limit);
@@ -269,25 +249,25 @@ static void ctrl_main_start_isometer(void) {
 void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	switch (mode) {
 	case CTRL_MODE_CHARGE:
-		ctrl_main_start_charge();
+		ctrl_start_charge();
 		break;
 	case CTRL_MODE_60V:
-		ctrl_main_start_voltage_wide();
+		ctrl_start_voltage_wide();
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
 		ctrl_main_apply_reference(mode, 0);
 		/* fall through */
 	case CTRL_MODE_10A:
-		ctrl_main_start_current();
+		ctrl_start_current();
 		break;
 	case CTRL_MODE_ISOMETER:
-		ctrl_main_start_isometer();
+		ctrl_start_isometer();
 		break;
 #ifdef EMI_DEBUG
 	case CTRL_MODE_EMI:
 		// LV side as in 60V; HV flyback open loop at a constant duty.
-		ctrl_main_start_voltage_wide();
+		ctrl_start_voltage_wide();
 		hrtim_set_freq(HRTIM_CHANNEL_HV, CTRL_PARAM_SW_FREQ_HV);
 		hrtim_set_duty(HRTIM_CHANNEL_HV, CTRL_PARAM_EMI_HV_DUTY);
 		hrtim_enable(HRTIM_CHANNEL_HV);
@@ -307,7 +287,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
  * from, and K1 is already closed (kept that way by the caller), so there is
  * no relay to wait for either -- starts directly in CC_RAMP. */
 void ctrl_main_start_ctrl_charge_low_current(void) {
-	ctrl_main_charge_reset();
+	ctrl_charge_reset();
 	ctrl_main_handle.current_reference_mA =
 			CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA;
 	ctrl_main_handle.voltage_reference_mV = CTRL_PARAM_CHARGE_END_VOLTAGE_mV;
@@ -383,22 +363,22 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
 #ifdef EMI_DEBUG
 	case CTRL_MODE_EMI: // HV runs open loop
 #endif
-		ctrl_main_ctrl_voltage_wide(meas);
+		ctrl_voltage_wide(meas);
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
-		ctrl_main_ctrl_voltage_buck(meas->v_out, meas->v_out);
+		ctrl_voltage_buck(meas->v_out, meas->v_out);
 		break;
 	case CTRL_MODE_10A:
-		ctrl_main_ctrl_current(meas->i_out, meas->i_out_ext_mA, meas->v_out);
+		ctrl_current(meas->i_out, meas->i_out_ext_mA, meas->v_out);
 
 		break;
 	case CTRL_MODE_ISOMETER:
-		ctrl_main_ctrl_voltage_hv(meas->v_hv, meas->v_term_ext_mv,
+		ctrl_voltage_hv(meas->v_hv, meas->v_term_ext_mv,
 				meas->i_iso_ext_uA);
 		break;
 	case CTRL_MODE_CHARGE:
-		ctrl_main_ctrl_charge(meas);
+		ctrl_charge(meas);
 		break;
 
 	case CTRL_MODE_OFF:
@@ -417,7 +397,7 @@ void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas) {
  * because this ISR touches none of them in CLOSE); CC_RAMP and CV are the
  * closed loops.
  */
-static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas) {
+static void ctrl_charge(const ADC_CONVERTED_DATA *meas) {
 	switch (ctrl_main_handle.charge_phase) {
 
 	case CHG_PHASE_PRECHARGE: {
@@ -467,7 +447,7 @@ static void ctrl_main_ctrl_charge(const ADC_CONVERTED_DATA *meas) {
 		}
 
 		// The CC loop runs in CV too, its target set by the CV loop.
-		ctrl_main_ctrl_charge_current(
+		ctrl_charge_current(
 				ctrl_main_handle.charge_phase == CHG_PHASE_CV ?
 						ctrl_main_handle.charge_cv_current_mA :
 						ctrl_main_handle.current_reference_mA,
@@ -510,7 +490,7 @@ void ctrl_main_charge_start_ramp(void) {
 	if (ctrl_main_handle.charge_phase != CHG_PHASE_CLOSE)
 		return;
 
-	// ctrl_main_ctrl_charge_current() ramps the reference with
+	// ctrl_charge_current() ramps the reference with
 	// ctrl_apply_ramped_ref(), which starts from whatever `ramp` holds;
 	// start_ctrl() leaves it at 0.2 for the other modes' soft start.
 	ctrl_main_handle.ramp = 0.0F;
@@ -602,11 +582,11 @@ void ctrl_main_apply_reference(ctrl_mode_t mode, uint16_t reference_poti_count) 
 }
 
 /*
- * Startup ramp shared by every ctrl_main_ctrl_*() control loop below.
+ * Startup ramp shared by every ctrl_*() control loop below.
  *
  * ctrl_main_handle.ramp is a SINGLE field, not one per controller: it is
  * zeroed once by ctrl_main_start_ctrl() and from then on incremented by
- * whichever ctrl_main_ctrl_*() function ctrl_main_ctrl()'s switch calls that
+ * whichever ctrl_*() function ctrl_main_ctrl()'s switch calls that
  * tick. Exactly one of those functions runs per control-loop tick, so a
  * shared counter is correct -- do NOT change this into a per-controller
  * ramp, and do not call this helper more than once per tick.
@@ -660,7 +640,7 @@ static void ctrl_apply_buck_burst(float duty) {
 	ctrl_main_handle.duty = duty * 1000;
 }
 
-static void ctrl_main_ctrl_voltage_buck(int32_t voltage_meas_mV,
+static void ctrl_voltage_buck(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV) {
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
 			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
@@ -704,7 +684,7 @@ static void ctrl_vout_write_leg(uint8_t channel, uint32_t *freq, uint8_t fast,
  * change over three ticks (vout_transition_step()), so no parked pulse runs
  * outside an idle block. The 1 A limiter caps the duty in every region.
  */
-static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
+static void ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_buck,
 			ctrl_main_handle.voltage_reference_mV / 1000.0F, 10.0F);
 	float ref_V = ctrl_pi_voltage_buck.ref;
@@ -842,7 +822,7 @@ static void ctrl_main_ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
  * @param current_meas_accurate External ADC current (I part).
  * @param voltage_meas_mV Fast internal v_out.
  */
-static void ctrl_main_ctrl_current(int16_t current_meas_mA,
+static void ctrl_current(int16_t current_meas_mA,
 		int16_t current_meas_accurate, int32_t voltage_meas_mV) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_current,
@@ -864,7 +844,7 @@ static void ctrl_main_ctrl_current(int16_t current_meas_mA,
  * @param current_meas_mA Internal current, positive = charging (P part).
  * @param current_bms_mA BMS battery current, positive = charging (I part).
  */
-static void ctrl_main_ctrl_charge_current(uint32_t target_mA,
+static void ctrl_charge_current(uint32_t target_mA,
 		int16_t current_meas_mA, int16_t current_bms_mA) {
 
 	// Reference 0 -> setpoint over CTRL_PARAM_CHARGE_RAMP_s (ramp starts at 0,
@@ -897,7 +877,7 @@ void ctrl_main_charge_cv_step(uint16_t cell_max_mV) {
 			(uint32_t) (ctrl_pi_charge_voltage.action * 1000.0F);
 }
 
-static void ctrl_main_ctrl_voltage_hv(int32_t voltage_meas_mV,
+static void ctrl_voltage_hv(int32_t voltage_meas_mV,
 		int32_t voltage_meas_accurate_mV, int32_t current_meas_iso_uA) {
 
 	ctrl_apply_ramped_ref(&ctrl_pi_voltage_hv,

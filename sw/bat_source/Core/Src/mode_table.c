@@ -10,13 +10,13 @@
 #include "aux_io_ctrl.h"
 #include "adc.h"
 
-const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
+static const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
 
     /* Never actually reached through statemachine_switchfromIdle() (it isn't
      * a selectable menu entry and is instead special-cased there, redirecting
      * to statemachine_switchtoIdle()) - aux_io_mask/ctrl_mode are still real,
      * used by aux_io_ctrl_set_config(STATEMACHINE_IDLE) (called directly from
-     * statemachine_switchtoIdle()) and by the statemachine_mode_to_ctrl_mode()
+     * statemachine_switchtoIdle()) and by the mode_table_ctrl_mode()
      * lookup while current_mode == STATEMACHINE_IDLE. */
     [STATEMACHINE_IDLE] = {
         .ctrl_mode   = CTRL_MODE_OFF,
@@ -181,3 +181,12 @@ const mode_descriptor_t mode_table[STATEMACHINE_MODE_RESERVED] = {
         .adc_trigger = ADC_TRIGGER_NONE,
     },
 };
+
+const mode_descriptor_t *mode_table_get(statemachine_modes_t mode) {
+    return (mode < STATEMACHINE_MODE_RESERVED) ? &mode_table[mode] : NULL;
+}
+
+ctrl_mode_t mode_table_ctrl_mode(statemachine_modes_t mode) {
+    const mode_descriptor_t *d = mode_table_get(mode);
+    return d ? d->ctrl_mode : CTRL_MODE_OFF;
+}

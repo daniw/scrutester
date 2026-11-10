@@ -979,16 +979,17 @@ void adc_start(void){
 // the conversion result belongs to.
 static statemachine_modes_t adc_injected_mode = STATEMACHINE_IDLE;
 
-// Applies mode_table[mode].adc_trigger to the shared hadc1..4 ExternalTrigConv
+// Applies mode_table_get(mode)->adc_trigger to the shared hadc1..4 ExternalTrigConv
 // field. ADC_TRIGGER_NONE means "leave the shared trigger as the previous
 // mode left it", which is correct for the passive/idle modes that do not
 // drive a converter (they read channels hadc1 samples continuously anyway). Every
 // mode that runs a control loop names its converter's trigger explicitly.
 static void adc_apply_shared_trigger(statemachine_modes_t mode) {
-	if (mode >= STATEMACHINE_MODE_RESERVED) {
+	const mode_descriptor_t *d = mode_table_get(mode);
+	if (d == NULL) {
 		return;
 	}
-	uint32_t trigger = mode_table[mode].adc_trigger;
+	uint32_t trigger = d->adc_trigger;
 	if (trigger == ADC_TRIGGER_NONE) {
 		return;
 	}

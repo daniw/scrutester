@@ -179,7 +179,7 @@ void statemachine_set_setpoint(uint16_t count) {
 }
 
 static void statemachine_apply_encoder_setpoint(void) {
-	ctrl_mode_t cmode = statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode);
+	ctrl_mode_t cmode = mode_table_ctrl_mode(statemachine_handle.current_mode);
 	uint16_t poti_reference = (uint16_t) input_encoder_read_clamped(
 			&encoder_setpoint_clamp, 0, ctrl_main_poti_max(cmode));
 	ctrl_main_apply_reference(cmode, poti_reference);
@@ -349,7 +349,7 @@ static void statemachine_step_calibration(void) {
 		float reference_value = input_encoder_read()
 				* CALIBRATION_REFERENCE_STEP[calibration_selected_channel];
 		display_calibration_update(calibration_selected_channel, 2, reference_value);
-		if (ok_button_pressed == 1) {
+		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 			if (calibration_set_gain(calibration_selected_channel, reference_value)
 					== CALIBRATION_STATUS_OK) {
 				calibration_ui_state = 0;
@@ -376,7 +376,7 @@ static void statemachine_step_calibration(void) {
 /** @brief Protection trip/recovery for the current mode. */
 static void statemachine_protection_step(void) {
 	uint8_t protection_error = protection_get_worst_level() == PROTECTION_LEVEL_ERROR;
-	if (statemachine_mode_to_ctrl_mode(statemachine_handle.current_mode) != CTRL_MODE_OFF) {
+	if (mode_table_ctrl_mode(statemachine_handle.current_mode) != CTRL_MODE_OFF) {
 		if (protection_error) {
 			if (!statemachine_handle.protection_forced_output_off) {
 				protection_trip_text = protection_error_text();
@@ -436,7 +436,7 @@ static void statemachine_buttons_update(void) {
 
 	if ((!statemachine_handle.protection_forced_output_off)
 			&& (input_btn_out())) {
-		if (out_button_pressed < 2)
+		if (out_button_pressed != STATEMACHINE_BUTTON_PRESSED)
 			out_button_pressed += 1;
 	} else
 		out_button_pressed = 0;
@@ -523,15 +523,15 @@ static void statemachine_output_step(void) {
 		statemachine_clear_mode_error();
 		statemachine_handle.output_on = 1;
 		ctrl_main_start_ctrl(
-				statemachine_mode_to_ctrl_mode(
+				mode_table_ctrl_mode(
 						statemachine_handle.current_mode));
 		aux_io_ctrl_manual_set_io(
-				mode_table[statemachine_handle.current_mode].enable_gpio,
+				mode_table_get(statemachine_handle.current_mode)->enable_gpio,
 				1);
 	} else if (out_button_pressed == STATEMACHINE_BUTTON_RELEASED) {
 		statemachine_handle.output_on = 0;
 		aux_io_ctrl_manual_set_io(
-				mode_table[statemachine_handle.current_mode].enable_gpio,
+				mode_table_get(statemachine_handle.current_mode)->enable_gpio,
 				0);
 		ctrl_main_stop_control();
 	}
@@ -806,7 +806,7 @@ static void statemachine_step_emi(void) {
 	// held), so a held button toggles once. It is also forced to 0 while a
 	// protection fault holds the converters off, and output_on is already 0
 	// then, so a fault ends the run and a fresh press is needed afterwards.
-	if (out_button_pressed == 1) {
+	if (out_button_pressed == STATEMACHINE_BUTTON_CLICK) {
 		if (statemachine_handle.output_on) {
 			statemachine_emi_stop();
 		} else if (!statemachine_handle.protection_forced_output_off) {
@@ -1076,7 +1076,7 @@ static void statemachine_charge_reset_timers(void) {
  * @param error 1 = shown as error (red).
  */
 static void statemachine_charge_finish(const char *msg, uint8_t error) {
-	aux_io_ctrl_manual_set_io(mode_table[STATEMACHINE_MODE_CHARGE].enable_gpio, 0);
+	aux_io_ctrl_manual_set_io(mode_table_get(STATEMACHINE_MODE_CHARGE)->enable_gpio, 0);
 	ctrl_main_stop_control();
 	aux_io_ctrl_set_config(STATEMACHINE_IDLE,
 			bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV);
@@ -1123,7 +1123,7 @@ static uint8_t statemachine_enter_charge(uint8_t recovery) {
 		ctrl_main_start_ctrl_charge_low_current();  // straight to CC_RAMP
 	else
 		ctrl_main_start_ctrl(CTRL_MODE_CHARGE);     // PRECHARGE
-	aux_io_ctrl_manual_set_io(mode_table[STATEMACHINE_MODE_CHARGE].enable_gpio, 1);
+	aux_io_ctrl_manual_set_io(mode_table_get(STATEMACHINE_MODE_CHARGE)->enable_gpio, 1);
 	statemachine_handle.output_on = 1;
 
 	if (recovery) {
@@ -1151,13 +1151,13 @@ static uint8_t statemachine_enter_charge(uint8_t recovery) {
  * rationale and mode_table.c for the per-mode data. Only ever invoked
  * from case labels naming a real mode, so mode is always
  * < STATEMACHINE_MODE_RESERVED here -- the check below is pure
- * defense-in-depth for mode_table[]'s indexing contract, not a reachable
+ * defense-in-depth for mode_table_get()'s contract, not a reachable
  * path. */
 static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
-	if (mode >= STATEMACHINE_MODE_RESERVED) {
+	const mode_descriptor_t *d = mode_table_get(mode);
+	if (d == NULL) {
 		return;
 	}
-	const mode_descriptor_t *d = &mode_table[mode];
 
 	if (d->flags & MODE_F_LED_OUT_ON)
 		ui_ctrl_ledOutOn();

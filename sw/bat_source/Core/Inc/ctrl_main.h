@@ -94,7 +94,6 @@ uint16_t ctrl_main_poti_max(ctrl_mode_t mode);
 /* Setpoint step per encoder count (60V/EMI, 10A) */
 #define CTRL_MAIN_MV_PER_COUNT 500
 #define CTRL_MAIN_MA_PER_COUNT 100
-ctrl_mode_t statemachine_mode_to_ctrl_mode(statemachine_modes_t mode);
 
 /* CHARGE phase hand-offs, main context only (see charge_seq.h). Both require
  * the ISR to be parked in CHG_PHASE_CLOSE and do nothing otherwise. */
