@@ -1143,13 +1143,31 @@ static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
 	display_enter_mode(mode);
 }
 
+/* Shared tail of every mode entry: the next mode starts at setpoint 0
+ * (EMI: its default). */
+static void statemachine_entry_tail(statemachine_modes_t mode) {
+	input_encoder_reset(0);
+	input_encoder_wrap_reset(&list_wrap, 0); // Settings list starts at the top
+	(void) mode; // only used by EMI_DEBUG
+	int32_t clamp_start = 0;
+#ifdef EMI_DEBUG
+	// EMI starts at its default setpoint instead of 0 V, so the first OUT
+	// press runs the intended test without dialling up first.
+	if (mode == STATEMACHINE_MODE_EMI)
+		clamp_start = CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV / CTRL_MAIN_MV_PER_COUNT;
+#endif
+	input_encoder_clamp_reset(&encoder_setpoint_clamp, clamp_start);
+	inactivity_ticks = 0;
+}
+
 void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	printf("Switch from Idle to %d\r\n", mode);
 
 	switch (mode) {
 	case STATEMACHINE_IDLE:
+		// return: the tail would reset the encoder and drop keep-K1-closed.
 		statemachine_switchtoIdle();
-		break;
+		return;
 
 	case STATEMACHINE_MODE_AMPMETER:
 		// Shoot-through on the SEK half-bridge is only safe if there's no
@@ -1164,14 +1182,6 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
         /* fall through */
 	case STATEMACHINE_MODE_ISOMETER:
 	case STATEMACHINE_MODE_VOLTMETER:
-		// Disable isometer and voltmeter on device #0006, due to welded relay.
-		/*if (config_store.hardware_data.serial_number == 6) {
-			if (mode == STATEMACHINE_MODE_ISOMETER || mode == STATEMACHINE_MODE_VOLTMETER) {
-				printf("Unable to switch to %d due to welded relay, returning to Idle\r\n", mode);
-				return;
-			}
-		}*/
-        /* fall through */
 #ifdef EMI_DEBUG
 	case STATEMACHINE_MODE_EMI:
 #endif
@@ -1182,12 +1192,14 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_STOPWATCH:
 		aux_io_ctrl_set_config(mode, 0); // relays before the converter starts
 		statemachine_enter_mode_generic(mode);
-		break;
+		statemachine_entry_tail(mode);
+		return;
 
 	case STATEMACHINE_MODE_CHARGE:
 		if (!statemachine_enter_charge(0))
 			return; // refused: skip the shared tail, like AMPMETER above
-		break;
+		statemachine_entry_tail(mode); // relays already set by the entry
+		return;
 
 	case STATEMACHINE_MODE_SETTINGS:
 		statemachine_handle.current_mode = mode;
@@ -1204,18 +1216,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		break;
 	}
 	aux_io_ctrl_set_config(mode, 0);
-	input_encoder_reset(0);
-	input_encoder_wrap_reset(&list_wrap, 0); // Settings list starts at the top
-	int32_t clamp_start = 0;
-#ifdef EMI_DEBUG
-	// EMI starts at its default setpoint instead of 0 V, so the first OUT
-	// press runs the intended test without dialling up first.
-	if (mode == STATEMACHINE_MODE_EMI)
-		clamp_start = CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV / CTRL_MAIN_MV_PER_COUNT;
-#endif
-	input_encoder_clamp_reset(&encoder_setpoint_clamp, clamp_start);
-	inactivity_ticks = 0;
-
+	statemachine_entry_tail(mode);
 }
 
 /**
