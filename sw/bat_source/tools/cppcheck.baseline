@@ -11,16 +11,16 @@ Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as 
 Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
 Core/Src/bq76905.c: constParameterPointer:Parameter 'handle' can be declared as pointer to const
 Core/Src/cli.c: arrayIndexThenCheck:Array index 'number_of_args' is used before limits check.
-Core/Src/cli.c: duplicateCondition:The if condition is the same as the previous if condition
-Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
-Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
-Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
-Core/Src/cli.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
-Core/Src/cli.c: unreadVariable:Variable 'reg_prot' is assigned a value that is never used.
-Core/Src/cli.c: unreadVariable:Variable 'reg_status' is assigned a value that is never used.
-Core/Src/cli.c: unreadVariable:Variable 'test_read_block_nof_bytes' is assigned a value that is never used.
 Core/Src/cli.c: unusedVariable:Unused variable: pin
 Core/Src/cli.c: variableScope:The scope of the variable 'led_current' can be reduced.
+Core/Src/cli_flash_test.c: duplicateCondition:The if condition is the same as the previous if condition
+Core/Src/cli_flash_test.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
+Core/Src/cli_flash_test.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
+Core/Src/cli_flash_test.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
+Core/Src/cli_flash_test.c: knownConditionTrueFalse:Condition 'status==W25N01GV_OK' is always true
+Core/Src/cli_flash_test.c: unreadVariable:Variable 'reg_prot' is assigned a value that is never used.
+Core/Src/cli_flash_test.c: unreadVariable:Variable 'reg_status' is assigned a value that is never used.
+Core/Src/cli_flash_test.c: unreadVariable:Variable 'test_read_block_nof_bytes' is assigned a value that is never used.
 Core/Src/config_store.c: constParameterPointer:Parameter 'block' can be declared as pointer to const
 Core/Src/config_store.c: invalidPrintfArgType_uint:%u in format string (no. 2) requires 'unsigned int' but the argument type is 'signed int'.
 Core/Src/config_store.c: invalidPrintfArgType_uint:%u in format string (no. 2) requires 'unsigned int' but the argument type is 'signed int'.
