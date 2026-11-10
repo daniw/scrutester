@@ -495,6 +495,9 @@ void display_vtimer_update(display_vt_view_t view, stopwatch_vt_kind_t kind,
 /* Resistance 1A / 1mA                                                     */
 /* ---------------------------------------------------------------------- */
 
+#define RES_UPDATE_MS 500 // 2 Hz display update
+static uint32_t res_last_ms;
+
 static void enter_resistance(statemachine_modes_t mode) {
 	const menu_entry_t *entry = menu_entry_for_mode(mode);
 	if (entry == NULL)
@@ -505,6 +508,7 @@ static void enter_resistance(statemachine_modes_t mode) {
 	const char *unit =
 			(mode == STATEMACHINE_MODE_RESISTANCE_1A) ? "mOhm" : "Ohm";
 
+	res_last_ms = HAL_GetTick() - RES_UPDATE_MS; // draw on the first update
 	draw_status_bar(menu_name_for_mode(mode), entry->accent);
 	draw_output_border(entry->accent, 1);
 	draw_footer("ESC: Back", 0);
@@ -515,6 +519,9 @@ static void enter_resistance(statemachine_modes_t mode) {
 }
 
 static void update_resistance(statemachine_modes_t mode) {
+	if (HAL_GetTick() - res_last_ms < RES_UPDATE_MS)
+		return;
+	res_last_ms = HAL_GetTick();
 	/* The two modes read different fields with different over-range
 	 * semantics (see adc_convert_data() in adc.c):
 	 *  - RESISTANCE_1A/Milliohmmeter: r_mOhmx10 is UINT32_MAX when the
@@ -543,8 +550,8 @@ static void update_resistance(statemachine_modes_t mode) {
 		snprintf(text, sizeof(text), "%4u.%01u", (unsigned) (ohm_x10 / 10),
 				(unsigned) (ohm_x10 % 10));
 	}
-	// ToDo: Remove/mask Debug Values using a define DEBUG
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
+#ifdef UI_DEBUG
 	if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
 		/* Milliohmmeter: Take V_sense */
 		snprintf(text, sizeof(text), "V_sense = %d uV     ",
@@ -566,6 +573,7 @@ static void update_resistance(statemachine_modes_t mode) {
 				(int) adc_data.converted.i_out_ext_mA_filt);
 	}
 	LCD_PutStr(16, SECOND_Y + 18, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
+#endif
 }
 
 /* ---------------------------------------------------------------------- */

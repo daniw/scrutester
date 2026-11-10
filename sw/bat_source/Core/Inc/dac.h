@@ -85,12 +85,10 @@ void dac_sqwave_stop(void);
 void dac_sqwave_tick(void);
 
 /**
-  * Returns whether the square wave started by dac_sqwave_start() is
-  * currently in its "high" (test-current-on) half-cycle. Always 0 if the
-  * square wave isn't running.
-  * @return 1 if currently in the "on"/high phase, 0 otherwise
+  * Time since the square wave went "high" (test current on).
+  * @return ms since the rising edge, 0 while low or not running.
   */
-uint8_t dac_sqwave_is_high(void);
+uint32_t dac_sqwave_high_ms(void);
 
 /* USER CODE END Prototypes */
 

@@ -25,6 +25,7 @@
 static volatile uint32_t sqwave_channel;
 static volatile uint8_t sqwave_enabled;
 static volatile uint8_t sqwave_phase;
+static volatile uint32_t sqwave_high_tick; // HAL_GetTick() of the last rising edge
 static volatile uint16_t sqwave_high_value;
 /* USER CODE END 0 */
 
@@ -222,17 +223,20 @@ void dac_sqwave_tick(void)
 		return;
 	}
 	sqwave_phase = !sqwave_phase;
+	if (sqwave_phase)
+		sqwave_high_tick = HAL_GetTick();
 	HAL_DAC_SetValue(&hdac1, sqwave_channel, DAC_ALIGN_12B_R, sqwave_phase ? sqwave_high_value : 0);
 }
 
 /**
-  * Returns whether the square wave is currently in its "high" (on) phase.
-  * Always 0 if not running (dac_sqwave_stop() was called, or
-  * dac_sqwave_start() never was). See dac_sqwave_tick() for phase semantics.
+  * Time since the square wave went "high" (on).
+  * @return ms since the rising edge, 0 while low or not running.
   */
-uint8_t dac_sqwave_is_high(void)
+uint32_t dac_sqwave_high_ms(void)
 {
-	return sqwave_enabled && sqwave_phase;
+	if (!sqwave_enabled || !sqwave_phase)
+		return 0;
+	return HAL_GetTick() - sqwave_high_tick;
 }
 
 /* USER CODE END 1 */

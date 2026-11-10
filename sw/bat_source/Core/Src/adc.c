@@ -1213,42 +1213,46 @@ void adc_convert_data(void){
 
 	//// Calculate resistance
 	// RESISTANCE_1A drives the ~1A test current as a 1Hz/50% duty pulse
-	// (dac_sqwave_start(), started in statemachine_switchfromIdle()), so
-	// i_out_ext_mA is only a valid, settled ~1A reading during the pulse's
-	// "high" half - during "low" it's near-zero/noise, and a fresh ratio
-	// computed from it is garbage. While in RESISTANCE_1A, gate the
-	// calculation to the "high" phase and hold the last good values through
-	// "low" instead of overwriting them. Any other mode (notably
-	// RESISTANCE_1mA/Ohmmeter, which uses a continuous, unpulsed reference)
-	// keeps the original unconditional, per-tick computation unchanged.
-	if (adc_injected_mode != STATEMACHINE_MODE_RESISTANCE_1A || dac_sqwave_is_high()) {
-		if (adc_data.converted.i_out_ext_mA > 0) {
-			uint32_t r_mOhmx10_raw = adc_ratio_x10(adc_data.converted.v_sens_ext_uv, adc_data.converted.i_out_ext_mA);
-			if (adc_injected_mode == STATEMACHINE_MODE_RESISTANCE_1A) {
-				if (adc_data.r_mOhmx10 == UINT32_MAX) {
-					// No valid filter history yet - seed with the fresh
-					// sample instead of blending with the sentinel.
-					adc_data.r_mOhmx10 = r_mOhmx10_raw;
+	// (dac_sqwave_start()): only samples ADC_R_SETTLE_ms after the rising
+	// edge count, the last values are held through "low". Other modes
+	// (RESISTANCE_1mA: continuous reference) use every tick. Ratio of
+	// ADC_R_AVG_N summed samples -> resistance updates at 10 Hz.
+	static int32_t r_sum_vs_uv, r_sum_vt_mv, r_sum_i_mA;
+	static uint8_t r_n;
+	if (adc_injected_mode != STATEMACHINE_MODE_RESISTANCE_1A
+			|| dac_sqwave_high_ms() > ADC_R_SETTLE_ms) {
+		r_sum_vs_uv += adc_data.converted.v_sens_ext_uv;
+		r_sum_vt_mv += adc_data.converted.v_term_ext_mv;
+		r_sum_i_mA += adc_data.converted.i_out_ext_mA;
+		if (++r_n >= ADC_R_AVG_N) {
+			if (r_sum_i_mA > 0) {
+				uint32_t r_mOhmx10_raw = adc_ratio_x10(r_sum_vs_uv, r_sum_i_mA);
+				if (adc_injected_mode == STATEMACHINE_MODE_RESISTANCE_1A) {
+					// Seed without history, else one-pole low-pass
+					// (ADC_R_MOHM_FILT_ALPHA).
+					if (adc_data.r_mOhmx10 == UINT32_MAX)
+						adc_data.r_mOhmx10 = r_mOhmx10_raw;
+					else
+						adc_data.r_mOhmx10 = (uint32_t) (ADC_R_MOHM_FILT_ALPHA * r_mOhmx10_raw
+								+ (1.0f - ADC_R_MOHM_FILT_ALPHA) * adc_data.r_mOhmx10);
+					if (adc_data.r_mOhmx10 > ADC_R_MOHMX10_MAX_VALUE)
+						adc_data.r_mOhmx10 = UINT32_MAX;
 				} else {
-					// One-pole low-pass, fc ~= 2Hz @ 50Hz - see
-					// ADC_R_MOHM_FILT_ALPHA.
-					adc_data.r_mOhmx10 = (uint32_t) (ADC_R_MOHM_FILT_ALPHA * r_mOhmx10_raw
-							+ (1.0f - ADC_R_MOHM_FILT_ALPHA) * adc_data.r_mOhmx10);
+					adc_data.r_mOhmx10 = r_mOhmx10_raw;
 				}
-				if(adc_data.r_mOhmx10>ADC_R_MOHMX10_MAX_VALUE)
-					adc_data.r_mOhmx10 = UINT32_MAX;
+				adc_data.r_Ohmx10 = adc_ratio_x10(r_sum_vt_mv, r_sum_i_mA);
 			} else {
-				adc_data.r_mOhmx10 = r_mOhmx10_raw;
+				adc_data.r_mOhmx10 = UINT32_MAX;
+				adc_data.r_Ohmx10 = UINT32_MAX;
 			}
-			adc_data.r_Ohmx10 = adc_ratio_x10(adc_data.converted.v_term_ext_mv, adc_data.converted.i_out_ext_mA);
+			r_sum_vs_uv = r_sum_vt_mv = r_sum_i_mA = 0;
+			r_n = 0;
 		}
-		else {
-			adc_data.r_mOhmx10 = UINT32_MAX;
-			adc_data.r_Ohmx10 = UINT32_MAX;
-		}
+	} else {
+		// Pulse low: drop the partial block, hold the last values.
+		r_sum_vs_uv = r_sum_vt_mv = r_sum_i_mA = 0;
+		r_n = 0;
 	}
-	// else: RESISTANCE_1A, pulse currently "low" - hold last computed
-	// r_mOhmx10/r_Ohmx10 rather than recompute from a near-zero current.
 
 	// Calculate / Estimate Temperatures
 	 adc_data.converted.temp_trafo   =  temp_deg_int(adc_data.raw.temp_trafo   >> 4);

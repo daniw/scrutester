@@ -50,11 +50,14 @@ extern ADC_HandleTypeDef hadc5;
 
 
 
-// One-pole low-pass for the milliohm reading (r_mOhmx10), used only while
-// RESISTANCE_1A is active (see adc_convert_data()) - fc ~= 2Hz at the 50Hz
-// statemachine_step() tick rate the gated samples arrive at (Ts = 20ms):
-// alpha = 1 - exp(-2*pi*fc*Ts) = 1 - exp(-2*pi*2*0.02) ~= 0.2222
-#define ADC_R_MOHM_FILT_ALPHA 0.2222f
+// One-pole low-pass for the milliohm reading (r_mOhmx10), RESISTANCE_1A only
+// (see adc_convert_data()), run per ADC_R_AVG_N block (10 Hz): fc ~= 1.1 Hz.
+#define ADC_R_MOHM_FILT_ALPHA 0.5f
+// Samples (50 Hz ticks) summed per resistance update: 10 Hz.
+#define ADC_R_AVG_N 5
+// RESISTANCE_1A: samples ignored this long after the pulse's rising edge
+// (test current still settling).
+#define ADC_R_SETTLE_ms 100
 // One-pole low-pass for the displayed/printed ext ADC values (*_filt), run
 // in adc_snapshot_converted() at 50 Hz: fc ~= 2 Hz, same alpha as above.
 #define ADC_EXT_FILT_ALPHA 0.2222f
