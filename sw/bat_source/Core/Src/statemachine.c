@@ -1214,7 +1214,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		// significant voltage across it already - refuse to enter otherwise.
 		// return (not break) so the shared tail below doesn't reconfigure
 		// the relays for a mode we just refused to actually enter.
-		if (adc_data.converted.v_term >= 500) { // mV
+		if (adc_data.converted.v_term_ext_mv_filt >= 500) { // ext ADC: internal v_term too noisy
 			printf("Unable to switch to %d, voltage present at terminals, returning to Idle\r\n", mode);
 			display_show_idle_error("ERROR: Remove external Voltage");
 			return;
