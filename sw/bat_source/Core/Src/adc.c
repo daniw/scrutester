@@ -1197,11 +1197,11 @@ void adc_snapshot_converted(void) {
 
 /**
  * @brief  10 * num / den for the resistance readings.
- * @return UINT32_MAX without current (den <= 0), 0 for a negative num (offset noise).
+ * @param den must be > 0 (callers check the current).
+ * @return 0 for a negative num (offset noise).
  */
 static uint32_t adc_ratio_x10(int32_t num, int32_t den)
 {
-	if (den <= 0) return UINT32_MAX;
 	if (num <= 0) return 0;
 	return (uint32_t) (10 * (int64_t) num / den);
 }
