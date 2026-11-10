@@ -99,34 +99,6 @@ static ovp_state_t ovp_state;
 static uint8_t ovp_attempts;
 static uint8_t ovp_wait;
 
-#define STATEMACHINE_BUTTON_RELEASED 0
-#define STATEMACHINE_BUTTON_CLICK 1
-#define STATEMACHINE_BUTTON_PRESSED 2
-
-// Raw encoder count as of the last tick, to detect movement independently of
-// what any given mode does with it (menu index, setpoint, calibration
-// selection, ...) -- see statemachine_step().
-static uint16_t last_raw_encoder;
-
-void statemachine_switchfromIdle(statemachine_modes_t mode);
-void statemachine_switchtoIdle(void);
-static void statemachine_apply_encoder_setpoint(void);
-static void statemachine_step_calibration(void);
-static void statemachine_step_service_pin(void);
-static void statemachine_enter_mode_generic(statemachine_modes_t mode);
-static uint8_t statemachine_enter_charge(uint8_t recovery);
-static void statemachine_step_charge(void);
-static uint8_t statemachine_step_stopwatch(void);
-static uint8_t statemachine_step_voltmeter(void);
-#ifdef EMI_DEBUG
-static void statemachine_step_emi(void);
-#endif
-static void statemachine_charge_lockout(void);
-static void statemachine_charge_reset_timers(void);
-static void statemachine_charge_finish(const char *msg, uint8_t error);
-static void statemachine_clear_mode_error(void);
-static uint8_t statemachine_ovp_lockout(void);
-
 /* Service entries unlocked (RAM only, cleared by reset/power-off). */
 static uint8_t service_unlocked;
 static uint8_t pin_digits[4];
@@ -140,6 +112,28 @@ static input_encoder_wrap_t list_wrap;  // Settings list and calibration channel
  * 2=optional gain step (see display_calibration_enter/update()). */
 static uint8_t calibration_ui_state = 0;
 static calibration_channel_t calibration_selected_channel = CAL_CH_V_TERM;
+
+// Raw encoder count as of the last tick, to detect movement independently of
+// what any given mode does with it (menu index, setpoint, calibration
+// selection, ...) -- see statemachine_step().
+static uint16_t last_raw_encoder;
+
+#define STATEMACHINE_BUTTON_RELEASED 0
+#define STATEMACHINE_BUTTON_CLICK 1
+#define STATEMACHINE_BUTTON_PRESSED 2
+
+// Forward declarations (used before their definition).
+static uint8_t statemachine_enter_charge(uint8_t recovery);
+static void statemachine_step_charge(void);
+static uint8_t statemachine_step_stopwatch(void);
+static uint8_t statemachine_step_voltmeter(void);
+#ifdef EMI_DEBUG
+static void statemachine_step_emi(void);
+#endif
+static void statemachine_charge_lockout(void);
+static void statemachine_charge_finish(const char *msg, uint8_t error);
+static void statemachine_clear_mode_error(void);
+static uint8_t statemachine_ovp_lockout(void);
 
 /* Encoder-dialed reference value step per channel (in the channel's native
  * unit) for the optional gain calibration step. V_TERM/I_OUT reuse the same
