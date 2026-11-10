@@ -862,105 +862,35 @@ uint8_t statemachine_charge_test_advance(void) {
 }
 #endif /* CHARGE_DEBUG */
 
-/* Per-tick CHARGE handling: phase sequencing (charge_seq.h), debug output and
- * the exit conditions. Runs from statemachine_step()'s CHARGE case. */
-static void statemachine_step_charge(void) {
-	if (charge_done)
-		return; // finished screen is static, ESC / auto power-off end it
-
-	display_update_mode(statemachine_handle.current_mode,
-			statemachine_handle.output_on);
-
-	// Phase sequencing. Not while a protection fault has the converter forced
-	// off: control is stopped then, and the recovery branch at the top of
-	// statemachine_step() ends CHARGE once the fault clears.
-	if (!statemachine_handle.protection_forced_output_off) {
-		charge_seq_in_t in = {
-			.isr_phase = ctrl_main_handle.charge_phase,
-			.ref_mA = ctrl_main_charge_reference_mA(),
-			.charge_mA = -adc_data.converted.i_out_ext_mA,
-		};
-		switch (charge_seq_step(&charge_seq, &in, STATEMACHINE_STEP_PERIOD_mS)) {
-		case CHG_ACT_CLOSE_RELAY:
-			// The relays are normally closed: OUT_SEL_HV low = K1 closed, which
-			// connects the converter output to the charger. The hand-over
-			// steps the SEK duty to the zero-current duty at the same moment,
-			// so OUT_LV is already at the charger voltage when the contacts
-			// meet (and the current loop starts from ~0 A).
-			aux_io_ctrl_manual_set_io(GPIO_OUT_SEL_HV, 0);
-			ctrl_main_charge_handover(adc_data.converted.v_in,
-					adc_data.converted.v_term_ext_mv);
-#ifdef CHARGE_DEBUG
-			printf("CHARGE: precharge done (V_IN=%ldmV, V_TERM=%ldmV), relay closing\r\n",
-					adc_data.converted.v_in, adc_data.converted.v_term_ext_mv);
-#endif
-			break;
-		case CHG_ACT_START_RAMP:
-			ctrl_main_charge_start_ramp();
-#ifdef CHARGE_DEBUG
-			printf("CHARGE: relay settled, current ramp started\r\n");
-#endif
-			break;
-		case CHG_ACT_ABORT_STUCK_OPEN:
-			printf("CHARGE exit: no charge current although the reference is up "
-					"(relay stuck open, or charger gone)\r\n");
-			statemachine_charge_lockout();
-			statemachine_switchtoIdle();
-			return;
-		case CHG_ACT_NONE:
-		default:
-			break;
-		}
-
-#ifdef CHARGE_DEBUG
-		if (charge_seq_awaiting_advance(&charge_seq)) {
-			if (!charge_await_notified) {
-				charge_await_notified = 1;
-				printf("CHARGE: precharge complete, holding (relay still open) "
-						"-- send 'chargeNext' to close it and start the current ramp\r\n");
-			}
+/** @brief Deep-discharge recovery: steps the reference back up once CUV clears. */
+static void statemachine_charge_recovery_ramp(void) {
+	// Deep-discharge recovery: once the BMS clears CUV, ramp the current
+	// reference from the reduced recovery target back up to the normal
+	// one, in place -- K1 never opened, so no relay recycle or restart
+	// is needed. ctrl_main_handle.ramp (the ISR's own start-of-charge
+	// ramp) is already saturated past 1.0 by now, so it won't do this on
+	// its own -- this steps current_reference_mA directly, once per 20ms
+	// tick, over CTRL_PARAM_CHARGE_RAMP_s.
+	if (charge_seq.low_current_recovery
+			&& !(bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)) {
+		uint32_t step_mA = (uint32_t) ((CTRL_PARAM_CHARGE_CURRENT_mA
+				- CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA)
+				* STATEMACHINE_STEP_PERIOD_mS / (CTRL_PARAM_CHARGE_RAMP_s * 1000.0F));
+		if (step_mA == 0)
+			step_mA = 1; // guard against a ramp time too short for this current delta
+		if (ctrl_main_handle.current_reference_mA + step_mA >= CTRL_PARAM_CHARGE_CURRENT_mA) {
+			ctrl_main_handle.current_reference_mA = CTRL_PARAM_CHARGE_CURRENT_mA;
+			charge_seq.low_current_recovery = 0;
+			printf("CHARGE: BMS undervoltage cleared, ramped to full current\r\n");
 		} else {
-			charge_await_notified = 0;
-		}
-#endif
-
-		// Deep-discharge recovery: once the BMS clears CUV, ramp the current
-		// reference from the reduced recovery target back up to the normal
-		// one, in place -- K1 never opened, so no relay recycle or restart
-		// is needed. ctrl_main_handle.ramp (the ISR's own start-of-charge
-		// ramp) is already saturated past 1.0 by now, so it won't do this on
-		// its own -- this steps current_reference_mA directly, once per 20ms
-		// tick, over CTRL_PARAM_CHARGE_RAMP_s.
-		if (charge_seq.low_current_recovery
-				&& !(bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)) {
-			uint32_t step_mA = (uint32_t) ((CTRL_PARAM_CHARGE_CURRENT_mA
-					- CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA)
-					* STATEMACHINE_STEP_PERIOD_mS / (CTRL_PARAM_CHARGE_RAMP_s * 1000.0F));
-			if (step_mA == 0)
-				step_mA = 1; // guard against a ramp time too short for this current delta
-			if (ctrl_main_handle.current_reference_mA + step_mA >= CTRL_PARAM_CHARGE_CURRENT_mA) {
-				ctrl_main_handle.current_reference_mA = CTRL_PARAM_CHARGE_CURRENT_mA;
-				charge_seq.low_current_recovery = 0;
-				printf("CHARGE: BMS undervoltage cleared, ramped to full current\r\n");
-			} else {
-				ctrl_main_handle.current_reference_mA += step_mA;
-			}
+			ctrl_main_handle.current_reference_mA += step_mA;
 		}
 	}
-
-	uint16_t cell_min = 0xFFFF;
-	uint16_t cell_max = 0;
-	for (uint8_t i = 0; i < BQ76905_PACK_CELL_COUNT; i++) {
-		if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
-			cell_max = bms.CellVoltageRegisters.CellVoltages[i];
-		}
-		if (bms.CellVoltageRegisters.CellVoltages[i] < cell_min) {
-			cell_min = bms.CellVoltageRegisters.CellVoltages[i];
-		}
-	}
-	ctrl_main_charge_cv_step(cell_max);
+}
 
 #ifdef CHARGE_DEBUG
+/** @brief Debug output of the CHARGE step (peak current, ~10 Hz status line). */
+static void statemachine_charge_debug_print(uint16_t cell_max) {
 	// Debug output, printed here because a blocking UART write in the
 	// control ISR would stall the 25 kHz loop for several milliseconds.
 	int32_t peak_mA;
@@ -978,8 +908,11 @@ static void statemachine_step_charge(void) {
 				adc_data.converted.v_term_ext_mv_filt,
 				bms.VoltageRegisters.StackVoltage, cell_max);
 	}
+}
 #endif /* CHARGE_DEBUG */
 
+/** @brief CHARGE exit conditions: decides, prints the reason, ends the charge. */
+static void statemachine_charge_exit_step(uint16_t cell_min, uint16_t cell_max) {
 	// Exit conditions. End of charge only counts once current is actually
 	// flowing (CC_RAMP/CV); everything else applies in every phase.
 	uint8_t at_end = charge_seq_may_complete(&charge_seq)
@@ -1044,6 +977,90 @@ static void statemachine_step_charge(void) {
 			statemachine_charge_finish("ERROR: Charge timeout", 1);
 		}
 	}
+}
+
+/* Per-tick CHARGE handling: phase sequencing (charge_seq.h), debug output and
+ * the exit conditions. Runs from statemachine_step()'s CHARGE case. */
+static void statemachine_step_charge(void) {
+	if (charge_done)
+		return; // finished screen is static, ESC / auto power-off end it
+
+	display_update_mode(statemachine_handle.current_mode,
+			statemachine_handle.output_on);
+
+	// Phase sequencing. Not while a protection fault has the converter forced
+	// off: control is stopped then, and the recovery branch at the top of
+	// statemachine_step() ends CHARGE once the fault clears.
+	if (!statemachine_handle.protection_forced_output_off) {
+		charge_seq_in_t in = {
+			.isr_phase = ctrl_main_handle.charge_phase,
+			.ref_mA = ctrl_main_charge_reference_mA(),
+			.charge_mA = -adc_data.converted.i_out_ext_mA,
+		};
+		switch (charge_seq_step(&charge_seq, &in, STATEMACHINE_STEP_PERIOD_mS)) {
+		case CHG_ACT_CLOSE_RELAY:
+			// The relays are normally closed: OUT_SEL_HV low = K1 closed, which
+			// connects the converter output to the charger. The hand-over
+			// steps the SEK duty to the zero-current duty at the same moment,
+			// so OUT_LV is already at the charger voltage when the contacts
+			// meet (and the current loop starts from ~0 A).
+			aux_io_ctrl_manual_set_io(GPIO_OUT_SEL_HV, 0);
+			ctrl_main_charge_handover(adc_data.converted.v_in,
+					adc_data.converted.v_term_ext_mv);
+#ifdef CHARGE_DEBUG
+			printf("CHARGE: precharge done (V_IN=%ldmV, V_TERM=%ldmV), relay closing\r\n",
+					adc_data.converted.v_in, adc_data.converted.v_term_ext_mv);
+#endif
+			break;
+		case CHG_ACT_START_RAMP:
+			ctrl_main_charge_start_ramp();
+#ifdef CHARGE_DEBUG
+			printf("CHARGE: relay settled, current ramp started\r\n");
+#endif
+			break;
+		case CHG_ACT_ABORT_STUCK_OPEN:
+			printf("CHARGE exit: no charge current although the reference is up "
+					"(relay stuck open, or charger gone)\r\n");
+			statemachine_charge_lockout();
+			statemachine_switchtoIdle();
+			return;
+		case CHG_ACT_NONE:
+		default:
+			break;
+		}
+
+#ifdef CHARGE_DEBUG
+		if (charge_seq_awaiting_advance(&charge_seq)) {
+			if (!charge_await_notified) {
+				charge_await_notified = 1;
+				printf("CHARGE: precharge complete, holding (relay still open) "
+						"-- send 'chargeNext' to close it and start the current ramp\r\n");
+			}
+		} else {
+			charge_await_notified = 0;
+		}
+#endif
+
+		statemachine_charge_recovery_ramp();
+	}
+
+	uint16_t cell_min = 0xFFFF;
+	uint16_t cell_max = 0;
+	for (uint8_t i = 0; i < BQ76905_PACK_CELL_COUNT; i++) {
+		if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
+			cell_max = bms.CellVoltageRegisters.CellVoltages[i];
+		}
+		if (bms.CellVoltageRegisters.CellVoltages[i] < cell_min) {
+			cell_min = bms.CellVoltageRegisters.CellVoltages[i];
+		}
+	}
+	ctrl_main_charge_cv_step(cell_max);
+
+#ifdef CHARGE_DEBUG
+	statemachine_charge_debug_print(cell_max);
+#endif
+
+	statemachine_charge_exit_step(cell_min, cell_max);
 }
 
 static void statemachine_charge_reset_timers(void) {
