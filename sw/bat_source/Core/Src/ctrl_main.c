@@ -204,70 +204,86 @@ static void ctrl_main_start_voltage_wide(void) {
 	hrtim_enable(HRTIM_CHANNEL_SEK);
 }
 
+/* Resets the charge loops and peak tracking (both charge starts). */
+static void ctrl_main_charge_reset(void) {
+	ctrl_PID_reset(&ctrl_pi_voltage_buck);
+	ctrl_PID_reset(&ctrl_pi_charge_current);
+	ctrl_PID_reset(&ctrl_pi_charge_voltage);
+	ctrl_main_handle.charge_cv_phase = 0;
+	ctrl_main_handle.charge_i_peak_mA = 0;
+	ctrl_main_handle.charge_peak_ticks = 0;
+}
+
+/* CHARGE start: open-loop PRECHARGE boost (relay open, OUT_LV not
+ * measurable), the ISR ramps PRIM/SEK from here. */
+static void ctrl_main_start_charge(void) {
+	ctrl_main_apply_reference(CTRL_MODE_CHARGE, 0);
+	ctrl_main_charge_reset();
+	// The CC loop is NOT preloaded here: a preload with
+	// CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH would write SEK duty ~0, i.e.
+	// the maximum-current end. It is preloaded with the zero-current
+	// duty at the CLOSE -> CC_RAMP hand-over instead
+	// (ctrl_main_charge_handover()).
+	float prim_duty, sek_duty;
+	charge_precharge_start(&ctrl_main_handle.precharge,
+			adc_data.converted.v_term_ext_mv, &prim_duty, &sek_duty);
+	hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
+	hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
+	hrtim_set_duty(HRTIM_CHANNEL_PRIM, prim_duty);
+	hrtim_set_duty(HRTIM_CHANNEL_SEK, sek_duty);
+	hrtim_enable(HRTIM_CHANNEL_PRIM);
+	hrtim_enable(HRTIM_CHANNEL_SEK);
+	// Assigned before `mode` (caller), so the ISR never sees CTRL_MODE_CHARGE
+	// with a stale phase.
+	ctrl_main_handle.charge_phase = CHG_PHASE_PRECHARGE;
+}
+
+/* 10A / RESISTANCE start: buck current loop with voltage limiter. */
+static void ctrl_main_start_current(void) {
+	ctrl_PID_reset(&ctrl_pi_voltage_buck);
+	ctrl_PID_reset(&ctrl_pi_current);
+	ctrl_PID_reset(&ctrl_pi_10a_vlimit);
+	ctrl_limiter_arm(&ctrl_pi_10a_vlimit);
+	hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_HIGH);
+	hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_LOW);
+	hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW); // Needs to be low!!
+	hrtim_set_duty(HRTIM_CHANNEL_PRIM, 0);
+	// Parked-SEK sync and pulse skipping, else a shorted output sits on
+	// the minimum pulse (>= 2.4 A).
+	hrtim_burst_set_idle_cycles(CTRL_PARAM_VOUT_SYNC_CYCLES);
+	hrtim_sync_start(HRTIM_CHANNEL_PRIM);
+	hrtim_enable(HRTIM_CHANNEL_PRIM);
+	hrtim_enable(HRTIM_CHANNEL_SEK);
+}
+
+/* ISOMETER start: HV flyback voltage loop with current limiter. */
+static void ctrl_main_start_isometer(void) {
+	ctrl_PID_reset(&ctrl_pi_voltage_hv);
+	ctrl_PID_reset(&ctrl_pi_hv_iout_limit);
+	ctrl_limiter_arm(&ctrl_pi_hv_iout_limit);
+	hrtim_set_freq(HRTIM_CHANNEL_HV, CTRL_PARAM_SW_FREQ_HV);
+	hrtim_set_duty(HRTIM_CHANNEL_HV, 0);
+	hrtim_enable(HRTIM_CHANNEL_HV);
+}
+
 void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 	switch (mode) {
-
-	case CTRL_MODE_CHARGE: {
-		ctrl_main_apply_reference(mode, 0);
-		ctrl_PID_reset(&ctrl_pi_voltage_buck);
-		ctrl_PID_reset(&ctrl_pi_charge_current);
-		ctrl_PID_reset(&ctrl_pi_charge_voltage);
-		ctrl_main_handle.charge_cv_phase = 0;
-		ctrl_main_handle.charge_i_peak_mA = 0;
-		ctrl_main_handle.charge_peak_ticks = 0;
-		// The CC loop is NOT preloaded here: a preload with
-		// CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH would write SEK duty ~0, i.e.
-		// the maximum-current end. It is preloaded with the zero-current
-		// duty at the CLOSE -> CC_RAMP hand-over instead
-		// (ctrl_main_charge_handover()).
-		//
-		// Starts as the open-loop PRECHARGE boost (relay open, OUT_LV not
-		// measurable): the ISR ramps PRIM/SEK from here.
-		float prim_duty, sek_duty;
-		charge_precharge_start(&ctrl_main_handle.precharge,
-				adc_data.converted.v_term_ext_mv, &prim_duty, &sek_duty);
-		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_LOW);
-		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_HIGH);
-		hrtim_set_duty(HRTIM_CHANNEL_PRIM, prim_duty);
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, sek_duty);
-		hrtim_enable(HRTIM_CHANNEL_PRIM);
-		hrtim_enable(HRTIM_CHANNEL_SEK);
-		// Assigned before `mode` (below), so the ISR never sees CTRL_MODE_CHARGE
-		// with a stale phase.
-		ctrl_main_handle.charge_phase = CHG_PHASE_PRECHARGE;
+	case CTRL_MODE_CHARGE:
+		ctrl_main_start_charge();
 		break;
-	}
 	case CTRL_MODE_60V:
 		ctrl_main_start_voltage_wide();
 		break;
 	case CTRL_MODE_RESISTANCE_1A:
 	case CTRL_MODE_RESISTANCE_1mA:
 		ctrl_main_apply_reference(mode, 0);
+		/* fall through */
 	case CTRL_MODE_10A:
-		ctrl_PID_reset(&ctrl_pi_voltage_buck);
-		ctrl_PID_reset(&ctrl_pi_current);
-		ctrl_PID_reset(&ctrl_pi_10a_vlimit);
-		ctrl_limiter_arm(&ctrl_pi_10a_vlimit);
-		hrtim_set_freq(HRTIM_CHANNEL_PRIM, CTRL_PARAM_SW_FREQ_HIGH);
-		hrtim_set_freq(HRTIM_CHANNEL_SEK, CTRL_PARAM_SW_FREQ_LOW);
-		hrtim_set_duty(HRTIM_CHANNEL_SEK, CTRL_PARAM_CONST_DUTY_LOW); // Needs to be low!!
-		hrtim_set_duty(HRTIM_CHANNEL_PRIM, 0);
-		// Parked-SEK sync and pulse skipping, else a shorted output sits on
-		// the minimum pulse (>= 2.4 A).
-		hrtim_burst_set_idle_cycles(CTRL_PARAM_VOUT_SYNC_CYCLES);
-		hrtim_sync_start(HRTIM_CHANNEL_PRIM);
-		hrtim_enable(HRTIM_CHANNEL_PRIM);
-		hrtim_enable(HRTIM_CHANNEL_SEK);
+		ctrl_main_start_current();
 		break;
 	case CTRL_MODE_ISOMETER:
-		ctrl_PID_reset(&ctrl_pi_voltage_hv);
-		ctrl_PID_reset(&ctrl_pi_hv_iout_limit);
-		ctrl_limiter_arm(&ctrl_pi_hv_iout_limit);
-		hrtim_set_freq(HRTIM_CHANNEL_HV, CTRL_PARAM_SW_FREQ_HV);
-		hrtim_set_duty(HRTIM_CHANNEL_HV, 0);
-		hrtim_enable(HRTIM_CHANNEL_HV);
+		ctrl_main_start_isometer();
 		break;
-
 #ifdef EMI_DEBUG
 	case CTRL_MODE_EMI:
 		// LV side as in 60V; HV flyback open loop at a constant duty.
@@ -277,7 +293,6 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
 		hrtim_enable(HRTIM_CHANNEL_HV);
 		break;
 #endif
-
 	case CTRL_MODE_OFF:
 	default:
 		break;
@@ -292,12 +307,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode) {
  * from, and K1 is already closed (kept that way by the caller), so there is
  * no relay to wait for either -- starts directly in CC_RAMP. */
 void ctrl_main_start_ctrl_charge_low_current(void) {
-	ctrl_PID_reset(&ctrl_pi_voltage_buck);
-	ctrl_PID_reset(&ctrl_pi_charge_current);
-	ctrl_PID_reset(&ctrl_pi_charge_voltage);
-	ctrl_main_handle.charge_cv_phase = 0;
-	ctrl_main_handle.charge_i_peak_mA = 0;
-	ctrl_main_handle.charge_peak_ticks = 0;
+	ctrl_main_charge_reset();
 	ctrl_main_handle.current_reference_mA =
 			CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA;
 	ctrl_main_handle.voltage_reference_mV = CTRL_PARAM_CHARGE_END_VOLTAGE_mV;
