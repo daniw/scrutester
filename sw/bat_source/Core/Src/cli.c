@@ -259,7 +259,7 @@ const char *cmd_arg_str[] = {
 		"setGain [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN] [gain] {ext gain}",
 		"setSerial [serial number]",
 		"flashIcons",
-		"pProt",
+		"pProt -- print protection status per source",
 		"set1ARef [12-bit DAC value]",
 		"wdtTest -- hang the main loop on purpose; the watchdog should reset the board in ~2 s"
 #ifdef EMI_DEBUG
