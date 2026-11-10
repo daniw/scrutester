@@ -18,6 +18,10 @@ int main(void) {
 	stopwatch_clear();
 	CHECK(stopwatch_elapsed_ms(9000) == 0 && !stopwatch_busy());
 
+	/* IMD: refused at or below the stop level */
+	CHECK(!stopwatch_vt_arm(VT_KIND_IMD, 60000, 59000, 100));
+	CHECK(stopwatch_vt_state() == VT_IDLE);
+
 	/* IMD: runs at once, stops below the level */
 	CHECK(stopwatch_vt_arm(VT_KIND_IMD, 60000, 571200, 100));
 	CHECK(stopwatch_vt_state() == VT_RUNNING && stopwatch_busy());

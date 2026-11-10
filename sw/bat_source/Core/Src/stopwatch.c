@@ -55,7 +55,7 @@ uint32_t stopwatch_elapsed_ms(uint32_t now_ms) {
 
 uint8_t stopwatch_vt_arm(stopwatch_vt_kind_t kind, int32_t stop_mV,
 		int32_t v_now_mV, uint32_t now_ms) {
-	if (kind == VT_KIND_DISCHARGE && v_now_mV <= stop_mV)
+	if (v_now_mV <= stop_mV)
 		return 0;
 	vt.state = VT_IDLE; // ISR ignores the fields until the state is set below
 	vt.kind = kind;

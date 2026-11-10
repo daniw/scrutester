@@ -42,7 +42,7 @@ typedef enum {
  * @brief Starts the timer (IMD: running now, DISCHARGE: armed).
  * @param stop_mV Stop level, falling edge.
  * @param v_now_mV Present voltage (DISCHARGE reference).
- * @return 0 if refused (DISCHARGE with v_now <= stop level).
+ * @return 0 if refused (v_now <= stop level).
  */
 uint8_t stopwatch_vt_arm(stopwatch_vt_kind_t kind, int32_t stop_mV,
 		int32_t v_now_mV, uint32_t now_ms);
