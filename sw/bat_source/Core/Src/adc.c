@@ -1035,6 +1035,14 @@ static void adc_configure_injected(uint32_t channel, uint32_t trigger) {
 	HAL_ADCEx_InjectedStart(&hadc5);
 }
 
+/** @brief Point hadc4 at a channel (config + re-init); DMA start is the caller's. */
+static void adc_hadc4_select(ADC_ChannelConfTypeDef *cfg, uint32_t channel) {
+	cfg->Channel = channel;
+	if (HAL_ADC_ConfigChannel(&hadc4, cfg) != HAL_OK)
+		Error_Handler();
+	HAL_ADC_Init(&hadc4);
+}
+
 void adc_configure_mode(statemachine_modes_t mode) {
 
 	ADC_ChannelConfTypeDef sConfig = { 0 };
@@ -1062,20 +1070,14 @@ void adc_configure_mode(statemachine_modes_t mode) {
 	case STATEMACHINE_MODE_10A_OUT: // compliance limiter
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
 	case STATEMACHINE_MODE_RESISTANCE_1A:
-		sConfig.Channel = ADC_CHANNEL_2;
-		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
-			Error_Handler();
-		HAL_ADC_Init(&hadc4);
+		adc_hadc4_select(&sConfig, ADC_CHANNEL_2);
 		adc_start_dma_quiet(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
 		break;
 	case STATEMACHINE_MODE_ISOMETER:
 		// adc_apply_shared_trigger() above pointed hadc1..4 at HV (TRG5),
 		// the converter this mode drives. See mode_table.c's ISOMETER entry
 		// for the resulting loop rate (CTRL_FREQ).
-		sConfig.Channel = ADC_CHANNEL_5;
-		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
-			Error_Handler();
-		HAL_ADC_Init(&hadc4);
+		adc_hadc4_select(&sConfig, ADC_CHANNEL_5);
 
 		adc_configure_injected(ADC_CHANNEL_2, ADC_TRIGGER_HRTIM_HV);
 		adc_start_dma_quiet(&hadc4, (uint32_t*) &adc_data.raw.v_hv, 1);
@@ -1086,10 +1088,7 @@ void adc_configure_mode(statemachine_modes_t mode) {
 		// this v_out would stay frozen at its last value for the whole charge.
 		// It is not a control input: behind the (open) output relay it reads
 		// the jack side, not the converter output node.
-		sConfig.Channel = ADC_CHANNEL_2;
-		if (HAL_ADC_ConfigChannel(&hadc4, &sConfig) != HAL_OK)
-			Error_Handler();
-		HAL_ADC_Init(&hadc4);
+		adc_hadc4_select(&sConfig, ADC_CHANNEL_2);
 		adc_start_dma_quiet(&hadc4, (uint32_t*) &adc_data.raw.v_out, 1);
 
 		adc_configure_injected(ADC_CHANNEL_1, ADC_TRIGGER_HRTIM_SEK);
