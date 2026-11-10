@@ -1,7 +1,8 @@
 # Included by the CDT-generated makefile (-include ../makefile.defs).
 # Writes Core/Inc/git_version.h, only when changed. "unknown" without git.
+# --exclude=*: plain hash, ignores the HW tags (PS1-...).
 # Pure make functions (GNU make >= 4.2), no shell syntax: Windows + Linux.
-GV_HASH := $(strip $(shell git -C .. describe --always --dirty --abbrev=7))
+GV_HASH := $(strip $(shell git -C .. describe --always --dirty --abbrev=7 --exclude=*))
 GV_DATE := $(strip $(shell git -C .. log -1 --format=%cd --date=format:%Y-%m-%d_%H:%M))
 GV_HASH := $(if $(GV_HASH),$(GV_HASH),unknown)
 GV_DATE := $(if $(GV_DATE),$(subst _, ,$(GV_DATE)),unknown)
