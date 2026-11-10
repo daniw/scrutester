@@ -133,7 +133,7 @@
 #define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3500*4)
 
 // Reduced current target for a deep-discharge/CUV recovery charge (see
-// statemachine_enter_charge_low_current() in statemachine.c) -- charging
+// statemachine_enter_charge(1) in statemachine.c) -- charging
 // into a pack the BMS has flagged undervoltage on, through the DSG FET's
 // body diode with no closed-loop DSG path. Independently bench-tunable, not
 // derived from CTRL_PARAM_CHARGE_CURRENT_mA, in case the safe recovery

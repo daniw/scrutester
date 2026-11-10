@@ -143,7 +143,7 @@ static charge_seq_action_t step(charge_seq_t *s, charge_phase_t isr, int32_t ref
 
 static void test_phase_stepper(void) {
 	charge_seq_t s = {0}; // manual must start at 0: see charge_seq_init()'s doc comment
-	charge_seq_init(&s);
+	charge_seq_init(&s, 0);
 	CHECK(!charge_seq_may_complete(&s));
 
 	for (int i = 0; i < 100; i++)
@@ -170,7 +170,7 @@ static void test_phase_stepper(void) {
 	CHECK(n == 99);
 
 	/* A single tick with current restarts the timer. */
-	charge_seq_init(&s);
+	charge_seq_init(&s, 0);
 	step(&s, CHG_PHASE_CLOSE, 0, 0);
 	for (int i = 0; i < 5; i++) step(&s, CHG_PHASE_CLOSE, 0, 0);
 	for (int i = 0; i < 90; i++)
@@ -189,7 +189,7 @@ static void test_phase_stepper(void) {
 /* Single-step bench test mode: holds after precharge until released. */
 static void test_manual_step(void) {
 	charge_seq_t s = {0}; // manual must start at 0: see charge_seq_init()'s doc comment
-	charge_seq_init(&s);
+	charge_seq_init(&s, 0);
 	charge_seq_set_manual(&s, 1);
 	CHECK(!charge_seq_awaiting_advance(&s));
 
@@ -216,7 +216,7 @@ static void test_manual_step(void) {
 	CHECK(charge_seq_may_complete(&s));
 
 	/* Turning manual mode off before the pause point: runs straight through. */
-	charge_seq_init(&s);
+	charge_seq_init(&s, 0);
 	charge_seq_set_manual(&s, 0);
 	for (int i = 0; i < 100; i++)
 		step(&s, CHG_PHASE_PRECHARGE, 0, 0);
@@ -227,7 +227,7 @@ static void test_manual_step(void) {
 	charge_seq_set_manual(&s, 1);
 	step(&s, CHG_PHASE_PRECHARGE, 0, 0);
 	charge_seq_request_advance(&s);
-	charge_seq_init(&s);
+	charge_seq_init(&s, 0);
 	CHECK(step(&s, CHG_PHASE_CLOSE, 0, 0) == CHG_ACT_NONE);
 	CHECK(charge_seq_awaiting_advance(&s));
 }
@@ -239,7 +239,7 @@ static void test_ordering(void) {
 	srand(1);
 	for (int run = 0; run < 500; run++) {
 		charge_seq_t s = {0}; // manual must start at 0: see charge_seq_init()'s doc comment
-		charge_seq_init(&s);
+		charge_seq_init(&s, 0);
 		int close_at = rand() % 300;
 		int closes = 0, ramps = 0, close_tick = -1, ramp_tick = -1;
 		for (int t = 0; t < 700; t++) {
@@ -267,7 +267,7 @@ static void test_ordering(void) {
  * in CC_RAMP, same stuck-open behavior as a normal charge from there. */
 static void test_low_current_recovery(void) {
 	charge_seq_t s = {0}; // manual must start at 0: see charge_seq_init()'s doc comment
-	charge_seq_init_low_current_recovery(&s);
+	charge_seq_init(&s, 1);
 	CHECK(s.phase == CHG_PHASE_CC_RAMP);
 	CHECK(s.low_current_recovery);
 	CHECK(charge_seq_may_complete(&s)); // no need to wait for PRECHARGE/CLOSE first
@@ -285,7 +285,7 @@ static void test_low_current_recovery(void) {
 	CHECK(n == 99);
 
 	/* A fresh charge_seq_init() (the normal-charge path) clears the flag. */
-	charge_seq_init(&s);
+	charge_seq_init(&s, 0);
 	CHECK(!s.low_current_recovery);
 	CHECK(s.phase == CHG_PHASE_PRECHARGE);
 }

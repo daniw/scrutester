@@ -83,7 +83,7 @@ void ctrl_main_start_ctrl(ctrl_mode_t mode);
  * skips PRECHARGE entirely and starts directly in CC_RAMP, at
  * CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA rather than the normal full
  * charge current. K1 must already be closed before this is called (see
- * statemachine_enter_charge_low_current() in statemachine.c) -- this
+ * statemachine_enter_charge(1) in statemachine.c) -- this
  * function does not touch any relay GPIO itself. */
 void ctrl_main_start_ctrl_charge_low_current(void);
 void ctrl_main_ctrl(const ADC_CONVERTED_DATA *meas);

@@ -104,7 +104,7 @@ typedef struct {
 	uint8_t manual;             /* single-step test mode, see charge_seq_set_manual() */
 	uint8_t advance_requested;  /* one-shot, set by charge_seq_request_advance() */
 	uint8_t precharge_ready;    /* PRECHARGE's ramp+hold has finished (isr_phase == CLOSE) */
-	uint8_t low_current_recovery; /* see charge_seq_init_low_current_recovery() */
+	uint8_t low_current_recovery; /* see charge_seq_init() */
 } charge_seq_t;
 
 typedef struct {
@@ -113,19 +113,16 @@ typedef struct {
 	int32_t charge_mA;          /* measured charge current, positive while charging */
 } charge_seq_in_t;
 
-/* `*s` must be zero-initialised before the FIRST call (static/global storage
+/* `recovery` = deep-discharge/CUV recovery start: the battery side (V_IN)
+ * reads ~0 (BMS DSG FET open), so PRECHARGE's boost-from-V_IN and CLOSE
+ * (K1 is already closed and must stay that way -- see statemachine_enter_charge()
+ * in statemachine.c) are both skipped; starts directly in CC_RAMP.
+ *
+ * `*s` must be zero-initialised before the FIRST call (static/global storage
  * -- as statemachine.c's `charge_seq` is -- already is; a local/heap instance
  * needs an explicit `= {0}`), because this deliberately leaves `manual`
  * untouched on every call after that, see charge_seq_set_manual(). */
-void charge_seq_init(charge_seq_t *s);
-
-/* Deep-discharge/CUV recovery variant of charge_seq_init(): the battery side
- * (V_IN) reads ~0 (BMS DSG FET open), so PRECHARGE's boost-from-V_IN and
- * CLOSE (K1 is already closed and must stay that way -- see
- * statemachine_enter_charge_low_current() in statemachine.c) are both
- * skipped; starts directly in CC_RAMP. Same zero-initialisation requirement
- * as charge_seq_init(). */
-void charge_seq_init_low_current_recovery(charge_seq_t *s);
+void charge_seq_init(charge_seq_t *s, uint8_t recovery);
 
 charge_seq_action_t charge_seq_step(charge_seq_t *s, const charge_seq_in_t *in,
 		uint16_t tick_ms);

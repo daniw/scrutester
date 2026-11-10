@@ -114,8 +114,7 @@ static void statemachine_apply_encoder_setpoint(void);
 static void statemachine_step_calibration(void);
 static void statemachine_step_service_pin(void);
 static void statemachine_enter_mode_generic(statemachine_modes_t mode);
-static uint8_t statemachine_enter_charge(void);
-static uint8_t statemachine_enter_charge_low_current(void);
+static uint8_t statemachine_enter_charge(uint8_t recovery);
 static void statemachine_step_charge(void);
 static uint8_t statemachine_step_stopwatch(void);
 static uint8_t statemachine_step_voltmeter(void);
@@ -539,8 +538,8 @@ void statemachine_step(void) {
 				&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
 			// Deep-discharge/CUV recovery: called directly, not through
 			// statemachine_switchfromIdle() -- see
-			// statemachine_enter_charge_low_current()'s comment.
-			statemachine_enter_charge_low_current();
+			// statemachine_enter_charge()'s comment.
+			statemachine_enter_charge(1);
 		}
 		break;
 
@@ -968,7 +967,7 @@ static void statemachine_step_charge(void) {
 	// While recovering from a deep-discharge CUV fault, CUV is exactly the
 	// condition this run exists to clear -- it must not itself abort the
 	// charge that's trying to recover from it (see
-	// statemachine_enter_charge_low_current()). Any OTHER fault bit still
+	// statemachine_enter_charge(1)). Any OTHER fault bit still
 	// aborts immediately, same as a normal charge.
 	uint8_t fault_mask_a = bms.SafetyRegisters.safetyStatusA;
 	if (charge_seq.low_current_recovery) {
@@ -1042,13 +1041,21 @@ static void statemachine_charge_finish(const char *msg, uint8_t error) {
 	display_show_charge_done(msg, error);
 }
 
-/* CHARGE entry, called from statemachine_switchfromIdle(). Unlike the other
- * modes the relays are set BEFORE the converter starts: the sequence begins
- * with K1 (converter output to the jacks) open. Returns 0 (and does nothing)
- * if there is no charger in the allowed window, which also covers the CLI's
- * `state` command forcing CHARGE without one. */
-static uint8_t statemachine_enter_charge(void) {
-	if (!charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
+/* CHARGE entry. Normal start: called from statemachine_switchfromIdle().
+ * Unlike the other modes the relays are set BEFORE the converter starts: the
+ * sequence begins with K1 (converter output to the jacks) open. Returns 0
+ * (and does nothing) if there is no charger in the allowed window, which also
+ * covers the CLI's `state` command forcing CHARGE without one.
+ *
+ * `recovery`: deep-discharge/CUV recovery. The BMS has latched a cell
+ * undervoltage fault (DSG FET open, V_IN ~0) and the device runs on charger
+ * power fed through K1 into OUT_LV -- see statemachine_switchtoIdle(). Called
+ * directly from the IDLE auto-entry check (which already checked the window),
+ * not through statemachine_switchfromIdle(), because that function's shared
+ * tail resets the encoder and would reconfigure the relays, reopening K1. */
+static uint8_t statemachine_enter_charge(uint8_t recovery) {
+	if (!recovery
+			&& !charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
 		printf("Unable to switch to CHARGE: charger voltage %ldmV outside %d..%dmV\r\n",
 				adc_data.converted.v_term_ext_mv,
 				CTRL_PARAM_CHARGE_START_VIN_LOW_mV, CTRL_PARAM_CHARGE_START_VIN_HIGH_mV);
@@ -1059,59 +1066,33 @@ static uint8_t statemachine_enter_charge(void) {
 	statemachine_handle.current_mode = STATEMACHINE_MODE_CHARGE;
 	adc_configure_mode(STATEMACHINE_MODE_CHARGE);
 
-	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE, 0);   // relays open, before any PWM
-	charge_seq_init(&charge_seq);
+	// Relays before any PWM; recovery keeps K1 closed.
+	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE, recovery);
+	charge_seq_init(&charge_seq, recovery);
 	statemachine_charge_reset_timers();
 #ifdef CHARGE_DEBUG
 	charge_await_notified = 0;
 #endif
-	ctrl_main_start_ctrl(CTRL_MODE_CHARGE);             // PRECHARGE
+	if (recovery)
+		ctrl_main_start_ctrl_charge_low_current();  // straight to CC_RAMP
+	else
+		ctrl_main_start_ctrl(CTRL_MODE_CHARGE);     // PRECHARGE
 	aux_io_ctrl_manual_set_io(mode_table[STATEMACHINE_MODE_CHARGE].enable_gpio, 1);
 	statemachine_handle.output_on = 1;
 
-	display_enter_mode(STATEMACHINE_MODE_CHARGE);
-	printf("CHARGE: precharging the converter output (V_TERM=%ldmV)\r\n",
-			adc_data.converted.v_term_ext_mv);
-	return 1;
-}
-
-/* Deep-discharge/CUV recovery entry: the BMS has latched a cell undervoltage
- * fault (DSG FET open, V_IN ~0) and the device is running on charger power
- * fed through K1 into OUT_LV -- see statemachine_switchtoIdle(). Called
- * directly from the IDLE auto-entry check below rather than through
- * statemachine_switchfromIdle(), because that function's shared tail ends
- * with a plain aux_io_ctrl_set_config(mode) call which would reopen K1 right
- * after this function closes it off deliberately. Mirrors
- * statemachine_enter_charge() otherwise. */
-static uint8_t statemachine_enter_charge_low_current(void) {
-	if (!charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
-		printf("Unable to switch to low-current CHARGE: charger voltage %ldmV "
-				"outside %d..%dmV\r\n", adc_data.converted.v_term_ext_mv,
-				CTRL_PARAM_CHARGE_START_VIN_LOW_mV, CTRL_PARAM_CHARGE_START_VIN_HIGH_mV);
-		return 0;
+	if (recovery) {
+		input_encoder_reset(0);
+		input_encoder_clamp_reset(&encoder_setpoint_clamp, 0);
+		inactivity_ticks = 0;
 	}
 
-	ui_ctrl_ledOutOn();
-	statemachine_handle.current_mode = STATEMACHINE_MODE_CHARGE;
-	adc_configure_mode(STATEMACHINE_MODE_CHARGE);
-
-	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE,1); // K1 stays closed
-	charge_seq_init_low_current_recovery(&charge_seq);
-	statemachine_charge_reset_timers();
-#ifdef CHARGE_DEBUG
-	charge_await_notified = 0;
-#endif
-	ctrl_main_start_ctrl_charge_low_current();          // straight to CC_RAMP
-	aux_io_ctrl_manual_set_io(mode_table[STATEMACHINE_MODE_CHARGE].enable_gpio, 1);
-	statemachine_handle.output_on = 1;
-
-	input_encoder_reset(0);
-	input_encoder_clamp_reset(&encoder_setpoint_clamp, 0);
-	inactivity_ticks = 0;
-
 	display_enter_mode(STATEMACHINE_MODE_CHARGE);
-	printf("CHARGE: deep-discharge recovery at %dmA (BMS reports CUV, V_TERM=%ldmV)\r\n",
-			CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA, adc_data.converted.v_term_ext_mv);
+	if (recovery)
+		printf("CHARGE: deep-discharge recovery at %dmA (BMS reports CUV, V_TERM=%ldmV)\r\n",
+				CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA, adc_data.converted.v_term_ext_mv);
+	else
+		printf("CHARGE: precharging the converter output (V_TERM=%ldmV)\r\n",
+				adc_data.converted.v_term_ext_mv);
 	return 1;
 }
 
@@ -1204,7 +1185,7 @@ void statemachine_switchfromIdle(statemachine_modes_t mode) {
 		break;
 
 	case STATEMACHINE_MODE_CHARGE:
-		if (!statemachine_enter_charge())
+		if (!statemachine_enter_charge(0))
 			return; // refused: skip the shared tail, like AMPMETER above
 		break;
 

@@ -93,24 +93,15 @@ uint8_t charge_precharge_step(charge_precharge_t *p, int32_t v_in_mV,
 	return t >= TOTAL_TICKS;
 }
 
-void charge_seq_init(charge_seq_t *s) {
-	s->phase = CHG_PHASE_PRECHARGE;
+void charge_seq_init(charge_seq_t *s, uint8_t recovery) {
+	// Recovery skips PRECHARGE/CLOSE -- K1 is already closed.
+	s->phase = recovery ? CHG_PHASE_CC_RAMP : CHG_PHASE_PRECHARGE;
 	s->settle_ms = 0;
 	s->stuck_ms = 0;
 	s->advance_requested = 0; // a stale request must not release this run's pause
 	s->precharge_ready = 0;
-	s->low_current_recovery = 0;
+	s->low_current_recovery = recovery ? 1 : 0;
 	// `manual` is deliberately left untouched -- see charge_seq_set_manual().
-}
-
-void charge_seq_init_low_current_recovery(charge_seq_t *s) {
-	s->phase = CHG_PHASE_CC_RAMP; // skip PRECHARGE/CLOSE -- K1 is already closed
-	s->settle_ms = 0;
-	s->stuck_ms = 0;
-	s->advance_requested = 0;
-	s->precharge_ready = 0;
-	s->low_current_recovery = 1;
-	// `manual` deliberately left untouched, same as charge_seq_init().
 }
 
 void charge_seq_set_manual(charge_seq_t *s, uint8_t manual) {
