@@ -257,6 +257,10 @@ int main(void)
 				break;
 
 		  }
+		  // One step per pass: a step longer than the 20 ms tick re-queues the
+		  // next one, and draining it here would never reach the watchdog kick.
+		  if (e.event == EVENT_SM_STEP)
+			  break;
 	  }
 
 
