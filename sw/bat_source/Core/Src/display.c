@@ -355,7 +355,8 @@ static void enter_passive_readout(statemachine_modes_t mode, const char *unit) {
 
 	draw_status_bar(menu_name_for_mode(mode), entry->accent);
 	draw_output_border(entry->accent, 1);
-	draw_footer("ESC: Back", 0);
+	draw_footer("ESC: Back",
+			mode == STATEMACHINE_MODE_VOLTMETER ? "OK: Stopwatch" : 0);
 
 	passive_readout_x = (LCD_WIDTH - total_w) / 2;
 	passive_readout_y = STATUS_H + ((FOOTER_Y - STATUS_H) - value_h) / 2;
