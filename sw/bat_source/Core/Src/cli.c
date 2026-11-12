@@ -971,7 +971,8 @@ void cmd_printBMS(void){
 	  printf("CurrentRegisters.RawCurrent          = 0x%04X%04X\r\n",  (uint16_t)(bms.CurrentRegisters.RawCurrent>>16),(uint16_t)(bms.CurrentRegisters.RawCurrent));
 	  printf("CurrentRegisters.CC2Current          = %d mA\r\n",       bms.CurrentRegisters.CC2Current);
 	  printf("CurrentRegisters.CC1Current          = %d mA\r\n",       bms.CurrentRegisters.CC1Current);
-	  printf("Passed Charge                        = %lld mAs\r\n",    (long long) bms.Accumulator.accumulatedCharge / 4);
+	  // newlib-nano printf has no %lld; mAs fits in 32 bit.
+	  printf("Passed Charge                        = %ld mAs\r\n",    (long) (bms.Accumulator.accumulatedCharge / 4));
 	  printf("Passed Charge                        = %d.%03d Ah\r\n",  ((((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF))>=0?1:-1) * abs((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4) / 3600000), (abs((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4) / 3600 % 1000));
 	  printf("Passed Time                          = %lu s\r\n",       bms.Accumulator.passedTime/4);
 	  printf("Passed Time                          = %u h %u min %u s\r\n", (unsigned int)((bms.Accumulator.passedTime/4)/3600), (unsigned int)(((bms.Accumulator.passedTime/4)/60)%60), (unsigned int)((bms.Accumulator.passedTime/4)%60));
