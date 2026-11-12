@@ -39,31 +39,40 @@
 #define UGUI_USE_FONT_22X36
 #define UGUI_USE_FONT_24X40
 #define UGUI_USE_FONT_32X53
+/* FONT_40X78 (85KB) / FONT_48X94 (123KB) / FONT_64X124 (217KB): full 224-char
+ * Latin-1 sets at large pixel size. Currently unused -- only ~132KB of flash
+ * is free, so referencing FONT_40X78 alone just fits, but any combination
+ * with FONT_48X94/FONT_64X124 (let alone all three) will overflow the 512KB
+ * FLASH region at link time. Shrink the character range before wiring more
+ * than one of these in at once. */
+#define UGUI_USE_FONT_40X78
+#define UGUI_USE_FONT_48X94
+#define UGUI_USE_FONT_64X124
 
-#define UGUI_USE_FONT_arial_6X6
-#define UGUI_USE_FONT_arial_6X6_CYRILLIC
-#define UGUI_USE_FONT_arial_9X10
-#define UGUI_USE_FONT_arial_9X10_CYRILLIC
-#define UGUI_USE_FONT_arial_10X13
-#define UGUI_USE_FONT_arial_10X13_CYRILLIC
-#define UGUI_USE_FONT_arial_12X15
-#define UGUI_USE_FONT_arial_12X15_CYRILLIC
-#define UGUI_USE_FONT_arial_16X18
-#define UGUI_USE_FONT_arial_16X18_CYRILLIC
-#define UGUI_USE_FONT_arial_20X23
-#define UGUI_USE_FONT_arial_20X23_CYRILLIC
-#define UGUI_USE_FONT_arial_25X28
-#define UGUI_USE_FONT_arial_25X28_CYRILLIC
-#define UGUI_USE_FONT_arial_29X35
-#define UGUI_USE_FONT_arial_29X35_CYRILLIC
-#define UGUI_USE_FONT_arial_35X40
-#define UGUI_USE_FONT_arial_35X40_CYRILLIC
-#define UGUI_USE_FONT_arial_39X45
-#define UGUI_USE_FONT_arial_39X45_CYRILLIC
-#define UGUI_USE_FONT_arial_45X52
-#define UGUI_USE_FONT_arial_45X52_CYRILLIC
-#define UGUI_USE_FONT_arial_49X57
-#define UGUI_USE_FONT_arial_49X57_CYRILLIC
+//#define UGUI_USE_FONT_arial_6X6
+//#define UGUI_USE_FONT_arial_6X6_CYRILLIC
+//#define UGUI_USE_FONT_arial_9X10
+//#define UGUI_USE_FONT_arial_9X10_CYRILLIC
+//#define UGUI_USE_FONT_arial_10X13
+//#define UGUI_USE_FONT_arial_10X13_CYRILLIC
+//#define UGUI_USE_FONT_arial_12X15
+//#define UGUI_USE_FONT_arial_12X15_CYRILLIC
+//#define UGUI_USE_FONT_arial_16X18
+//#define UGUI_USE_FONT_arial_16X18_CYRILLIC
+//#define UGUI_USE_FONT_arial_20X23
+//#define UGUI_USE_FONT_arial_20X23_CYRILLIC
+//#define UGUI_USE_FONT_arial_25X28
+//#define UGUI_USE_FONT_arial_25X28_CYRILLIC
+//#define UGUI_USE_FONT_arial_29X35
+//#define UGUI_USE_FONT_arial_29X35_CYRILLIC
+//#define UGUI_USE_FONT_arial_35X40
+//#define UGUI_USE_FONT_arial_35X40_CYRILLIC
+//#define UGUI_USE_FONT_arial_39X45
+//#define UGUI_USE_FONT_arial_39X45_CYRILLIC
+//#define UGUI_USE_FONT_arial_45X52
+//#define UGUI_USE_FONT_arial_45X52_CYRILLIC
+//#define UGUI_USE_FONT_arial_49X57
+//#define UGUI_USE_FONT_arial_49X57_CYRILLIC
 
 /* Feature enablers */
 // #define UGUI_USE_PRERENDER_EVENT

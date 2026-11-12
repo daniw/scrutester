@@ -22,6 +22,7 @@
 
 /* USER CODE BEGIN 0 */
 #include "stdio.h"
+#include "ctrl_param.h"
 /* USER CODE END 0 */
 
 HRTIM_HandleTypeDef hhrtim1;
@@ -35,10 +36,11 @@ void MX_HRTIM1_Init(void)
   /* USER CODE END HRTIM1_Init 0 */
 
   HRTIM_ADCTriggerCfgTypeDef pADCTriggerCfg = {0};
+  HRTIM_BurstModeCfgTypeDef pBurstModeCfg = {0};
   HRTIM_TimeBaseCfgTypeDef pTimeBaseCfg = {0};
-  HRTIM_TimerCtlTypeDef pTimerCtl = {0};
   HRTIM_TimerCfgTypeDef pTimerCfg = {0};
   HRTIM_CompareCfgTypeDef pCompareCfg = {0};
+  HRTIM_TimerCtlTypeDef pTimerCtl = {0};
   HRTIM_DeadTimeCfgTypeDef pDeadTimeCfg = {0};
   HRTIM_OutputCfgTypeDef pOutputCfg = {0};
 
@@ -70,16 +72,6 @@ void MX_HRTIM1_Init(void)
   {
     Error_Handler();
   }
-  pADCTriggerCfg.UpdateSource = HRTIM_ADCTRIGGERUPDATE_TIMER_C;
-  pADCTriggerCfg.Trigger = HRTIM_ADCTRIGGEREVENT24_TIMERC_PERIOD;
-  if (HAL_HRTIM_ADCTriggerConfig(&hhrtim1, HRTIM_ADCTRIGGER_2, &pADCTriggerCfg) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_HRTIM_ADCPostScalerConfig(&hhrtim1, HRTIM_ADCTRIGGER_2, 0xE) != HAL_OK)
-  {
-    Error_Handler();
-  }
   pADCTriggerCfg.UpdateSource = HRTIM_ADCTRIGGERUPDATE_TIMER_E;
   pADCTriggerCfg.Trigger = HRTIM_ADCTRIGGEREVENT13_TIMERE_PERIOD;
   if (HAL_HRTIM_ADCTriggerConfig(&hhrtim1, HRTIM_ADCTRIGGER_3, &pADCTriggerCfg) != HAL_OK)
@@ -90,10 +82,80 @@ void MX_HRTIM1_Init(void)
   {
     Error_Handler();
   }
+  pADCTriggerCfg.UpdateSource = HRTIM_ADCTRIGGERUPDATE_TIMER_C;
+  pADCTriggerCfg.Trigger = HRTIM_ADCTRIGGEREVENT579_TIMERC_PERIOD;
+  if (HAL_HRTIM_ADCTriggerConfig(&hhrtim1, HRTIM_ADCTRIGGER_5, &pADCTriggerCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_HRTIM_ADCPostScalerConfig(&hhrtim1, HRTIM_ADCTRIGGER_5, 0x6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pADCTriggerCfg.UpdateSource = HRTIM_ADCTRIGGERUPDATE_TIMER_D;
+  pADCTriggerCfg.Trigger = HRTIM_ADCTRIGGEREVENT579_TIMERD_PERIOD;
+  if (HAL_HRTIM_ADCTriggerConfig(&hhrtim1, HRTIM_ADCTRIGGER_7, &pADCTriggerCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_HRTIM_ADCPostScalerConfig(&hhrtim1, HRTIM_ADCTRIGGER_7, 19) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pBurstModeCfg.Mode = HRTIM_BURSTMODE_CONTINOUS;
+  pBurstModeCfg.ClockSource = HRTIM_BURSTMODECLOCKSOURCE_TIMER_D;
+  pBurstModeCfg.Prescaler = HRTIM_BURSTMODEPRESCALER_DIV1;
+  pBurstModeCfg.PreloadEnable = HRIM_BURSTMODEPRELOAD_DISABLED;
+  pBurstModeCfg.Trigger = HRTIM_BURSTMODETRIGGER_NONE;
+  pBurstModeCfg.IdleDuration = 0x0000;
+  pBurstModeCfg.Period = 20;
+  if (HAL_HRTIM_BurstModeConfig(&hhrtim1, &pBurstModeCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
   pTimeBaseCfg.Period = 51200;
   pTimeBaseCfg.RepetitionCounter = 0x00;
-  pTimeBaseCfg.PrescalerRatio = HRTIM_PRESCALERRATIO_MUL32;
+  pTimeBaseCfg.PrescalerRatio = HRTIM_PRESCALERRATIO_MUL16;
   pTimeBaseCfg.Mode = HRTIM_MODE_CONTINUOUS;
+  if (HAL_HRTIM_TimeBaseConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, &pTimeBaseCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pTimerCfg.InterruptRequests = HRTIM_MASTER_IT_NONE;
+  pTimerCfg.DMARequests = HRTIM_MASTER_DMA_NONE;
+  pTimerCfg.DMASrcAddress = 0x0000;
+  pTimerCfg.DMADstAddress = 0x0000;
+  pTimerCfg.DMASize = 0x1;
+  pTimerCfg.HalfModeEnable = HRTIM_HALFMODE_DISABLED;
+  pTimerCfg.InterleavedMode = HRTIM_INTERLEAVED_MODE_DISABLED;
+  pTimerCfg.StartOnSync = HRTIM_SYNCSTART_DISABLED;
+  pTimerCfg.ResetOnSync = HRTIM_SYNCRESET_DISABLED;
+  pTimerCfg.DACSynchro = HRTIM_DACSYNC_NONE;
+  pTimerCfg.PreloadEnable = HRTIM_PRELOAD_DISABLED;
+  pTimerCfg.UpdateGating = HRTIM_UPDATEGATING_INDEPENDENT;
+  pTimerCfg.BurstMode = HRTIM_TIMERBURSTMODE_MAINTAINCLOCK;
+  pTimerCfg.RepetitionUpdate = HRTIM_UPDATEONREPETITION_DISABLED;
+  pTimerCfg.ReSyncUpdate = HRTIM_TIMERESYNC_UPDATE_UNCONDITIONAL;
+  if (HAL_HRTIM_WaveformTimerConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, &pTimerCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pCompareCfg.CompareValue = 5120;
+  if (HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_1, &pCompareCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pCompareCfg.CompareValue = 26880;
+  if (HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_2, &pCompareCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pCompareCfg.CompareValue = 30720;
+  if (HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_3, &pCompareCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pTimeBaseCfg.PrescalerRatio = HRTIM_PRESCALERRATIO_MUL32;
   if (HAL_HRTIM_TimeBaseConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, &pTimeBaseCfg) != HAL_OK)
   {
     Error_Handler();
@@ -113,18 +175,7 @@ void MX_HRTIM1_Init(void)
   }
   pTimerCfg.InterruptRequests = HRTIM_TIM_IT_NONE;
   pTimerCfg.DMARequests = HRTIM_TIM_DMA_NONE;
-  pTimerCfg.DMASrcAddress = 0x0000;
-  pTimerCfg.DMADstAddress = 0x0000;
-  pTimerCfg.DMASize = 0x1;
-  pTimerCfg.HalfModeEnable = HRTIM_HALFMODE_DISABLED;
-  pTimerCfg.InterleavedMode = HRTIM_INTERLEAVED_MODE_DISABLED;
-  pTimerCfg.StartOnSync = HRTIM_SYNCSTART_DISABLED;
-  pTimerCfg.ResetOnSync = HRTIM_SYNCRESET_DISABLED;
-  pTimerCfg.DACSynchro = HRTIM_DACSYNC_NONE;
   pTimerCfg.PreloadEnable = HRTIM_PRELOAD_ENABLED;
-  pTimerCfg.UpdateGating = HRTIM_UPDATEGATING_INDEPENDENT;
-  pTimerCfg.BurstMode = HRTIM_TIMERBURSTMODE_MAINTAINCLOCK;
-  pTimerCfg.RepetitionUpdate = HRTIM_UPDATEONREPETITION_DISABLED;
   pTimerCfg.PushPull = HRTIM_TIMPUSHPULLMODE_DISABLED;
   pTimerCfg.FaultEnable = HRTIM_TIMFAULTENABLE_NONE;
   pTimerCfg.FaultLock = HRTIM_TIMFAULTLOCK_READWRITE;
@@ -227,6 +278,22 @@ void MX_HRTIM1_Init(void)
   }
   pCompareCfg.CompareValue = 0x1555;
   if (HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, HRTIM_COMPAREUNIT_1, &pCompareCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pTimeBaseCfg.Period = 2560;
+  if (HAL_HRTIM_TimeBaseConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, &pTimeBaseCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_HRTIM_WaveformTimerControl(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, &pTimerCtl) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_HRTIM_RollOverModeConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_TIM_FEROM_BOTH|HRTIM_TIM_BMROM_BOTH
+                              |HRTIM_TIM_ADROM_CREST|HRTIM_TIM_OUTROM_BOTH
+                              |HRTIM_TIM_ROM_BOTH) != HAL_OK)
   {
     Error_Handler();
   }
@@ -338,11 +405,97 @@ void HAL_HRTIM_MspDeInit(HRTIM_HandleTypeDef* hrtimHandle)
 }
 
 /* USER CODE BEGIN 1 */
+/*
+ * Parked-leg sync and pulse skipping (60V, 10A and RESISTANCE modes).
+ *
+ * The parked (50 kHz) leg's low pulse must fall where the fast leg's low side
+ * is on. The master timer (configured in the .ioc) defines a 20 us frame:
+ * compare 1 resets Timers B and D, compare 3 resets Timer E half a frame
+ * later, so the parked pulse lands at the same frame time in buck and boost.
+ * The burst controller (clock Timer D, trigger master compare 2) idles a
+ * block of fast cycles around that time: low side on, high side off. Only the
+ * fast leg follows the burst -- in up/down mode a timer enters/leaves burst
+ * idle only at its own roll-over, every 10 us for the 50 kHz leg.
+ *
+ * Master compare 2 (block start) is set here so the block is centred on
+ * compare 3, where the parked pulse sits.
+ */
+static void hrtim_sync_init(void) {
+#ifdef VOUT_SYNC_BURST_ENABLED
+	const uint8_t timers[2] = { HRTIM_CHANNEL_PRIM, HRTIM_CHANNEL_SEK };
+	for (unsigned i = 0; i < 2; i++) {
+		// IDLES1 (low side on in idle) only takes a write before the counters
+		// run (RM0440: "must be set prior to HRTIM controlling the outputs";
+		// bench: later writes read back 0). Disabled outputs idle at this
+		// level too, so every stop path drops CONV_CTRL_EN first.
+		HRTIM1->sTimerxRegs[timers[i]].OUTxR |= HRTIM_OUTR_IDLES1
+				| HRTIM_OUTR_DIDL1 | HRTIM_OUTR_DIDL2;
+		HRTIM1->sTimerxRegs[timers[i]].OUTxR &= ~(HRTIM_OUTR_IDLES2
+				| HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2);
+	}
+
+	// Not in the .ioc: single-shot on master compare 2 (one idle block per
+	// frame; continuous ran on its own ~10 us period), and preload so a new
+	// idle length applies at the next frame.
+	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BMOM;
+	uint32_t cycle = HRTIM1->sMasterRegs.MPER / CTRL_PARAM_VOUT_FRAME_CYCLES;
+	HRTIM1->sMasterRegs.MCMP2R = HRTIM1->sMasterRegs.MCMP3R
+			- cycle * CTRL_PARAM_VOUT_SYNC_CYCLES / 2;
+	HRTIM1->sCommonRegs.BMTRGR = HRTIM_BMTRGR_MSTCMP2;
+	HRTIM1->sCommonRegs.BMCMPR = CTRL_PARAM_VOUT_SYNC_CYCLES;
+	HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BMPREN;
+#endif
+}
+
 /**
- * Starts all HRTIM Channel counters
+ * Starts all HRTIM Channel counters, including the master (frame for the
+ * parked-leg sync) and Timer D (fixed 1 MHz ADC trigger, see adc.h).
  */
 void hrtim_start_timer(void) {
-	HRTIM1->sMasterRegs.MCR |= (HRTIM_MCR_TBCEN | HRTIM_MCR_TCCEN | HRTIM_MCR_TECEN);
+	hrtim_sync_init();
+	HRTIM1->sMasterRegs.MCR |= (HRTIM_MCR_TBCEN | HRTIM_MCR_TCCEN | HRTIM_MCR_TECEN
+			| HRTIM_MCR_TDCEN | HRTIM_MCR_MCEN);
+}
+
+
+/* Usable PERxR / CMP1xR window of the HRTIM */
+#define HRTIM_MIN_COUNT 0x60
+#define HRTIM_MAX_COUNT 0xFFDF
+
+/**
+ * Clamps a PERxR value to what the HRTIM can actually use.
+ *
+ * PERxR is a 16-bit register subject to the same HRTIM-imposed limits as
+ * CMP1xR (see hrtim_set_duty() below): a too-low freq makes the quotient
+ * overflow 16 bits and silently truncate to an arbitrary period, and a
+ * too-high freq can undershoot HRTIM's minimum usable period. Clamp to
+ * the same [0x60, 0xFFDF] window hrtim_set_duty() already enforces, so
+ * the timer always ends up at a well-defined, bounded frequency instead
+ * of an arbitrary truncated one - consistent with hrtim_set_duty()'s
+ * existing silent-clamp behaviour.
+ */
+static uint32_t hrtim_clamp_period(uint32_t period) {
+	if (period < HRTIM_MIN_COUNT)
+		period = HRTIM_MIN_COUNT;
+	else if (period > HRTIM_MAX_COUNT)
+		period = HRTIM_MAX_COUNT;
+	return period;
+}
+
+/**
+ * Compare value for a duty in pu (0..1) at a given period, with the same
+ * stricter HRTIM limit hrtim_set_duty() always applied.
+ */
+static uint32_t hrtim_duty_to_compare(uint32_t period, float value) {
+	uint32_t duty;
+
+	if (value < 0.0F)
+		value = 0.0F;
+	else if (value > 1.0F)
+		value = 1.0F;
+	duty = (period * value);
+	// Enforce more strict limit imposed by HRTIM
+	return hrtim_clamp_period(duty);
 }
 
 /**
@@ -351,8 +504,19 @@ void hrtim_start_timer(void) {
  * @param freq Frequency to set in Hz.
  */
 void hrtim_set_freq(uint8_t channel, uint32_t freq) {
-	HRTIM1->sTimerxRegs[channel].PERxR = (0x98968000 / freq);
-	//HRTIM1->sTimerxRegs[channel].TIMxCR = (HRTIM1->sTimerxRegs[channel].TIMxCR & (~ HRTIM_PRESCALERRATIO_DIV4)) | HRTIM_PRESCALERRATIO_MUL32;
+	uint32_t period;
+
+	if (!HRTIM_CHANNEL_IS_VALID(channel))
+		return;
+
+	// freq == 0 has no valid period (division by zero); there is no sane
+	// substitute value to invent here, so refuse rather than guess.
+	if (freq == 0)
+		return;
+
+	period = HRTIM_PERIOD_FROM_FREQ(freq);
+	period = hrtim_clamp_period(period);
+	HRTIM1->sTimerxRegs[channel].PERxR = period;
 }
 
 /**
@@ -362,20 +526,52 @@ void hrtim_set_freq(uint8_t channel, uint32_t freq) {
  */
 
 void hrtim_set_duty(uint8_t channel, float value) {
-	uint32_t duty;
-	if (value < 0.0F)
-		value = 0.0F;
-	else if (value > 1.0F)
-		value = 1.0F;
-	duty = (HRTIM1->sTimerxRegs[channel].PERxR * value);
-	// Enforce more strict limit imposed by HRTIM
-	if (duty < 0x60)
-		duty = 0x60;
-	else if (duty > 0xFFDF)
-		duty = 0xFFDF;
-	HRTIM1->sTimerxRegs[channel].CMP1xR = duty;
+	if (!HRTIM_CHANNEL_IS_VALID(channel))
+		return;
 
+	HRTIM1->sTimerxRegs[channel].CMP1xR = hrtim_duty_to_compare(
+			HRTIM1->sTimerxRegs[channel].PERxR, value);
+}
 
+/**
+ * Sets frequency and duty of PRIM and SEK together: the update-disable bits
+ * hold the preload registers back until all four are written, so no period
+ * runs with a new PERxR and an old CMP1xR.
+ */
+void hrtim_set_prim_sek(uint32_t prim_freq, float prim_duty,
+		uint32_t sek_freq, float sek_duty) {
+	if (prim_freq == 0 || sek_freq == 0)
+		return;
+
+	uint32_t prim_period = hrtim_clamp_period(HRTIM_PERIOD_FROM_FREQ(prim_freq));
+	uint32_t sek_period = hrtim_clamp_period(HRTIM_PERIOD_FROM_FREQ(sek_freq));
+
+	HRTIM1->sCommonRegs.CR1 |= (HRTIM_CR1_TBUDIS | HRTIM_CR1_TEUDIS);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].PERxR = prim_period;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].CMP1xR = hrtim_duty_to_compare(prim_period, prim_duty);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].PERxR = sek_period;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].CMP1xR = hrtim_duty_to_compare(sek_period, sek_duty);
+	HRTIM1->sCommonRegs.CR1 &= ~(HRTIM_CR1_TBUDIS | HRTIM_CR1_TEUDIS);
+}
+
+/**
+ * Sets frequency and duty of one channel together (update held back for that
+ * timer only, see hrtim_set_prim_sek()).
+ * @param channel HRTIM_CHANNEL_PRIM, _SEK or _HV.
+ * @param freq Frequency in Hz.
+ * @param duty Duty in pu from 0 to 1.
+ */
+void hrtim_set_freq_duty(uint8_t channel, uint32_t freq, float duty) {
+	if (!HRTIM_CHANNEL_IS_VALID(channel) || freq == 0)
+		return;
+
+	uint32_t period = hrtim_clamp_period(HRTIM_PERIOD_FROM_FREQ(freq));
+	uint32_t udis = HRTIM_CR1_TAUDIS << channel;
+
+	HRTIM1->sCommonRegs.CR1 |= udis;
+	HRTIM1->sTimerxRegs[channel].PERxR = period;
+	HRTIM1->sTimerxRegs[channel].CMP1xR = hrtim_duty_to_compare(period, duty);
+	HRTIM1->sCommonRegs.CR1 &= ~udis;
 }
 
 void hrtim_enable(uint8_t channel) {
@@ -407,4 +603,142 @@ void hrtim_disable(uint8_t channel) {
 		break;
 	}
 }
+
+/** Burst controller off, idle mode (IDLM) of PRIM and SEK cleared. */
+static void hrtim_clear_burst_idle(void) {
+	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].OUTxR &= ~(HRTIM_OUTR_IDLM1
+			| HRTIM_OUTR_IDLM2);
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].OUTxR &= ~(HRTIM_OUTR_IDLM1
+			| HRTIM_OUTR_IDLM2);
+}
+
+/**
+ * @brief Gate-driver enables off, burst idle cleared, all HRTIM outputs
+ *        disabled. Register writes only, safe from fault handlers.
+ */
+void hrtim_emergency_off(void) {
+	CONV_CTRL_EN_GPIO_Port->BRR = CONV_CTRL_EN_Pin;
+	HV_CTRL_EN_GPIO_Port->BRR = HV_CTRL_EN_Pin;
+	hrtim_clear_burst_idle();
+	hrtim_disable(HRTIM_CHANNEL_ALL);
+}
+
+static uint8_t hrtim_sek_shorted = 0;
+
+/**
+ * @brief Forces the SEK half-bridge into shoot-through (both gates ON via
+ *        GPIO) for AMPMETER and the OVP short. Timer E keeps running.
+ *        Caller must make sure CONV_CTRL_EN is set for the gates to follow.
+ */
+void hrtim_sek_force_short(void) {
+	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+
+	hrtim_disable(HRTIM_CHANNEL_SEK);
+
+	GPIO_InitStruct.Pin = CONV_CTRL_SEC_L_Pin | CONV_CTRL_SEC_H_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+	// Drive both gates to the same ON level - deliberate shoot-through.
+	HAL_GPIO_WritePin(CONV_CTRL_SEC_L_GPIO_Port, CONV_CTRL_SEC_L_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(CONV_CTRL_SEC_H_GPIO_Port, CONV_CTRL_SEC_H_Pin, GPIO_PIN_SET);
+
+	hrtim_sek_shorted = 1;
+}
+
+/**
+ * @brief Reverses hrtim_sek_force_short(): restores
+ *        CONV_CTRL_SEC_L_Pin/CONV_CTRL_SEC_H_Pin to HRTIM's alternate
+ *        function (mirroring HAL_HRTIM_MspPostInit's original
+ *        configuration exactly) and re-enables the SEK output. Safe to
+ *        call even if the pins are already in their normal state.
+ * @return none
+ */
+void hrtim_sek_restore(void) {
+	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+
+	if (!hrtim_sek_shorted)
+		return;
+
+	GPIO_InitStruct.Pin = CONV_CTRL_SEC_L_Pin | CONV_CTRL_SEC_H_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	GPIO_InitStruct.Alternate = GPIO_AF3_HRTIM1;
+	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+	hrtim_sek_shorted = 0;
+}
+/**
+ * Puts only the fast leg (HRTIM_CHANNEL_PRIM or _SEK) under burst idle control
+ * and enables the burst. IDLM is changed with BME = 0, as changing it during a
+ * burst is not confirmed safe. IDLES1 is set on both legs at init.
+ */
+void hrtim_burst_select_leg(uint8_t fast_channel) {
+#ifdef VOUT_SYNC_BURST_ENABLED
+	const uint32_t idlm = HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2;
+	uint8_t parked = (fast_channel == HRTIM_CHANNEL_PRIM) ? HRTIM_CHANNEL_SEK
+			: HRTIM_CHANNEL_PRIM;
+
+	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
+	HRTIM1->sTimerxRegs[parked].OUTxR &= ~idlm;
+	HRTIM1->sTimerxRegs[fast_channel].OUTxR |= idlm;
+	HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BME;
+#else
+	(void) fast_channel;
+#endif
+}
+
+/**
+ * Locks Timers B, D, E to the master frame and starts the burst on the fast
+ * leg. Call before enabling the PRIM/SEK outputs.
+ */
+void hrtim_sync_start(uint8_t fast_channel) {
+#ifdef VOUT_SYNC_BURST_ENABLED
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].RSTxR = HRTIM_RSTR_MSTCMP1;
+	HRTIM1->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_D].RSTxR = HRTIM_RSTR_MSTCMP1;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].RSTxR = HRTIM_RSTR_MSTCMP3;
+	hrtim_burst_select_leg(fast_channel);
+#else
+	(void) fast_channel;
+#endif
+}
+
+/**
+ * Undoes hrtim_sync_start(). Safe to call at any time.
+ */
+void hrtim_sync_stop(void) {
+#ifdef VOUT_SYNC_BURST_ENABLED
+	hrtim_clear_burst_idle();
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].RSTxR = 0;
+	HRTIM1->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_D].RSTxR = 0;
+	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].RSTxR = 0;
+#endif
+}
+
+/**
+ * Disables the burst controller (off in the 4-switch region).
+ */
+void hrtim_burst_stop(void) {
+#ifdef VOUT_SYNC_BURST_ENABLED
+	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
+#endif
+}
+
+/**
+ * Idle block length per frame, in fast-leg cycles; applies at the next frame.
+ */
+void hrtim_burst_set_idle_cycles(unsigned cycles) {
+#ifdef VOUT_SYNC_BURST_ENABLED
+	if (cycles > CTRL_PARAM_VOUT_FRAME_CYCLES)
+		cycles = CTRL_PARAM_VOUT_FRAME_CYCLES;
+	HRTIM1->sCommonRegs.BMCMPR = cycles;
+#else
+	(void) cycles;
+#endif
+}
+
 /* USER CODE END 1 */

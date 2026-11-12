@@ -11,22 +11,19 @@
 #include "event.h"
 
 /**
- * Enum that defines whether the timer event is rise repetitive or only once.
+ * Timer type (repetitive tick).
  */
 typedef enum
 {
-	TIMER_TYPE_TICK,  //!< TIMER_TYPE_TICK
-	TIMER_TYPE_TIMEOUT//!< TIMER_TYPE_TIMEOUT
+	TIMER_TYPE_TICK//!< TIMER_TYPE_TICK
 } TIMER_TYPE;
 
 #define TIMER_SUB_COUNT 2
-#define TIMER_FREQ 10 // in Hz
+#define TIMER_FREQ 50 // in Hz
 
 void timer_init(void);
 void timer_start(void);
 void timer_add(uint32_t time, TIMER_TYPE type, EVENTS event, void* ret);
-void timer_remove(EVENTS event);
-//void timer_removeSelective(EVENTS event, void* ret);
 
 
 #endif /* SRC_TIMER_H_ */

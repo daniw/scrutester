@@ -12,7 +12,13 @@
 #include <stdbool.h>
 #include "stdio.h"
 
+// BMS was reset recently (PASSQ restarted from 0) if passedTime is below this.
+#define BQ76905_RESTORE_MAX_PASSED_s 60
+
 // Register addresses
+/* Cells actually wired on this 4S pack (the chip has five inputs). */
+#define BQ76905_PACK_CELL_COUNT        4
+
 #define BQ76905_COMMAND_ALERT_A        0x02
 #define BQ76905_COMMAND_STATUS_A       0x03
 #define BQ76905_COMMAND_ALERT_B        0x04
@@ -98,6 +104,17 @@ typedef struct{
 	    uint8_t safetyStatusB;
 	} SafetyRegisters;
 
+/* Readback-side bit for Safety Status A (BQ76905 TRM SLUUCI8, Table 6-3) --
+ * distinct from the write-side BQ76905_REG_PROT_EN_A_CUV /
+ * BQ76905_REG_PROT_DSG_FET_A_CUV in bq76905_config_flags.h, which configure
+ * the device rather than decode its status readback (they happen to share
+ * bit 0x40, but that is coincidental, not the same register). CUV auto-
+ * recovers (autonomous recovery, default-enabled) once the weakest cell
+ * rises above threshold + hysteresis -- no manual clear needed. */
+#define BQ76905_SAFETY_STATUS_A_CUV 0x40
+
+	/* The BQ76905 has five cell inputs, but this pack is 4S: only
+	 * CellVoltages[0..BQ76905_PACK_CELL_COUNT-1] are wired, [4] reads 0. */
 	struct{
 	    uint16_t BatteryStatus;
 	    uint16_t CellVoltages[5];
@@ -129,13 +146,36 @@ typedef struct{
 	    uint16_t CHGFetPWM;
 	} SystemCtrl;
 
+	// Mirrors exactly the BQ76905_SUBCOMMAND_PASSQ RAM register (12 bytes,
+	// int64_t + uint32_t) - see the explicit "12" byte count in the reads
+	// in bq76905.c. Do NOT add fields here: struct padding after this
+	// point would silently grow past the 12 real hardware bytes.
 	struct{
 		int64_t accumulatedCharge;
 		uint32_t passedTime;
-		uint8_t charge_percentage;
 	} Accumulator;
 
+	// State-of-charge, computed by firmware from Accumulator.accumulatedCharge
+	// vs. battery_capacity_mAs (see BQ76905_updateChargePercentage()) - not a
+	// raw BQ76905 register, so it does not belong inside Accumulator above.
+	uint8_t charge_percentage;
+
+	// Rated pack capacity in mA-seconds (same unit as accumulatedCharge),
+	// loaded from config_store.calibration.battery_capacity_mAs at startup -
+	// see main.c. Kept adaptable via EEPROM rather than hardcoded so a
+	// different pack size doesn't need a recompile.
+	uint32_t battery_capacity_mAs;
+
+	// Charge kept across a BMS reset (PASSQ restarted from 0): offset in raw
+	// PASSQ units added to accumulatedCharge for the SoC. restore_* are the
+	// EEPROM values, applied once on the first PASSQ read if restore_pending.
+	int64_t charge_offset;
+	int32_t restore_mAs;
+	int32_t restore_offset_mAs;
+	uint8_t restore_pending;
+
 	BQ76905_asyncState asyncState;
+	uint32_t last_update_ms; // HAL_GetTick() of the last complete read cycle
 	uint8_t command_tx;
 	uint8_t command_tx2[4];
 
@@ -151,6 +191,8 @@ typedef struct{
      * Results will be stored in internal arrays.
      */
     void BQ76905_readAllValuesAsync(BQ76905_handle* handle);
+    uint32_t BQ76905_data_age_ms(const BQ76905_handle* handle);
+    uint8_t BQ76905_data_stale(const BQ76905_handle* handle);
     
     /**
      * Starts synchropnous read of all measurement values.
@@ -162,6 +204,20 @@ typedef struct{
     void BQ76905_resetAlarmStatus(BQ76905_handle* handle);
 
     void BQ76905_resetChargeAccumulator(BQ76905_handle* handle);
+
+    /**
+     * @brief Charge relative to full, including the restored offset.
+     * @param handle BMS handle.
+     * @return Charge in mAs (negative = discharged).
+     */
+    int32_t BQ76905_charge_mAs(const BQ76905_handle* handle);
+
+    /**
+     * @brief Restored offset part of BQ76905_charge_mAs().
+     * @param handle BMS handle.
+     * @return Offset in mAs.
+     */
+    int32_t BQ76905_offset_mAs(const BQ76905_handle* handle);
 
     void BQ76905_resetDevice(BQ76905_handle* handle);
 

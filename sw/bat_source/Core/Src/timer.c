@@ -5,10 +5,12 @@
  *      Author: ahorat
  */
 
+#include <stdint.h>
 #include "timer.h"
 #include "error.h"
 #include "main.h"
 #include "list.h"
+#include "dac.h"
 
 /**
  * Struct that represents one timer event.
@@ -16,8 +18,8 @@
 typedef struct
 {
 	TIMER_TYPE type;
-	uint8_t load;
-	uint8_t count;
+	uint16_t load;
+	uint16_t count;
 	EVENTS event;
 	void* ret;
 } TIMER_SUB;
@@ -44,6 +46,14 @@ extern TIM_HandleTypeDef htim2;
  */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+	// TIM6 is a separate, simpler always-running hardware timer that drives
+	// the milliohmmeter mode's DAC square wave - it's not part of the
+	// timer_handle/event-queue system below, so it's dispatched independently.
+	if (htim->Instance == TIM6)
+	{
+		dac_sqwave_tick();
+		return;
+	}
 	if(htim != timer_handle.instance)
 		return;
 	uint8_t i;
@@ -58,15 +68,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			if (sub->count == 0)
 			{
 				event_Add(sub->event, 0,  sub->ret);
-				switch (sub->type)
-				{
-					case TIMER_TYPE_TICK:
-						sub->count = sub->load;
-						break;
-					case TIMER_TYPE_TIMEOUT:
-						list_Remove(&timer_handle.liststr, i);
-						break;
-				}
+				sub->count = sub->load;
 			}
 		}
 	}
@@ -102,9 +104,12 @@ void timer_start(void)
  * @param event the event that is risen when the timer elapsed.
  * @param ret return value that is added to the event.
  */
-void timer_addTimer(timer_handle_t* timer, uint8_t load, TIMER_TYPE type, EVENTS event, void* ret)
+void timer_addTimer(timer_handle_t* timer, uint16_t load, TIMER_TYPE type, EVENTS event, void* ret)
 {
 	TIMER_SUB* new;
+	// The timer ISR iterates the list, so GetFree..Add must not be interrupted.
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
 	new = list_GetFree(&(timer->liststr));
 	if (!list_CheckRemove(new))
 	{
@@ -114,9 +119,11 @@ void timer_addTimer(timer_handle_t* timer, uint8_t load, TIMER_TYPE type, EVENTS
 		new->event = event;
 		new->ret = ret;
 		list_Add(&(timer->liststr), new);
+		__set_PRIMASK(primask);
 	}
 	else
 	{
+		__set_PRIMASK(primask);
 		error_Add(ERROR_TTC_OVF, event);
 	}
 }
@@ -132,55 +139,10 @@ void timer_add(uint32_t time, TIMER_TYPE type, EVENTS event, void* ret)
 {
 	uint32_t load;
 	load = time * timer_handle.frq / 1000;
-	if (load > 0)
+	if (load == 0 || load > UINT16_MAX)
 	{
-		timer_addTimer(&(timer_handle), (uint8_t) load, type, event, ret);
+		error_Add(ERROR_TTC_OVF, event);
 		return;
 	}
+	timer_addTimer(&(timer_handle), (uint16_t) load, type, event, ret);
 }
-
-/**
- * Removes a timer event from the timer instance.
- * @param event timer event that is removed.
- */
-void timer_remove(EVENTS event)
-{
-	uint8_t index;
-	TIMER_SUB* sub;
-		for (index = 0; index < timer_handle.liststr.count; index++)
-		{
-			sub = list_Get(&(timer_handle.liststr), index);
-			if (!list_CheckRemove(sub))
-			{
-				if (sub->event == event)
-				{
-					list_Remove(&(timer_handle.liststr), index);
-					return;
-				}
-			}
-		}
-}
-
-/**
- * Removes a timer event from the timer instance.
- * @param event timer event that is removed.
- * @param ret return data that has to match too
- */
-/*void timer_removeSelective(EVENTS event, void* ret)
-{
-	uint8_t i, index;
-	TIMER_SUB* sub;
-		for (index = 0; index < timer_handle.liststr.count; index++)
-		{
-			sub = list_Get(&(timer_handle.liststr), index);
-			if (!list_CheckRemove(sub))
-			{
-				if (sub->event == event && sub->ret == ret)
-				{
-					list_Remove(&(timer_handle.liststr), index);
-					return;
-				}
-			}
-		}
-
-}*/

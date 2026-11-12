@@ -39,7 +39,13 @@ ENTRY(Reset_Handler)
 _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 
 _Min_Heap_Size = 0x200; /* required amount of heap */
-_Min_Stack_Size = 0x400; /* required amount of stack */
+/* Raised from 0x400 (1 KB): the CLI path nests HAL calls under sprintf/
+ * vsnprintf (no -u _printf_float, so no float formatting, but still real
+ * frame depth) and previously relied on stack-resident buffers up to
+ * 16 kB in cli.c that have since been moved to static storage. 1 KB left
+ * too little headroom against interrupt-time nesting on top of that call
+ * depth; 4 KB is affordable out of the 128 KB total RAM. */
+_Min_Stack_Size = 0x1000; /* required amount of stack */
 
 /* Memories definition */
 MEMORY
@@ -163,6 +169,16 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
+  } >RAM
+
+  /* Survives resets: not in .bss/.data, so startup neither zeroes nor loads it.
+   * Before _user_heap_stack so "end" (heap start) lies behind it. */
+  .noinit (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.noinit)
+    *(.noinit*)
+    . = ALIGN(4);
   } >RAM
 
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */

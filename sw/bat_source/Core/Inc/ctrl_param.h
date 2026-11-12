@@ -8,36 +8,234 @@
 #ifndef INC_CTRL_PARAM_H_
 #define INC_CTRL_PARAM_H_
 
+#include "debug.h" // VOUT_SYNC_BURST_DISABLE
+
 #define CTRL_FREQ 25000.0F
 
 #define CTRL_PARAM_SW_FREQ_HIGH 1000000
 #define CTRL_PARAM_SW_FREQ_LOW  50000
 #define CTRL_PARAM_CONST_DUTY_HIGH 0.985
 #define CTRL_PARAM_CONST_DUTY_LOW 0.015
+#define CTRL_PARAM_SW_FREQ_HV 350000
 
-#define CTRL_PARAM_VOLTAGE_BOOST_P 0.01F
-#define CTRL_PARAM_VOLTAGE_BOOST_I (1.0F/CTRL_FREQ)
+// Bench-tuned at V_in ~13 V, light load (1 A limiter not exercised).
+#define CTRL_PARAM_VOLTAGE_BOOST_P 0.005F
+#define CTRL_PARAM_VOLTAGE_BOOST_I (0.6F/CTRL_FREQ)
 
+// Bench-tuned in the 60V buck region; also used by RESISTANCE_1A/1mA.
 #define CTRL_PARAM_VOLTAGE_BUCK_P 0.01F
-#define CTRL_PARAM_VOLTAGE_BUCK_I (1.0F/CTRL_FREQ)
+#define CTRL_PARAM_VOLTAGE_BUCK_I (10.0F/CTRL_FREQ)
 
 #define CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH 0.8F
 #define CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_LOW 0.0F
 
-#define CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH 0.8F
+// 0.85: 63 V at V_in 12.8 V needs > 0.8 under load (bench, 0.5 A).
+#define CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH 0.85F
 #define CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW 0.015F
 
-#define CTRL_PARAM_CURRENT_P 0.001F
-#define CTRL_PARAM_CURRENT_I (0.1F/CTRL_FREQ)
+#define CTRL_PARAM_BOOST_IOUT_LIMIT_mA 1000
+#define CTRL_PARAM_BOOST_IOUT_LIMIT_P (0.01F)
+#define CTRL_PARAM_BOOST_IOUT_LIMIT_I (20.0F/CTRL_FREQ)
+
+// Setpoint limits. 60V: below the crowbar (BZT52C68 + gate, >= ~65.5 V worst case).
+#define CTRL_PARAM_60V_VOLTAGE_MAX_mV 65000
+#define CTRL_PARAM_10A_CURRENT_MAX_mA 10000
+
+// ---- Full-range voltage source (60V mode): buck / 4-switch / boost --------
+// Region edges at V_ref/V_in = 1 -/+ MARGIN; buck must reach 0.75 * V_in
+// below its 0.8 duty ceiling.
+#define CTRL_PARAM_VOUT_REGION_MARGIN 0.25F
+#define CTRL_PARAM_VOUT_REGION_HYSTERESIS 0.05F
+// Lowest V_IN used for the region ratio, against a dropped/unread rail.
+#define CTRL_PARAM_VOUT_VIN_MIN_mV 6000
+// Filtered V_IN and a minimum time per region: the raw sample toggled
+// 4-switch <-> boost at the 1.25 edge.
+#define CTRL_PARAM_VOUT_VIN_FILTER_s 0.01F
+#define CTRL_PARAM_VOUT_REGION_DWELL_s 0.02F
+
+// ---- Parked-leg bootstrap sync + pulse skipping (vout_region.h) -------------
+// VOUT_SYNC_BURST_DISABLE (debug.h) restores free-running parked pulses, no skipping.
+#ifndef VOUT_SYNC_BURST_DISABLE
+#define VOUT_SYNC_BURST_ENABLED
+#endif
+// Idle block length: must cover the parked low pulse (~440 ns, bench);
+// 2-3 cycles held the low side on too long in boost (bench).
+// hrtim_sync_init() centres the block on master cmp 3.
+#define CTRL_PARAM_VOUT_SYNC_CYCLES 1
+// Burst frame in fast-leg cycles.
+#define CTRL_PARAM_VOUT_FRAME_CYCLES (CTRL_PARAM_SW_FREQ_HIGH / CTRL_PARAM_SW_FREQ_LOW)
+// HRTIM compare floor (3.75 % at 1 MHz) plus margin; below it, pulses are
+// skipped instead (buck only).
+#define CTRL_PARAM_VOUT_MIN_RUN_DUTY 0.04F
+#define CTRL_PARAM_VOUT_MAX_RUN_DUTY 0.95F
+
+// 4-switch region loop, bench-tuned at V_in ~13 V.
+#define CTRL_PARAM_VOLTAGE_4SW_P 0.005F
+#define CTRL_PARAM_VOLTAGE_4SW_I (3.0F/CTRL_FREQ)
+#define CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_HIGH 0.8F
+#define CTRL_PARAM_VOLTAGE_4SW_DUTY_SAT_LOW 0.0F
+
+// Bench-tuned: P > 0.01 oscillates, I > 3.5 unstable.
+#define CTRL_PARAM_CURRENT_P 0.01F
+#define CTRL_PARAM_CURRENT_I (2.0F/CTRL_FREQ)
 #define CTRL_PARAM_CURRENT_DUTY_SAT_HIGH 0.5F
 #define CTRL_PARAM_CURRENT_DUTY_SAT_LOW 0.0F
 
-#define CTRL_PARAM_IDLE_VOLTAGE_1A_mV 5000
+// 10A compliance: limiter on v_out caps the current PI's duty. Gains from
+// the buck voltage loop (same plant), untuned.
+#define CTRL_PARAM_10A_COMPLIANCE_mV 5000
+// Idle limiter's I part is clamped to the applied duty plus this fraction of
+// its sat_high (0.017 in 60V boost). Without headroom current noise capped the
+// duty; too much makes the take-over slow (h / (Ki * overcurrent)).
+#define CTRL_PARAM_LIMITER_HEADROOM 0.02F
+#define CTRL_PARAM_10A_VLIMIT_P CTRL_PARAM_VOLTAGE_BUCK_P
+#define CTRL_PARAM_10A_VLIMIT_I CTRL_PARAM_VOLTAGE_BUCK_I
+
+#define CTRL_PARAM_CHARGE_CURRENT_P 0.001F
+// I part on the BMS current (~10 Hz + conversion delay): 0.1/s oscillated
+// (bench), 0.02/s stable.
+#define CTRL_PARAM_CHARGE_CURRENT_I (0.02F/CTRL_FREQ)
+#define CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_HIGH 0.985F
+#define CTRL_PARAM_CHARGE_CURRENT_DUTY_SAT_LOW 0.0F
+
+// CV tail of the charge cycle: outer loop on 4 x max cell voltage, run at
+// the statemachine tick, sets the CC loop's current (A per V). Untuned.
+#define CTRL_PARAM_CHARGE_CV_RATE_HZ 50
+#define CTRL_PARAM_CHARGE_VOLTAGE_P 0.5F
+#define CTRL_PARAM_CHARGE_VOLTAGE_I (2.0F/CTRL_PARAM_CHARGE_CV_RATE_HZ)
+
+
+#define CTRL_PARAM_HV_VOLTAGE_P 0.001F
+#define CTRL_PARAM_HV_VOLTAGE_I (0.1F/CTRL_FREQ)
+#define CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_HIGH 0.2F
+#define CTRL_PARAM_HV_VOLTAGE_DUTY_SAT_LOW 0.0F
+
+// Limiter works in mA (P: duty per mA); keep below PROTECTION_ISO_MAX_uA.
+#define CTRL_PARAM_HV_IOUT_LIMIT_uA 1200
+#define CTRL_PARAM_HV_CURRENT_P 0.05F
+#define CTRL_PARAM_HV_CURRENT_I (5.0F/CTRL_FREQ)
+// Limiter headroom (see CTRL_PARAM_LIMITER_HEADROOM): 0.05 duty. The HV
+// voltage P on the noisy internal v_hv jitters the duty by > 0.004 per tick;
+// 0.02 capped that jitter and held 500 V at 400 V (bench).
+#define CTRL_PARAM_HV_LIMITER_HEADROOM 0.25F
+
+// ---- EMI test mode (see EMI_DEBUG in statemachine.h) ---------------
+// HV flyback runs open-loop at a fixed duty while the LV converter regulates
+// OUT_LV with the 60V full-range loop; the LV loop pushes the flyback's energy
+// back into the battery. All placeholders pending bench bring-up.
+#define CTRL_PARAM_EMI_HV_DUTY 0.01F
+// Encoder-adjustable LV setpoint: starts at ..._DEFAULT_mV, resolution 500 mV
+// (same as 60V), clamped to ..._MAX_mV.
+#define CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV 40000
+#define CTRL_PARAM_EMI_VOLTAGE_MAX_mV 50000
+// Abort limits: PROTECTION_EMI_MAX_* (protection_param.h).
+
+#define CTRL_PARAM_IDLE_VOLTAGE_1A_mV 2000
 #define CTRL_PARAM_IDLE_VOLTAGE_1mA_mV 3000
 
+// 12 bit DAC code for the "high" half of the RESISTANCE_1A test-current
+// reference square wave. Placeholder mid-scale value only - needs real
+// bench tuning against the actual 1A current source hardware.
+#define CTRL_PARAM_1A_REF_DAC_VALUE 3820
+
 #define CTRL_PARAM_CHARGE_CURRENT_mA 1000
-#define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3650*4)
-#define CTRL_PARAM_CHARGE_BO_VOLTAGE_mV (16000)
+#define CTRL_PARAM_CHARGE_END_VOLTAGE_mV (3500*4)
+
+// Reduced current target for a deep-discharge/CUV recovery charge (see
+// statemachine_enter_charge(1) in statemachine.c) -- charging
+// into a pack the BMS has flagged undervoltage on, through the DSG FET's
+// body diode with no closed-loop DSG path. Independently bench-tunable, not
+// derived from CTRL_PARAM_CHARGE_CURRENT_mA, in case the safe recovery
+// current doesn't simply scale with the normal charge current.
+#define CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA 100
+
+// Rated pack capacity, in mA-seconds to match the BQ76905 PASSQ
+// accumulator's units (4.5Ah LiFePO4 = 4500mAh * 3600s/h). Stored
+// adaptable in EEPROM (config_store.calibration.battery_capacity_mAs)
+// rather than hardcoded, so a different pack doesn't need a recompile -
+// this is only the power-on default.
+#define CTRL_PARAM_BATTERY_CAPACITY_mAs (4500UL*3600UL)
+
+// Charge is only considered finished once the current has tapered below
+// this (in addition to reaching CTRL_PARAM_CHARGE_END_VOLTAGE_mV) - roughly
+// C/20 for the 4.5Ah pack. Placeholder needing bench tuning, like the other
+// charge params.
+#define CTRL_PARAM_CHARGE_TAPER_CURRENT_mA 100
+// Max cell spread for a regular end of charge.
+#define CTRL_PARAM_CHARGE_CELL_SPREAD_mV 50
+// End of charge despite a larger spread after this long at end voltage/taper.
+#define CTRL_PARAM_CHARGE_BALANCE_TIMEOUT_s (60UL * 60UL)
+// Overall charge time limit.
+#define CTRL_PARAM_CHARGE_MAX_TIME_s (5UL * 60UL * 60UL)
+
+// Plausibility window for bms.VoltageRegisters.StackVoltage before it is
+// trusted to gate the CC->CV transition. The BMS is read asynchronously over
+// I2C at ~10Hz, so the field reads 0 before the first successful poll and
+// holds its last value if the bus fails - and a 0 would sit below the end
+// voltage forever, leaving the charger stuck in constant current with the CV
+// phase that is supposed to end it never engaging. A 4-cell LiFePO4 stack
+// below 8V is either deeply discharged (in which case the BMS should have cut
+// the FETs long before) or not a real reading; above 20V is not a 4-cell
+// LiFePO4 stack at all.
+#define CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV 8000
+#define CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV 20000
+
+#define CTRL_PARAM_CHARGE_START_VIN_LOW_mV 15000
+// Storage mode refused above this: any source powering the MCU via K1 wakes the BMS.
+#define CTRL_PARAM_STORAGE_MAX_VTERM_mV 5000
+#define CTRL_PARAM_CHARGE_START_VIN_HIGH_mV 24000
+#define CTRL_PARAM_CHARGE_STOP_VIN_mV (CTRL_PARAM_CHARGE_END_VOLTAGE_mV+200)
+
+// Margin below CTRL_PARAM_CHARGE_END_VOLTAGE_mV that StackVoltage must drop
+// under before CHARGE is allowed to auto-restart from Idle - without this,
+// a pack sitting right at the end-voltage threshold (e.g. rebounding once
+// current stops) could flap in and out of CHARGE mode.
+#define CTRL_PARAM_CHARGE_RESTART_MARGIN_mV 300
+
+// ---- Multi-phase CHARGE start (see charge_seq.h) --------------------------
+// All placeholders pending bench tuning: OUT_LV (the converter output node
+// behind the output relay) has no ADC channel, so PRECHARGE is open-loop and
+// its accuracy is only as good as V_IN and the duty model.
+
+// PRECHARGE target for the converter output node, as a fraction of the
+// charger voltage. Kept below 1.0 so an open-loop error cannot overshoot the
+// charger.
+#define CTRL_PARAM_CHARGE_PRECHARGE_RATIO 0.99F
+// PRIM duty ramp (PRIM_START_FRACTION -> full, like the 60V boost start),
+// then the SEK duty ramp towards the target, then a hold before the relay
+// is closed. SEK duty range of the open-loop boost, own copy of the 60V
+// boost limits.
+#define CTRL_PARAM_CHARGE_PRECHARGE_PRIM_START_FRACTION 0.1F
+#define CTRL_PARAM_CHARGE_PRECHARGE_SEK_DUTY_MIN 0.015F
+#define CTRL_PARAM_CHARGE_PRECHARGE_SEK_DUTY_MAX 0.8F
+#define CTRL_PARAM_CHARGE_PRECHARGE_PRIM_RAMP_s 0.2F
+#define CTRL_PARAM_CHARGE_PRECHARGE_SEK_RAMP_s 0.2F
+#define CTRL_PARAM_CHARGE_PRECHARGE_HOLD_s 0.2F
+
+// Wait after commanding the output relay closed before current control
+// starts. The relay's release time is not documented in the repo (datasheet
+// missing) - verify on the bench.
+#define CTRL_PARAM_CHARGE_RELAY_SETTLE_ms 100
+
+// Charge current reference ramps 0 -> CTRL_PARAM_CHARGE_CURRENT_mA over this.
+#define CTRL_PARAM_CHARGE_RAMP_s 5.0F
+
+// Window after the relay-close command over which the peak |I_OUT| is
+// recorded and printed (bench aid for tuning PRECHARGE_RATIO/RELAY_SETTLE_ms).
+#define CTRL_PARAM_CHARGE_PEAK_WINDOW_s 0.4F
+
+// Abort when the current reference is above ..._REF_mA but less than
+// ..._MEAS_mA actually flows for ..._ms: the charge path is open (relay
+// stuck open, charger gone) and the PI integrator would only wind up.
+#define CTRL_PARAM_CHARGE_STUCK_OPEN_REF_mA 300
+#define CTRL_PARAM_CHARGE_STUCK_OPEN_MEAS_mA 20
+#define CTRL_PARAM_CHARGE_STUCK_OPEN_ms 2000
+
+// Charger removed: the converter feeds the pack back into the terminals
+// (ext I_OUT > 0, charging is < 0) for seconds until V_TERM drops (bench).
+// Exit after this reverse current for this long (CC_RAMP/CV only).
+#define CTRL_PARAM_CHARGE_REVERSE_mA 200
+#define CTRL_PARAM_CHARGE_REVERSE_ms 100
 
 
 #endif /* INC_CTRL_PARAM_H_ */

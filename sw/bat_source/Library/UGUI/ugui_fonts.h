@@ -74,6 +74,18 @@ extern UG_FONT FONT_24X40[];
 #ifdef UGUI_USE_FONT_32X53
 extern UG_FONT FONT_32X53[];
 #endif
+
+#ifdef UGUI_USE_FONT_40X78
+extern UG_FONT FONT_40X78[];
+#endif
+
+#ifdef UGUI_USE_FONT_48X94
+extern UG_FONT FONT_48X94[];
+#endif
+
+#ifdef UGUI_USE_FONT_64X124
+extern UG_FONT FONT_64X124[];
+#endif
 /*
   New fonts. They use Unicode encoding. Can be generated with the new version of ttf2ugui
   Accessing encodings higher than 127 () require UTF-8 enabled and set the editor settings to use that encoding.

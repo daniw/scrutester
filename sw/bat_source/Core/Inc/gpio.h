@@ -40,6 +40,8 @@ void MX_GPIO_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 
+void gpio_irq_priority_override(void);
+
 #define GPIO_SET_DISPLAY_WR(value) HAL_GPIO_WritePin(DISPLAY_WR_GPIO_Port, DISPLAY_WR_Pin,value)
 #define GPIO_SET_CONV_CTRL_EN(value) HAL_GPIO_WritePin(CONV_CTRL_EN_GPIO_Port, CONV_CTRL_EN_Pin,value)
 #define GPIO_SET_OUT_SEL_ISO(value) HAL_GPIO_WritePin(OUT_SEL_ISO_GPIO_Port, OUT_SEL_ISO_Pin,value)
@@ -68,6 +70,14 @@ static inline void gpio_shutdown(void){
 
 void gpio_turnOn(void);
 void gpio_turnOff(void);
+
+/* Deasserts ON_REQ (gpio_turnOff()) and waits to confirm the on/off
+ * controller actually cut power; if the MCU is still running afterwards,
+ * re-asserts ON_REQ (gpio_turnOn()) rather than leaving the device in a
+ * half-off state. Blocks for ~110 ms in the case where the device really is
+ * about to lose power, which is expected: shared by the CLI's `turnOff` and
+ * the IDLE-timeout auto power-off (statemachine.c). */
+void gpio_power_off(void);
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

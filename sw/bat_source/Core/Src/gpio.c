@@ -22,7 +22,13 @@
 #include "gpio.h"
 
 /* USER CODE BEGIN 0 */
+#include "watchdog.h"
+#include <stdio.h>
+#include "irq_priority.h"
+#include "config_store.h"
+#include "bq76905.h"
 
+extern BQ76905_handle bms;
 /* USER CODE END 0 */
 
 /*----------------------------------------------------------------------------*/
@@ -181,11 +187,14 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(BUTTON_OK_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 4, 0);
 
 }
 
 /* USER CODE BEGIN 2 */
+void gpio_irq_priority_override(void) {
+	HAL_NVIC_SetPriority(EXTI2_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
+}
 
 /*
  * Sends on-request signal to on/off controller
@@ -199,5 +208,25 @@ void gpio_turnOn(void){
  */
 void gpio_turnOff(void){
 	HAL_GPIO_WritePin(ON_REQ_GPIO_Port, ON_REQ_Pin,0);
+}
+
+// See gpio.h. Moved here (was cmd_turnOff()'s body, cli.c) so an automatic
+// shutdown (statemachine.c) can go through the same confirm-or-recover
+// sequence as the CLI's manual one, instead of a bare gpio_turnOff() that
+// would leave the firmware in a half-off state if power doesn't actually cut.
+void gpio_power_off(void) {
+	printf("Turning off ...\r\n");
+	config_store_store_soc(BQ76905_charge_mAs(&bms), BQ76905_offset_mAs(&bms));
+	HAL_Delay(10);
+	gpio_turnOff();
+	for (uint16_t i = 0; i < 100; i++){
+		if (i%10 == 0){
+			printf("Waiting ...\r\n");
+		}
+		watchdog_kick();
+		HAL_Delay(1);
+	}
+	gpio_turnOn();
+	printf("Turning off unsuccessful, reenabling on/off controller\r\n");
 }
 /* USER CODE END 2 */

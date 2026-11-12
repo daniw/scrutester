@@ -176,20 +176,22 @@
 
 typedef struct{
     SPI_HandleTypeDef* hspi;
-    GPIO_TypeDef* drdyPort;
-    uint16_t drdyPin;
+    GPIO_TypeDef* csPort;
+    uint16_t csPin;
     GPIO_TypeDef* rstPort;
     uint16_t rstPin;
     uint8_t txBuffer[6*3];
     uint8_t rxBuffer[6*3];
     int32_t channelData[4];
+    uint32_t crc_errors;   // frames dropped on CRC mismatch
+    uint8_t selftest_ok;   // boot self-test passed (ADS131M04_selftest())
 } ADS131M04_handle;
 
 
 /**
  * @brief Sets up the handle
  */
-void ADS131M04_init(ADS131M04_handle* handle, SPI_HandleTypeDef* _hspi, GPIO_TypeDef* _drdyPort, uint16_t _drdyPin,
+void ADS131M04_init(ADS131M04_handle* handle, SPI_HandleTypeDef* _hspi, GPIO_TypeDef* _csPort, uint16_t _csPin,
 		 GPIO_TypeDef* _rstPort, uint16_t _rstPin);
 
 

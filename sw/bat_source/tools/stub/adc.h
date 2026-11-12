@@ -1,0 +1,16 @@
+#define ADC_VTERM_OFFSET_MV 1
+#define ADC_VTERM_GAIN_MV 1.0f
+#define ADC_IOUT_OFFSET 1
+#define ADC_IOUT_GAIN_MA 1.0f
+#define ADC_IISO_OFFSET_UA 1
+#define ADC_IISO_GAIN_UA 1.0f
+#define ADC_VIN_OFFSET_MV 1
+#define ADC_VIN_GAIN_MV 1.0f
+#define ADC_VOUT_OFFSET_MV 1
+#define ADC_VOUT_GAIN_MV 1.0f
+#define ADC_VHV_OFFSET_MV 1
+#define ADC_VHV_GAIN_MV 1.0f
+#define ADC_EXT_VSENS_GAIN_UV 1.0f
+#define ADC_EXT_VTERM_GAIN_MV 1.0f
+#define ADC_EXT_IOUT_GAIN_mA 1.0f
+#define ADC_EXT_IISO_GAIN_UA 1.0f

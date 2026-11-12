@@ -22,24 +22,27 @@
 #include "bq76905.h"
 #include "adc.h"
 #include "ads131m04.h"
-#include "bq76905.h"
+#include "dac.h"
 #include <stdarg.h>
 #include "tim.h"
 #include "hrtim.h"
 #include "ui_ctrl.h"
 #include "gpio.h"
+#include "irq_priority.h"
 #include "w25n01gv.h"
 #include "ctrl_param.h"
 #include "rtc.h"
 #include "lcd.h"
+#include "input.h"
+#include "config_store.h"
+#include "icon_store.h"
+#include "calibration.h"
+#include "protection.h"
+#include "watchdog.h"
+#include "emc_monitor.h"
+#include "cli_flash_test.h"
 
 #ifdef CLI_ENABLED
-
-#define CLI_CHECK_ARG_CNT(nof_args)                 if (number_of_args != nof_args)                             {printf("Incorrect number of arguments\nUsage: %s\n", cmd_arg_str[cmd_index]); return;}
-#define CLI_CHECK_ARG_CNT_MIN(nof_args)             if (number_of_args < nof_args)                              {printf("Incorrect number of arguments\nUsage: %s\n", cmd_arg_str[cmd_index]); return;}
-#define CLI_CHECK_ARG_CNT_MAX(nof_args)             if (number_of_args > nof_args)                              {printf("Incorrect number of arguments\nUsage: %s\n", cmd_arg_str[cmd_index]); return;}
-#define CLI_CHECK_ARG_CNT_RANGE(min_args, max_args) if (number_of_args < min_args || number_of_args > max_args) {printf("Incorrect number of arguments\nUsage: %s\n", cmd_arg_str[cmd_index]); return;}
-#define CLI_CHECK_ARG_CNT_NONE(nof_args)            if (number_of_args != nof_args && number_of_args != 0)      {printf("Incorrect number of arguments\nUsage: %s\n", cmd_arg_str[cmd_index]); return;}
 
 char line_buffer[LINE_BUF_SIZE];
 char *arg_locs[MAX_NUM_ARGS+1];
@@ -60,15 +63,18 @@ extern ADS131M04_handle ext_adc;
 extern ctrl_main_t ctrl_main_handle;
 extern I2C_HandleTypeDef *i2c_handle;
 extern w25n01gv_handle flash;
-extern PID_controller_t ctrl_pi_voltage_buck;
-extern PID_controller_t ctrl_pi_voltage_boost;
-extern PID_controller_t ctrl_pi_current;
 
 // Uart handling
 UART_HandleTypeDef *cli_huart;
 
+// Keyboard control mode (see cmd_control() / cli_control_process_byte())
+static uint8_t cli_control_active = 0;
+static uint8_t cli_control_esc_state = 0; // 0=normal, 1=ESC seen, 2='[' seen
+static uint32_t cli_control_esc_tick = 0;
+
 // Forward declarations
 static void cli_process_line(void);
+static void cli_control_process_byte(char c);
 
 // Function declarations
 void cmd_help(void);
@@ -90,13 +96,35 @@ void cmd_readLux(void);
 void cmd_printFlashID(void);
 void cmd_readFlash(void);
 void cmd_eraseFlash(void);
-void cmd_writeFlash(void);
-void cmd_testFlash(void);
 void cmd_changeState(void);
 void cmd_setCtrlGain(void);
+void cmd_set1ARef(void);
 void cmd_printRTC(void);
 void cmd_setRTC(void);
 void cmd_testLCD(void);
+void cmd_control(void);
+void cmd_zeroCal(void);
+void cmd_gainCal(void);
+void cmd_setOffset(void);
+void cmd_setGain(void);
+void cmd_setSerial(void);
+void cmd_flashIcons(void);
+void cmd_printProtection(void);
+void cmd_wdtTest(void);
+#ifdef EMI_DEBUG
+void cmd_emcReport(void);
+#endif
+#ifdef CHARGE_DEBUG
+void cmd_chargeStep(void);
+void cmd_chargeNext(void);
+#endif
+
+#ifdef CLI_DEBUG
+#define CLI_DEBUG_ONLY()
+#else
+// Commands that bypass the interlocks: refused unless CLI_DEBUG (debug.h).
+#define CLI_DEBUG_ONLY() do { printf("debug build only (CLI_DEBUG)\r\n"); return; } while (0)
+#endif
 
 // List of functions pointers corresponding to each command
 void (*cmd_func[])(void) = {
@@ -125,7 +153,26 @@ void (*cmd_func[])(void) = {
 	cmd_setCtrlGain,
 	cmd_printRTC,
 	cmd_setRTC,
-	cmd_testLCD
+	cmd_testLCD,
+	cmd_control,
+	cmd_zeroCal,
+	cmd_gainCal,
+	cmd_setOffset,
+	cmd_setGain,
+	cmd_setSerial,
+	cmd_flashIcons,
+	cmd_printProtection,
+	cmd_set1ARef,
+	cmd_wdtTest
+#ifdef EMI_DEBUG
+	,
+	cmd_emcReport
+#endif
+#ifdef CHARGE_DEBUG
+	,
+	cmd_chargeStep,
+	cmd_chargeNext
+#endif
 };
 
 // List of command names
@@ -155,7 +202,26 @@ const char *cmd_str[] = {
 		"setPI",
 		"pRTC",
 		"setRTC",
-		"testLCD"
+		"testLCD",
+		"control",
+		"zeroCal",
+		"gainCal",
+		"setOffset",
+		"setGain",
+		"setSerial",
+		"flashIcons",
+		"pProt",
+		"set1ARef",
+		"wdtTest"
+#ifdef EMI_DEBUG
+		,
+		"emcReport"
+#endif
+#ifdef CHARGE_DEBUG
+		,
+		"chargeStep",
+		"chargeNext"
+#endif
 };
 
 // List of command names including arguments
@@ -166,12 +232,12 @@ const char *cmd_arg_str[] = {
 		"turnOff" ,
 		"pGPIO",
 		"setGPIO [pin] [value]",
-		"setDAC [pin] [value]",
+		"setDAC [value]",
 		"pBMS",
 		"pADC {loops}",
-		"setDuty [channel] [duty]",
-		"enPWM [channel] [0 disable | 1 enable]",
-		"setRef [value]",
+		"setDuty [channel: 0=PRIM,1=SEK,2=HV] [duty]",
+		"enPWM [channel: 0=PRIM,1=SEK,2=HV,3=all (disable only)] [0 disable | 1 enable]",
+		"setRef [counts: 500 mV (60V/EMI), 100 mA (10A), ISOMETER index 0-3]",
 		"test_i2c",
 		"setLED [current, 0.1mA]",
 		"setBacklight [current, 0.1mA]",
@@ -181,11 +247,30 @@ const char *cmd_arg_str[] = {
 		"eraseFlash [address / \"Full\"] {number of blocks}",
 		"writeFlash [address] [size] [data]",
 		"testFlash",
-		"state [new state]",
-		"setPI [P Gain] [I Gain]",
+		"state [new state: 0-10]",
+		"setPI [ID] [P Gain] [I Gain]",
 		"pRTC",
 		"setRTC [year] [month] [day] [hour] [minute] [second] {weekday}",
-		"testLCD"
+		"testLCD",
+		"control -- arrows=encoder Enter=OK Esc=ESC Space=OUT(toggle) q=quit",
+		"zeroCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN]",
+		"gainCal [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN] [reference value]",
+		"setOffset [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN] [raw offset] {ext raw offset}",
+		"setGain [channel: 0=V_TERM,1=V_SENS,2=V_OUT,3=V_HV,4=I_OUT,5=I_ISO,6=V_IN] [gain] {ext gain}",
+		"setSerial [serial number]",
+		"flashIcons",
+		"pProt -- print protection status per source",
+		"set1ARef [12-bit DAC value]",
+		"wdtTest -- hang the main loop on purpose; the watchdog should reset the board in ~2 s"
+#ifdef EMI_DEBUG
+		,
+		"emcReport -- EMC monitor summary per channel"
+#endif
+#ifdef CHARGE_DEBUG
+		,
+		"chargeStep [0 disable | 1 enable] -- hold CHARGE after precharge (relay open) until chargeNext",
+		"chargeNext -- release a chargeStep hold: close the output relay and start the current ramp"
+#endif
 };
 
 int cmd_index;
@@ -207,12 +292,48 @@ void cli_init(UART_HandleTypeDef *huart1) {
     memset(history, 0, sizeof(history));
     history_count = 0;
     history_index = -1;
+	SET_BIT(cli_huart->Instance->CR1, USART_CR1_RXNEIE_RXFNEIE);
+	HAL_NVIC_SetPriority(USART2_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_EnableIRQ(USART2_IRQn);
 	printf("Serial Interface enabled V 1.0.\r\n");
 	printf(">>\r\n");
 #endif
 }
 
 #ifdef CLI_ENABLED
+
+// RX ring buffer filled by the UART IRQ: polled RX lost pasted input
+// whenever a main loop pass took longer than the 8-byte FIFO.
+#define CLI_RX_BUF_SIZE 256U
+static volatile uint8_t cli_rx_buf[CLI_RX_BUF_SIZE];
+static volatile uint16_t cli_rx_head; // written by the IRQ
+static volatile uint16_t cli_rx_tail; // written by cli_readline()
+
+void USART2_IRQHandler(void) {
+	USART_TypeDef *u = cli_huart->Instance;
+	while (u->ISR & USART_ISR_RXNE_RXFNE) {
+		uint8_t c = (uint8_t) u->RDR;
+		uint16_t next = (cli_rx_head + 1) % CLI_RX_BUF_SIZE;
+		if (next != cli_rx_tail) { // full: drop
+			cli_rx_buf[cli_rx_head] = c;
+			cli_rx_head = next;
+		}
+	}
+	u->ICR = USART_ICR_ORECF; // an overrun would retrigger the IRQ forever
+}
+
+/**
+ * Takes one received byte from the RX buffer.
+ * @param c Byte out.
+ * @return 1 if a byte was available.
+ */
+static int cli_getc(char *c) {
+	if (cli_rx_tail == cli_rx_head)
+		return 0;
+	*c = (char) cli_rx_buf[cli_rx_tail];
+	cli_rx_tail = (cli_rx_tail + 1) % CLI_RX_BUF_SIZE;
+	return 1;
+}
 
 int _write(int fd, char *ptr, int len) {
 	(void) fd;
@@ -241,8 +362,24 @@ bool cli_readline(void) {
 	bool ret = false;
 	// 0=normal, 1=ESC seen, 2='[' seen
     static uint8_t esc_state = 0;
-	while (HAL_UART_Receive(cli_huart, (uint8_t*) &c,1, 1) == 0) {
+
+    // A lone Esc keypress in keyboard-control mode never gets a follow-up
+    // '[' byte, so it has to be resolved on a timeout instead of by looking
+    // at the next byte (which may not exist / may belong to the next key).
+    if (cli_control_active && cli_control_esc_state == 1
+    		&& (HAL_GetTick() - cli_control_esc_tick) > 25) {
+    	cli_control_esc_state = 0;
+    	input_cli_pulse_esc();
+    }
+
+	while (cli_getc(&c)) {
 		ret = true;
+
+		if (cli_control_active) {
+			cli_control_process_byte(c);
+			continue;
+		}
+
         // --- Handle escape sequences (arrow keys) ---
         if (esc_state == 1) {
             if (c == '[') {
@@ -344,6 +481,63 @@ bool cli_readline(void) {
 }
 
 /**
+ * Byte parser for keyboard-control mode (see cmd_control()). Drives input.c's
+ * CLI-simulated encoder/buttons instead of the normal line editor:
+ *   Left/Down or Right/Up = encoder step, Enter = OK, Esc = ESC,
+ *   Space = OUT (toggle, since a terminal has no key-release event), q = quit.
+ *
+ * Note: if Esc is immediately followed by an unrelated key (not '['), that
+ * key is swallowed while the lone-Esc timeout resolves -- a minor limitation
+ * of a dev/test-only feature, not worth a re-entrant parse for.
+ */
+static void cli_control_process_byte(char c) {
+	if (cli_control_esc_state == 1) {
+		if (c == '[') {
+			cli_control_esc_state = 2;
+			return;
+		}
+		cli_control_esc_state = 0;
+		input_cli_pulse_esc();
+		return;
+	}
+	if (cli_control_esc_state == 2) {
+		switch (c) {
+		case 'B': /* Down */
+		case 'C': /* Right */
+			input_cli_encoder_step(+1);
+			break;
+		case 'A': /* Up */
+		case 'D': /* Left */
+			input_cli_encoder_step(-1);
+			break;
+		default:
+			break;
+		}
+		cli_control_esc_state = 0;
+		return;
+	}
+	if (c == 27) {
+		cli_control_esc_state = 1;
+		cli_control_esc_tick = HAL_GetTick();
+		return;
+	}
+	if (c == '\r' || c == '\n') {
+		input_cli_pulse_ok();
+		return;
+	}
+	if (c == ' ') {
+		input_cli_toggle_out();
+		return;
+	}
+	if (c == 'q' || c == 'Q') {
+		cli_control_active = 0;
+		input_set_source(INPUT_SOURCE_HW);
+		cli_printf("\r\nExiting keyboard control mode.\r\n> ");
+		return;
+	}
+}
+
+/**
  * Parse the line into the arguments
  *
  * @return Returns the number of available arguments
@@ -416,6 +610,12 @@ void cmd_help(void) {
 			if (strcmp(arg_locs[1], cmd_str[i]) == 0) {
 				printf("Usage: \r\n");
 				printf("  %s\r\n", cmd_arg_str[i]);
+				if (strcmp(cmd_str[i], "setPI") == 0) {
+					printf("Valid IDs:\r\n");
+					for (int j = 0; j < CTRL_PID_TABLE_LEN; j++) {
+						printf("  %d = %s\r\n", j, ctrl_pid_table[j].name);
+					}
+				}
 				return;
 			}
 		}
@@ -430,59 +630,255 @@ void cmd_help(void) {
 /*********************** Functions ************************************/
 
 /**
- * Saves the EEPROM including Hardware Part
+ * Snapshots the live ADC calibration (see zeroCal/gainCal) and PID
+ * gains (see setPI) into config_store and persists the calibration
+ * block to the EEPROM. zeroCal/gainCal already persist on their own,
+ * so this is mainly useful after manually tweaking PID gains.
  */
 void cmd_saveEEPROM(void) {
-	printf("Not Implemented!\n");
-	/*printf("Saving Hardware Area: %d\r\n", config_store_storeHW());
-	 printf("Saving User Area: %d\r\n", config_store_store());
-	 */
+	config_store.calibration.v_term_offset_mv = adc_data.v_term_offset;
+	config_store.calibration.v_term_gain      = adc_data.v_term_gain;
+	config_store.calibration.i_out_offset_ma  = adc_data.i_out_offset;
+	config_store.calibration.i_out_gain       = adc_data.i_out_gain;
+	config_store.calibration.i_iso_offset_ua  = adc_data.i_iso_offset;
+	config_store.calibration.i_iso_gain       = adc_data.i_iso_gain;
+	config_store.calibration.v_sens_ext_offset    = adc_data.v_sens_ext_offset;
+	config_store.calibration.v_sens_ext_gain      = adc_data.v_sens_ext_gain;
+	config_store.calibration.v_in_offset_mv   = adc_data.v_in_offset;
+	config_store.calibration.v_in_gain        = adc_data.v_in_gain;
+	config_store.calibration.v_out_offset     = adc_data.v_out_offset;
+	config_store.calibration.v_out_gain       = adc_data.v_out_gain;
+	config_store.calibration.v_hv_offset      = adc_data.v_hv_offset;
+	config_store.calibration.v_hv_gain        = adc_data.v_hv_gain;
+	config_store.calibration.v_term_ext_offset = adc_data.v_term_ext_offset;
+	config_store.calibration.v_term_ext_gain   = adc_data.v_term_ext_gain;
+	config_store.calibration.i_out_ext_offset  = adc_data.i_out_ext_offset;
+	config_store.calibration.i_out_ext_gain    = adc_data.i_out_ext_gain;
+	config_store.calibration.i_iso_ext_offset  = adc_data.i_iso_ext_offset;
+	config_store.calibration.i_iso_ext_gain    = adc_data.i_iso_ext_gain;
+
+	for (int i = 0; i < CTRL_PID_TABLE_LEN; i++) {
+		const ctrl_pid_entry_t *e = &ctrl_pid_table[i];
+		*e->cal_p = e->ctrl->P_gain;
+		*e->cal_i = e->ctrl->I_gain;
+	}
+
+	if (config_store_store() == 0)
+		printf("EEPROM: calibration saved\r\n");
+	else
+		printf("EEPROM: save failed\r\n");
 }
 
 /**
- * Reads the value of the EEPROM and prints it to the Serial Port
+ * Re-reads the config store from the EEPROM and prints it to the
+ * Serial Port.
  */
-void cmd_readEEPROM(void) {
-	printf("Not Implemented!\n");
-	/*printf("Serial Number: %06d\r\n", config_store.hardware_data.serial_number);
-	 printf("Hardware Revision: %d\r\n", config_store.hardware_data.hardware_revision);
-	 printf("Hardware Data CRC: %d\r\n", config_store.hardware_data_crc);
-	 printf("Cone ID: %d\r\n", config_store.user_settings.cone_id);
-	 printf("Fallback Color: %d\r\n", config_store.user_settings.fallback_color);
-	 printf("Fallback Mode: %d\r\n", config_store.user_settings.fallback_lightmode);
-	 printf("Fallback Repetition Time: %d\r\n", config_store.user_settings.fallback_repetition_time);
-	 printf("Fallback Phase: %d\r\n", config_store.user_settings.fallback_phase);
-	 printf("User Settings CRC: %d\r\n", config_store.user_settings_crc);
+/**
+ * Prints a float with 6 decimal digits. This project links
+ * --specs=nano.specs without -u _printf_float, so newlib-nano's printf
+ * silently drops %f support - this avoids depending on it at all.
+ */
+static void cli_printFloat(float value) {
+	int is_negative = value < 0;
+	float abs_value = is_negative ? -value : value;
+	int32_t whole = (int32_t) abs_value;
+	float frac = abs_value - (float) whole;
+	if (is_negative)
+		printf("-%ld.%06lu", (long) whole, (unsigned long) (frac * 1000000.0f));
+	else
+		printf("%ld.%06lu", (long) whole, (unsigned long) (frac * 1000000.0f));
+}
 
-	 printf("Hex View\r\n");
-	 for (uint8_t i = 0; i < sizeof(config_store_t); i += 16)
-	 {
-	 printf("0x%02x ", i);
-	 for (uint8_t j = 0; j < 16; j += 4)
-	 {
-	 printf("%02x%02x%02x%02x\t", *(((uint8_t *)&config_store) + i + j),
-	 *(((uint8_t *)&config_store) + i + j + 1),
-	 *(((uint8_t *)&config_store) + i + j + 2),
-	 *(((uint8_t *)&config_store) + i + j + 3));
-	 if (j == 12)
-	 printf(" \r\n");
-	 }
-	 }*/
+void cmd_readEEPROM(void) {
+	config_store_read();
+	printf("Serial Number:       %u\r\n", config_store.hardware_data.serial_number);
+
+	printf("V_TERM offset/gain:  %u mV / ", config_store.calibration.v_term_offset_mv);
+	cli_printFloat(config_store.calibration.v_term_gain);
+	printf("\r\n");
+
+	printf("I_OUT  offset/gain:  %u mA / ", config_store.calibration.i_out_offset_ma);
+	cli_printFloat(config_store.calibration.i_out_gain);
+	printf("\r\n");
+
+	printf("I_ISO  offset/gain:  %u uA / ", config_store.calibration.i_iso_offset_ua);
+	cli_printFloat(config_store.calibration.i_iso_gain);
+	printf("\r\n");
+
+	printf("V_OUT  offset/gain:  %u mV / ", config_store.calibration.v_out_offset);
+	cli_printFloat(config_store.calibration.v_out_gain);
+	printf("\r\n");
+
+	printf("V_IN   offset/gain:  %u mV / ", config_store.calibration.v_in_offset_mv);
+	cli_printFloat(config_store.calibration.v_in_gain);
+	printf("\r\n");
+
+	printf("V_HV   offset/gain:  %u mV / ", config_store.calibration.v_hv_offset);
+	cli_printFloat(config_store.calibration.v_hv_gain);
+	printf("\r\n");
+
+	printf("V_SENS_EXT offset/gain:  %ld uV / ", (long) config_store.calibration.v_sens_ext_offset);
+	cli_printFloat(config_store.calibration.v_sens_ext_gain);
+	printf("\r\n");
+
+	printf("V_TERM_EXT off/gain: %ld mV / ", (long) config_store.calibration.v_term_ext_offset);
+	cli_printFloat(config_store.calibration.v_term_ext_gain);
+	printf("\r\n");
+
+	printf("I_OUT_EXT  off/gain: %ld mA / ", (long) config_store.calibration.i_out_ext_offset);
+	cli_printFloat(config_store.calibration.i_out_ext_gain);
+	printf("\r\n");
+
+	printf("I_ISO_EXT  off/gain: %ld uA / ", (long) config_store.calibration.i_iso_ext_offset);
+	cli_printFloat(config_store.calibration.i_iso_ext_gain);
+	printf("\r\n");
+
+	for (int i = 0; i < CTRL_PID_TABLE_LEN; i++) {
+		const ctrl_pid_entry_t *e = &ctrl_pid_table[i];
+		printf("%-16s P / I: ", e->name);
+		cli_printFloat(*e->cal_p);
+		printf(" / ");
+		cli_printFloat(*e->cal_i * e->rate_hz);
+		printf("\r\n");
+	}
+
+	printf("I_1A_REF DAC value:  %u\r\n", config_store.calibration.i_1a_ref_dac_value);
+}
+
+/**
+ * Zeroes one of the six calibratable ADC channels: set the real-world
+ * input to zero (short/disconnect for voltage channels, open circuit
+ * for current channels) first, then run this. Samples raw ADC counts,
+ * stores them as the channel's offset, and persists immediately to
+ * the EEPROM.
+ */
+void cmd_zeroCal(void) {
+	uint8_t id;
+	char *end;
+
+	CLI_CHECK_ARG_CNT(1);
+	id = strtoul(arg_locs[1], &end, 10);
+	if (id >= CAL_CH_COUNT) {
+		printf("Invalid channel\r\n");
+		return;
+	}
+	calibration_zero((calibration_channel_t) id);
+	printf("%s zeroed.\r\n", calibration_channel_name((calibration_channel_t) id));
+}
+
+/**
+ * Sets the gain (second calibration point) of one of the six
+ * calibratable ADC channels: apply a known reference value to the
+ * channel's input, then run this with that value. Samples raw ADC
+ * counts, computes gain = reference / (raw - offset), and persists
+ * immediately to the EEPROM. Run zeroCal on the channel first.
+ */
+void cmd_gainCal(void) {
+	uint8_t id;
+	float reference_value;
+	char *end;
+
+	CLI_CHECK_ARG_CNT(2);
+	id = strtoul(arg_locs[1], &end, 10);
+	if (id >= CAL_CH_COUNT) {
+		printf("Invalid channel\r\n");
+		return;
+	}
+	reference_value = strtof(arg_locs[2], &end);
+	if (calibration_set_gain((calibration_channel_t) id, reference_value) != CALIBRATION_STATUS_OK) {
+		printf("%s gain calibration FAILED: reference not applied, channel at "
+				"offset, or result out of range -- nothing stored.\r\n",
+				calibration_channel_name((calibration_channel_t) id));
+		return;
+	}
+	printf("%s gain set (reference %s %s).\r\n", calibration_channel_name((calibration_channel_t) id),
+			arg_locs[2], calibration_channel_unit((calibration_channel_t) id));
+}
+
+/**
+ * Directly sets a channel's offset (raw ADC counts) to an already-known
+ * value, without physically presenting a reference and sampling - e.g.
+ * to restore a previously recorded calibration. Persists immediately
+ * to the EEPROM. The optional third argument also sets the channel's
+ * ext-ADC counterpart offset, for channels that have one (V_TERM/I_OUT/
+ * I_ISO); omit it to leave the ext offset untouched.
+ */
+void cmd_setOffset(void) {
+	uint8_t id;
+	int32_t raw_offset, raw_ext_offset;
+	char *end;
+
+	CLI_CHECK_ARG_CNT_RANGE(2, 3);
+	id = strtoul(arg_locs[1], &end, 10);
+	if (id >= CAL_CH_COUNT) {
+		printf("Invalid channel\r\n");
+		return;
+	}
+	raw_offset = strtol(arg_locs[2], &end, 10);
+	if (number_of_args == 3) {
+		raw_ext_offset = strtol(arg_locs[3], &end, 10);
+		calibration_set_offset_raw((calibration_channel_t) id, raw_offset, &raw_ext_offset);
+	} else {
+		calibration_set_offset_raw((calibration_channel_t) id, raw_offset, NULL);
+	}
+	printf("%s offset set to %ld %s.\r\n", calibration_channel_name((calibration_channel_t) id),
+			(long) raw_offset, calibration_channel_unit((calibration_channel_t) id));
+}
+
+/**
+ * Directly sets a channel's gain to an already-known value, without
+ * physically presenting a reference and sampling - e.g. to restore a
+ * previously recorded calibration. Persists immediately to the EEPROM.
+ * The optional third argument also sets the channel's ext-ADC
+ * counterpart gain, for channels that have one (V_TERM/I_OUT/I_ISO);
+ * omit it to leave the ext gain untouched.
+ */
+void cmd_setGain(void) {
+	uint8_t id;
+	float gain, ext_gain;
+	calibration_status_t status;
+	char *end;
+
+	CLI_CHECK_ARG_CNT_RANGE(2, 3);
+	id = strtoul(arg_locs[1], &end, 10);
+	if (id >= CAL_CH_COUNT) {
+		printf("Invalid channel\r\n");
+		return;
+	}
+	gain = strtof(arg_locs[2], &end);
+	if (number_of_args == 3) {
+		ext_gain = strtof(arg_locs[3], &end);
+		status = calibration_set_gain_raw((calibration_channel_t) id, gain, &ext_gain);
+	} else {
+		status = calibration_set_gain_raw((calibration_channel_t) id, gain, NULL);
+	}
+	if (status != CALIBRATION_STATUS_OK) {
+		printf("%s gain NOT set: value must be finite, non-zero and a "
+				"plausible magnitude -- nothing stored.\r\n",
+				calibration_channel_name((calibration_channel_t) id));
+		return;
+	}
+	printf("%s gain set to %s %s/count.\r\n", calibration_channel_name((calibration_channel_t) id),
+			arg_locs[2], calibration_channel_unit((calibration_channel_t) id));
+}
+
+/**
+ * Sets the hardware serial number and immediately persists it to the
+ * EEPROM. This is factory/provisioning data - only call it deliberately.
+ */
+void cmd_setSerial(void) {
+	CLI_CHECK_ARG_CNT(1);
+	char *end;
+	config_store.hardware_data.serial_number = strtoul(arg_locs[1], &end, 10);
+	if (config_store_storeHW() == 0)
+		printf("EEPROM: serial number saved\r\n");
+	else
+		printf("EEPROM: save failed\r\n");
 }
 
 void cmd_turnOff(void) {
-	printf("Turning off ...\r\n");
-	//Todo: disable any controller or converter that might be running before shutdown to prevent damage!
-	HAL_Delay(10);
-	gpio_turnOff();
-	for (uint16_t i = 0; i < 100; i++){
-		if (i%10 == 0){
-			printf("Waiting ...\n");
-		}
-		HAL_Delay(1);
-	}
-	gpio_turnOn();
-	printf("Turning off unsuccessful, reenabling on/off controller\r\n");
+	statemachine_switchtoIdle(); // converters off before the power cut
+	gpio_power_off();
 }
 
 void cmd_printGPIO(void) {
@@ -518,6 +914,7 @@ void cmd_printGPIO(void) {
 }
 
 void cmd_setGPIO(void) {
+	CLI_DEBUG_ONLY();
 	uint8_t pin, value;
 	CLI_CHECK_ARG_CNT(2);
 
@@ -529,26 +926,27 @@ void cmd_setGPIO(void) {
 }
 
 void cmd_setDAC(void) {
+	CLI_DEBUG_ONLY();
 	uint8_t  pin;
 	uint16_t value;
-	CLI_CHECK_ARG_CNT(2);
+	CLI_CHECK_ARG_CNT(1);
 
 	char *end;
-	pin = strtoul(arg_locs[1], &end, 10);
-	value = strtoul(arg_locs[2], &end, 10);
+	//pin = strtoul(arg_locs[1], &end, 10);
+	value = strtoul(arg_locs[1], &end, 10);
 	//if (pin == 0)
 		//dac_setValueRef(value);
 	//else
-		//dac_setValue1ARef(value);
+		dac_setValue1ARef(value);
 }
 
 void cmd_setRef(void){
-		uint8_t value;
 		CLI_CHECK_ARG_CNT(1);
 
 		char *end;
-		ctrl_main_handle.poti_reference = strtoul(arg_locs[1], &end, 10);
-		printf("Set Reference to: %d\r\n", ctrl_main_handle.poti_reference);
+		uint16_t counts = strtoul(arg_locs[1], &end, 10);
+		statemachine_set_setpoint(counts);
+		printf("Set reference to: %u counts\r\n", counts);
 }
 
 
@@ -573,10 +971,11 @@ void cmd_printBMS(void){
 	  printf("CurrentRegisters.RawCurrent          = 0x%04X%04X\r\n",  (uint16_t)(bms.CurrentRegisters.RawCurrent>>16),(uint16_t)(bms.CurrentRegisters.RawCurrent));
 	  printf("CurrentRegisters.CC2Current          = %d mA\r\n",       bms.CurrentRegisters.CC2Current);
 	  printf("CurrentRegisters.CC1Current          = %d mA\r\n",       bms.CurrentRegisters.CC1Current);
-	  printf("Passed Charge                        = %ld mAs\r\n",     bms.Accumulator.accumulatedCharge);
-	  printf("Passed Charge (low bytes)            = %ld mAs\r\n",     (int32_t)(bms.Accumulator.accumulatedCharge&0xFFFFFFFF));
-	  printf("Passed Charge (high bytes)           = %ld mAs\r\n",     (int32_t)(bms.Accumulator.accumulatedCharge>>32));
-	  printf("Passed Time                          = %ld s\r\n",       bms.Accumulator.passedTime/4);
+	  // newlib-nano printf has no %lld; mAs fits in 32 bit.
+	  printf("Passed Charge                        = %ld mAs\r\n",    (long) (bms.Accumulator.accumulatedCharge / 4));
+	  printf("Passed Charge                        = %d.%03d Ah\r\n",  ((((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF))>=0?1:-1) * abs((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4) / 3600000), (abs((int) (bms.Accumulator.accumulatedCharge & 0xFFFFFFFF) / 4) / 3600 % 1000));
+	  printf("Passed Time                          = %lu s\r\n",       bms.Accumulator.passedTime/4);
+	  printf("Passed Time                          = %u h %u min %u s\r\n", (unsigned int)((bms.Accumulator.passedTime/4)/3600), (unsigned int)(((bms.Accumulator.passedTime/4)/60)%60), (unsigned int)((bms.Accumulator.passedTime/4)%60));
 	  printf("\n");
 	  printf("SystemCtrl.AlarmStatus               = 0x%04X\r\n", bms.SystemCtrl.AlarmStatus);
 	  printf("SystemCtrl.AlarmRawStatus            = 0x%04X\r\n", bms.SystemCtrl.AlarmRawStatus);
@@ -598,13 +997,13 @@ void cmd_printADC() {
 	for(int i=0; i<loopcount; i++)	{
 		adc_convert_data();
 		printf("Triggered ADC Measurements: \r\n");
-		printf(" 	 v_in    (ADC3_IN3 ) : %u \t: %d mV\r\n",  adc_data.raw.v_in   , adc_data.converted.v_in  );
+		printf(" 	 v_in    (ADC3_IN3 ) : %u \t: %ld mV\r\n", adc_data.raw.v_in   , adc_data.converted.v_in  );
 		printf(" 	 v_out   (ADC4_IN2 ) : %u \t: %ld mV\r\n", adc_data.raw.v_out  , adc_data.converted.v_out );
 		printf(" 	 v_term  (ADC2_IN2 ) : %u \t: %ld mV\r\n", adc_data.raw.v_term , adc_data.converted.v_term);
 		printf(" 	 v_hv    (ADC4_IN5 ) : %u \t: %ld mV\r\n", adc_data.raw.v_hv   , adc_data.converted.v_hv  );
 		printf(" 	 i_bat   (ADC5_IN1 ) : %u \t: %d mA\r\n",  adc_data.raw.i_bat  , adc_data.converted.i_bat );
 		printf(" 	 i_out   (ADC1_IN1)  : %u \t: %d mA\r\n",  adc_data.raw.i_out  , adc_data.converted.i_out );
-		printf(" 	 i_iso   (ADC5_IN2)  : %u \t: %d mA\r\n",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
+		printf(" 	 i_iso   (ADC5_IN2)  : %u \t: %d uA\r\n",  adc_data.raw.i_iso  , adc_data.converted.i_iso );
 
 		printf("ADC Measurements:\n");
 		printf(" 		v_3v3          (ADC5_IN6 ) : %u \t: %u mV\r\n", adc_data.raw.v_3v3        , adc_data.converted.v_3v3       );
@@ -620,14 +1019,25 @@ void cmd_printADC() {
 		printf(" 		v_bat          (ADC5     ) : %u \t: %u mV\r\n", adc_data.raw.v_bat        , adc_data.converted.v_bat       );
 		printf(" 		v_ref_int      (ADC5     ) : %u \t: %u mV\r\n", adc_data.raw.v_ref_int    , adc_data.converted.v_ref_int   );
 
-		printf("  Ext V_Term : %li : %li mV\r\n", ext_adc.channelData[0], adc_data.converted.v_term_ext_mv);
-		printf("  Ext I_Out  : %li : %li mA\r\n", ext_adc.channelData[1], adc_data.converted.i_out_ext_mA );
-		printf("  Ext V_Sns  : %li : %li uV\r\n", ext_adc.channelData[2], adc_data.converted.v_sens_ext_uv);
-		printf("  Ext I_Iso  : %li : %li uA\r\n", ext_adc.channelData[3], adc_data.converted.i_iso_ext_uA );
+		printf("  Ext V_Term : %li : %li mV\r\n", adc_data.ext_adc_data[0], adc_data.converted.v_term_ext_mv_filt);
+		printf("  Ext I_Out  : %li : %li mA\r\n", adc_data.ext_adc_data[1], adc_data.converted.i_out_ext_mA_filt );
+		printf("  Ext V_Sns  : %li : %li uV\r\n", adc_data.ext_adc_data[2], adc_data.converted.v_sens_ext_uv_filt);
+		printf("  Ext I_Iso  : %li : %li uA\r\n", adc_data.ext_adc_data[3], adc_data.converted.i_iso_ext_uA_filt );
+		printf("  Ext CRC err: %lu\r\n", (unsigned long) ext_adc.crc_errors);
+
+		uint8_t region;
+		uint32_t changes;
+		float ratio;
+		ctrl_main_vout_diag(&region, &changes, &ratio);
+		printf("  Vout region: %u (0 buck, 1 4sw, 2 boost), changes: %lu, ratio: ",
+				region, (unsigned long) changes);
+		cli_printFloat(ratio);
+		printf("\r\n");
 	}
 }
 
 void cmd_setDuty(void){
+	CLI_DEBUG_ONLY();
 	uint8_t  channel;
 	float value;
 	CLI_CHECK_ARG_CNT(2);
@@ -646,17 +1056,50 @@ void cmd_setDuty(void){
 }
 
 void cmd_PWM_en(void){
+	CLI_DEBUG_ONLY();
 	uint8_t  channel;
 	uint16_t value;
+	uint8_t hrtim_channel;
 	CLI_CHECK_ARG_CNT(2);
 
 	char *end;
 	channel = strtoul(arg_locs[1], &end, 10);
 	value = strtoul(arg_locs[2], &end, 10);
-	if(value == 1)
-		hrtim_enable(channel);
-	else
-		hrtim_disable(channel);
+
+	// Use the same [channel] numbering as setDuty (0=PRIM, 1=SEK, 2=HV)
+	// instead of passing the raw argument straight through to
+	// hrtim_enable()/hrtim_disable(), whose HRTIM_CHANNEL_* values don't
+	// match this numbering (e.g. raw channel 1 used to hit HRTIM_CHANNEL_PRIM
+	// instead of the SEK channel a caller following setDuty's convention
+	// would expect).
+	//
+	// Channel 3 = all channels at once. This exists because before the
+	// numbering was normalised, HRTIM_CHANNEL_ALL happened to equal 0 and the
+	// raw argument was passed straight through, so "enPWM 0 0" disabled every
+	// channel - an all-PWM-off that is worth keeping reachable on the bench.
+	// Without this case it would silently have become a PRIM-only stop.
+	// Enable has no all-channels form (hrtim_enable() intentionally has no
+	// ALL case: bringing every converter up at once is never wanted), so 3 is
+	// accepted for disable only.
+	switch (channel) {
+	case 0: hrtim_channel = HRTIM_CHANNEL_PRIM; break;
+	case 1: hrtim_channel = HRTIM_CHANNEL_SEK; break;
+	case 2: hrtim_channel = HRTIM_CHANNEL_HV; break;
+	case 3: hrtim_channel = HRTIM_CHANNEL_ALL; break;
+	default:
+		printf("Invalid channel\r\n");
+		return;
+	}
+
+	if (value == 1) {
+		if (hrtim_channel == HRTIM_CHANNEL_ALL) {
+			printf("Channel 3 (all) is disable-only\r\n");
+			return;
+		}
+		hrtim_enable(hrtim_channel);
+	} else {
+		hrtim_disable(hrtim_channel);
+	}
 }
 
 void cmd_test_i2c(void){
@@ -744,6 +1187,7 @@ void cmd_readFlash(void){
 	uint16_t page_addr;
 	uint16_t column_addr;
 	uint16_t size;
+	uint16_t remaining, offset, chunk;
 	w25n01gv_status_t status = W25N01GV_OK;
 	CLI_CHECK_ARG_CNT(2);
 
@@ -758,24 +1202,31 @@ void cmd_readFlash(void){
 	}
 	printf("Page address:   0x%04X\r\nColumn address: 0x%04X\r\nSize:           %d Bytes\r\n", page_addr, column_addr, size);
 
-	uint8_t data[size];
-	status = w25n01gv_read(&flash, data, address, size);
-	if (status == W25N01GV_OK){
-		for (uint16_t i = 0; i < size; i++) {
+	// Read/print in CLI_FLASH_BUF_SIZE chunks instead of on the (up to 8192
+	// byte) stack. `i` is the absolute byte offset (offset + j), so the
+	// line-break modulo logic below sees the exact same sequence of indices
+	// as the old single-shot version - it is unaffected by where the chunk
+	// boundaries happen to fall.
+	for (remaining = size, offset = 0; remaining > 0; offset += chunk, remaining -= chunk) {
+		chunk = (remaining > CLI_FLASH_BUF_SIZE) ? CLI_FLASH_BUF_SIZE : remaining;
+		status = w25n01gv_read(&flash, cli_flash_buf, address + offset, chunk);
+		if (status != W25N01GV_OK) break;
+		for (uint16_t j = 0; j < chunk; j++) {
+			uint16_t i = offset + j;
 #if CLI_FLASH_READ_SHOW_ASCII == 1
 			if ((i % CLI_FLASH_READ_ASCII_LINEWIDTH == 0) && (i > 0)) {
 				printf("\r\n");
 			}
-			printf("%c", data[i]);
+			printf("%c", cli_flash_buf[j]);
 #else
 			if ((i % 16 == 0) && (i > 0)) {
 				printf("\r\n");
 			}
-			printf("0x%02X ", data[i]);
+			printf("0x%02X ", cli_flash_buf[j]);
 #endif // CLI_FLASH_READ_SHOW_ASCII
 		}
-		printf("\r\n");
 	}
+	if (status == W25N01GV_OK) printf("\r\n");
 	return;
 }
 
@@ -816,358 +1267,45 @@ void cmd_eraseFlash(void){
 }
 
 
-void cmd_writeFlash(void){
-	uint32_t address;
-	uint32_t size;
-	w25n01gv_status_t status = W25N01GV_OK;
-#if CLI_FLASH_WRITE_LIPSUM != 1
-	uint8_t data[LINE_BUF_SIZE] = {0};
-	CLI_CHECK_ARG_CNT(3);
-#else // CLI_FLASH_WRITE_LIPSUM == 1
-	uint8_t data[16384] = {0};
-	uint16_t page_addr;
-	CLI_CHECK_ARG_CNT_MIN(2);
-#endif // CLI_FLASH_WRITE_LIPSUM
-
-	char *end;
-	address = strtoul(arg_locs[1], &end, 10);
-	size = strtoul(arg_locs[2], &end, 10);
-
-#if CLI_FLASH_WRITE_LIPSUM != 1
-	if (size > LINE_BUF_SIZE) {
-		size = LINE_BUF_SIZE;
-	}
-	for (uint16_t i = 0; i < size; i++) {
-		data[i] = arg_locs[3][i];
-	}
-#else // CLI_FLASH_WRITE_LIPSUM == 1
-	page_addr = W25N01GV_ADDR_TO_PAGE_ADDR(address);
-	if (page_addr == 0){
-		char str[] = "Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Ut purus elit, vestibulum ut, placerat ac, adipiscing vitae, felis. Curabitur dictum gravida mauris. Nam arcu libero, nonummy eget, consectetuer id, vulputate a, magna. Donec vehicula augue eu neque. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Mauris ut leo. Cras viverra metus rhoncus sem. Nulla et lectus vestibulum urna fringilla ultrices. Phasellus eu tellus sit amet tortor gravida placerat. Integer sapien est, iaculis in, pretium quis, viverra ac, nunc. Praesent eget sem vel leo ultrices bibendum. Aenean faucibus. Morbi dolor nulla, malesuada eu, pulvinar at, mollis ac, nulla. Curabitur auctor semper nulla. Donec varius orci eget risus. Duis nibh mi, congue eu, accumsan eleifend, sagittis quis, diam. Duis eget orci sit amet orci dignissim rutrum. ";
-		for (uint16_t i = 0; i < sizeof(str); i++){
-			data[i] = (uint8_t) str[i];
-		}
-		size = sizeof(str);
-	}
-	else if (page_addr == 1) {
-		char str[] = "Nam dui ligula, fringilla a, euismod sodales, sollicitudin vel, wisi. Morbi auctor lorem non justo. Nam lacus libero, pretium at, lobortis vitae, ultricies et, tellus. Donec aliquet, tortor sed accumsan bibendum, erat ligula aliquet magna, vitae ornare odio metus a mi. Morbi ac orci et nisl hendrerit mollis. Suspendisse ut massa. Cras nec ante. Pellentesque a nulla. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Aliquam tincidunt urna. Nulla ullamcorper vestibulum turpis. Pellentesque cursus luctus mauris. ";
-		for (uint16_t i = 0; i < sizeof(str); i++){
-			data[i] = (uint8_t) str[i];
-		}
-		size = sizeof(str);
-	}
-	else if (page_addr == 2) {
-		char str[] = "Nulla malesuada porttitor diam. Donec felis erat, congue non, volutpat at, tincidunt tristique, libero. Vivamus viverra fermentum felis. Donec nonummy pellentesque ante. Phasellus adipiscing semper elit. Proin fermentum massa ac quam. Sed diam turpis, molestie vitae, placerat a, molestie nec, leo. Maecenas lacinia. Nam ipsum ligula, eleifend at, accumsan nec, suscipit a, ipsum. Morbi blandit ligula feugiat magna. Nunc eleifend consequat lorem. Sed lacinia nulla vitae enim. Pellentesque tincidunt purus vel magna. Integer non enim. Praesent euismod nunc eu purus. Donec bibendum quam in tellus. Nullam cursus pulvinar lectus. Donec et mi. Nam vulputate metus eu enim. Vestibulum pellentesque felis eu massa. ";
-		for (uint16_t i = 0; i < sizeof(str); i++){
-			data[i] = (uint8_t) str[i];
-		}
-		size = sizeof(str);
-	}
-	else if (page_addr == 3) {
-		char str[] = "Quisque ullamcorper placerat ipsum. Cras nibh. Morbi vel justo vitae lacus tincidunt ultrices. Lorem ipsum dolor sit amet, consectetuer adipiscing elit. In hac habitasse platea dictumst. Integer tempus convallis augue. Etiam facilisis. Nunc elementum fermentum wisi. Aenean placerat. Ut imperdiet, enim sed gravida sollicitudin, felis odio placerat quam, ac pulvinar elit purus eget enim. Nunc vitae tortor. Proin tempus nibh sit amet nisl. Vivamus quis tortor vitae risus porta vehicula. ";
-		for (uint16_t i = 0; i < sizeof(str); i++){
-			data[i] = (uint8_t) str[i];
-		}
-		size = sizeof(str);
-	}
-	else if (page_addr == 4) {
-		char str[] = "Fusce mauris. Vestibulum luctus nibh at lectus. Sed bibendum, nulla a faucibus semper, leo velit ultricies tellus, ac venenatis arcu wisi vel nisl. Vestibulum diam. Aliquam pellentesque, augue quis sagittis posuere, turpis lacus congue quam, in hendrerit risus eros eget felis. Maecenas eget erat in sapien mattis porttitor. Vestibulum porttitor. Nulla facilisi. Sed a turpis eu lacus commodo facilisis. Morbi fringilla, wisi in dignissim interdum, justo lectus sagittis dui, et vehicula libero dui cursus dui. Mauris tempor ligula sed lacus. Duis cursus enim ut augue. Cras ac magna. Cras nulla. Nulla egestas. Curabitur a leo. Quisque egestas wisi eget nunc. Nam feugiat lacus vel est. Curabitur consectetuer. ";
-		for (uint16_t i = 0; i < sizeof(str); i++){
-			data[i] = (uint8_t) str[i];
-		}
-		size = sizeof(str);
-	}
-	else if (page_addr == 5) {
-		char str[] = "Suspendisse vel felis. Ut lorem lorem, interdum eu, tincidunt sit amet, laoreet vitae, arcu. Aenean faucibus pede eu ante. Praesent enim elit, rutrum at, molestie non, nonummy vel, nisl. Ut lectus eros, malesuada sit amet, fermentum eu, sodales cursus, magna. Donec eu purus. Quisque vehicula, urna sed ultricies auctor, pede lorem egestas dui, et convallis elit erat sed nulla. Donec luctus. Curabitur et nunc. Aliquam dolor odio, commodo pretium, ultricies non, pharetra in, velit. Integer arcu est, nonummy in, fermentum faucibus, egestas vel, odio. ";
-		for (uint16_t i = 0; i < sizeof(str); i++){
-			data[i] = (uint8_t) str[i];
-		}
-		size = sizeof(str);
-	}
-	else if (page_addr == 63) {
-		char str[] = "123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789_123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789#";
-		for (uint16_t i = 0; i < sizeof(str); i++){
-			data[i] = (uint8_t) str[i];
-		}
-		if (size > sizeof(str)) {
-			size = sizeof(str);
-		}
-	}
-	else {
-		char str[] = "None";
-		for (uint16_t i = 0; i < sizeof(str); i++){
-			data[i] = (uint8_t) str[i];
-		}
-		size = sizeof(str);
-	}
-#endif // CLI_FLASH_WRITE_LIPSUM
-
-	status = w25n01gv_write(&flash, data, address, size);
-	if (status != W25N01GV_OK) {
-		printf("Unable to write flash memory. \r\n");
-	}
-	return;
-}
-
-void cmd_testFlash(void){
-	uint8_t id[4];
-	w25n01gv_status_t status = W25N01GV_OK;
-	w25n01gv_prot_reg_t reg_prot = {0};
-	w25n01gv_conf_reg_t reg_conf = {0};
-	w25n01gv_status_reg_t reg_status = {0};
-	status = w25n01gv_read_id(&flash, id);
-	if (status == W25N01GV_OK){
-		printf("Flash Manufacturer ID:        0x%02X\r\n", id[0]);
-		printf("Flash Device ID:              0x%02X%02X\r\n", id[1], id[2]);
-	}
-	else{
-		printf("Error: Unable to read flash JEDEC ID. \r\n");
-		return;
-	}
-#if CLI_FLASH_TEST_STATUS_REG_READ == 1
-	// Status register read test
-	printf("\r\n= Flash status register read test: \r\n");
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_prot(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Flash protection register:    0x%02X\r\n", flash.reg_prot.reg);
-	}
-	else{
-		printf("Error: Unable to read flash protection register. \r\n");
-		return;
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_conf(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Flash configuration register: 0x%02X\r\n", flash.reg_conf.reg);
-	}
-	else{
-		printf("Error: Unable to read flash configuration register. \r\n");
-		return;
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_status(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Flash status register:        0x%02X\r\n", flash.reg_status.reg);
-	}
-	else{
-		printf("Error: Unable to read flash status register. \r\n");
-		return;
-	}
-#endif // CLI_FLASH_TEST_STATUS_REG_READ
-#if CLI_FLASH_TEST_STATUS_REG_WRITE == 1
-	// Status register write test
-	printf("\r\n= Flash status register write test: \r\n");
-	reg_conf.fields.buf_mode=0;
-	if (status == W25N01GV_OK){
-		status = w25n01gv_write_reg_conf(&flash, &reg_conf);
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_conf(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Flash configuration register: 0x%02X (after writing)\r\n", flash.reg_conf.reg);
-		reg_conf.fields.buf_mode=1;
-		status = w25n01gv_write_reg_conf(&flash, &reg_conf);
-	}
-	else{
-		printf("Error: Unable to read flash configuration register. \r\n");
-		return;
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_conf(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Flash configuration register: 0x%02X (after resetting)\r\n", flash.reg_conf.reg);
-	}
-#endif // CLI_FLASH_TEST_STATUS_REG_WRITE
-#if CLI_FLASH_TEST_BUF_EN_DIS == 1
-	// Buffer mode enable / disable test
-	printf("\r\n= Buffer mode enable / disable test: \r\n");
-	printf("Flash configuration register: 0x%02X\r\n", flash.reg_conf.reg);
-	if (status == W25N01GV_OK){
-		status = w25n01gv_buffer_mode_disable(&flash);
-		printf("Disable buffer mode\r\n");
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_conf(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Flash configuration register: 0x%02X\r\n", flash.reg_conf.reg);
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_buffer_mode_enable(&flash);
-		printf("Enable buffer mode\r\n");
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_conf(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Flash configuration register: 0x%02X\r\n", flash.reg_conf.reg);
-	}
-#endif // CLI_FLASH_TEST_BUF_EN_DIS
-#if CLI_FLASH_TEST_WRITE_EN_DIS == 1
-	// Write enable and disable test
-	printf("\r\n= Flash write enable / disable test: \r\n");
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_status(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Status register before write enable: 0x%02X\r\n", flash.reg_status.reg);
-		status = w25n01gv_write_enable(&flash);
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_status(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Status register after write enable:  0x%02X\r\n", flash.reg_status.reg);
-		status = w25n01gv_write_disable(&flash);
-	}
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_reg_status(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Status register after write disable: 0x%02X\r\n", flash.reg_status.reg);
-	}
-#endif // CLI_FLASH_TEST_WRITE_EN_DIS
-#if CLI_FLASH_TEST_READ_BLOCK == 1
-	// Read block test
-	printf("\r\n= Read block test: \r\n");
-	uint16_t test_read_block_nof_bytes = 16;
-	for (uint16_t page_addr = 0; page_addr < 16; page_addr++) {
-		if (status == W25N01GV_OK){
-			status = w25n01gv_page_read(&flash, page_addr);
-		}
-		if (status == W25N01GV_OK) {
-			status = w25n01gv_wait_busy(&flash);
-		}
-		uint8_t data[test_read_block_nof_bytes];
-		if (status == W25N01GV_OK){
-			status = w25n01gv_read_data(&flash, data, 0x00, test_read_block_nof_bytes);
-		}
-		if (status == W25N01GV_OK){
-			printf("Page: %4d Data:", page_addr);
-			for (uint16_t i = 0; i < test_read_block_nof_bytes; i++) {
-				if ((i % 16 == 0) && (i > 0)) {
-					printf("\r\n                ");
-				}
-				printf(" 0x%02X", data[i]);
-			}
-			if (data[0] != 0xFF) {
-				printf(" <= Bad Block present ==");
-			}
-			printf("\r\n");
-		}
-	}
-#endif // CLI_FLASH_TEST_READ_BLOCK
-#if CLI_FLASH_TEST_READ_OTP_BLOCK == 1
-	// Read OTP block test
-	printf("\r\n= Read OTP block test: \r\n");
-	uint16_t test_read_block_otp_nof_bytes = 256;
-	if (status == W25N01GV_OK){
-		reg_conf.fields.otp_enter = 1;
-		status = w25n01gv_write_reg_conf(&flash, &reg_conf);
-	}
-	for (uint16_t page_addr = 0; page_addr < 3; page_addr++) {
-		if (status == W25N01GV_OK){
-			status = w25n01gv_page_read(&flash, page_addr);
-		}
-		if (status == W25N01GV_OK) {
-			status = w25n01gv_wait_busy(&flash);
-		}
-		uint8_t data[test_read_block_otp_nof_bytes];
-		if (status == W25N01GV_OK){
-			status = w25n01gv_read_data(&flash, data, 0x00, test_read_block_otp_nof_bytes);
-		}
-		if (status == W25N01GV_OK){
-			printf("Page: %4d Data:", page_addr);
-			for (uint16_t i = 0; i < test_read_block_otp_nof_bytes; i++) {
-				if ((i % 16 == 0) && (i > 0)) {
-					printf("\r\n                ");
-				}
-				printf(" 0x%02X", data[i]);
-			}
-			printf("\r\n");
-		}
-	}
-	if (status == W25N01GV_OK){
-		reg_conf.fields.otp_enter = 0;
-		status = w25n01gv_write_reg_conf(&flash, &reg_conf);
-	}
-#endif // CLI_FLASH_TEST_READ_OTP_BLOCK
-#if CLI_FLASH_TEST_BAD_BLOCK_LUT == 1
-	// Read bad block look up table test
-	printf("\r\n= Read bad block look up table test: \r\n");
-	if (status == W25N01GV_OK){
-		status = w25n01gv_read_badblock(&flash);
-	}
-	if (status == W25N01GV_OK){
-		printf("Bad block LUT: \r\n");
-		printf("ID | Logical | Physical\r\n");
-		printf("---+---------+---------\r\n");
-		for (uint8_t i = 0; i < W25N01GV_BADBLOCK_LUT_SIZE; i++) {
-			printf("%2d | 0x%04X  | 0x%04X\r\n", i, flash.badblock_lut[i].addr.logic_block_addr, flash.badblock_lut[i].addr.phys_block_addr);
-		}
-	}
-#endif // CLI_FLASH_TEST_BAD_BLOCK_LUT
-#if CLI_FLASH_TEST_BAD_BLOCK == 1
-	// Bad block test
-	printf("\r\n= Bad block test: \r\n");
-	uint16_t bad_block_present = 0;
-	uint16_t bb_loop_count = 0;
-	uint8_t data_page;
-	uint8_t data_spare;
-	test_read_block_nof_bytes = 1;
-	for (uint32_t page_addr = 0; page_addr < 0xffff; page_addr+=0x40) {
-		bb_loop_count++;
-		if (status == W25N01GV_OK){
-			status = w25n01gv_page_read(&flash, (uint16_t) page_addr);
-		}
-		do {
-			status = w25n01gv_read_reg_status(&flash);
-		} while(status == W25N01GV_OK && flash.reg_status.fields.busy != 0);
-		if (status == W25N01GV_OK){
-			status = w25n01gv_read_data(&flash, &data_page, 0x00, 1);
-		}
-		if (status == W25N01GV_OK){
-			status = w25n01gv_read_data(&flash, &data_spare, 0x800, 1);
-		}
-		if (status == W25N01GV_OK){
-			if ((data_page != 0xFF) || (data_spare != 0xFF)) {
-				bad_block_present = 1;
-				printf("Bad block on page %4d, Page: 0x%02X  Spare: 0x%02X\r\n", (uint16_t) (page_addr / 0x40), data_page, data_spare);
-			}
-		}
-	}
-	printf("%d blocks scanned\r\n", bb_loop_count);
-	if (bad_block_present == 0) {
-		printf("No bad blocks\r\n");
-	}
-#endif // CLI_FLASH_TEST_BAD_BLOCK
-#if CLI_FLASH_TEST_LAST_ECC_FAIL == 1
-	// Last ECC failure page address test
-	printf("\r\n= Last ECC failure page address test: \r\n");
-	uint16_t ecc_fail_page_addr = 0xffff;
-	if (status == W25N01GV_OK){
-		status = w25n01gv_last_ecc_failure(&flash, &ecc_fail_page_addr);
-	}
-	if (status == W25N01GV_OK){
-		printf("Page address of last ECC failure: %X\r\n", ecc_fail_page_addr);
-	}
-#endif // CLI_FLASH_TEST_LAST_ECC_FAIL
-}
-
 void cmd_changeState(void){
-	uint8_t  newstate;
+	long newstate;
 	CLI_CHECK_ARG_CNT(1);
 
 	char *end;
+	// Range-check before narrowing, not after: truncating into a uint8_t
+	// first would fold e.g. 256 back onto 0 (IDLE) and silently accept it.
 	newstate = strtol(arg_locs[1], &end, 10);
-	statemachine_switchfromIdle(newstate);
+	if (newstate < 0 || newstate >= STATEMACHINE_MODE_RESERVED) {
+		printf("Invalid state\r\n");
+		return;
+	}
+	statemachine_switchtoIdle(); // stop the running mode first
+	if (newstate != STATEMACHINE_IDLE)
+		statemachine_switchfromIdle((statemachine_modes_t) newstate);
 }
+
+#ifdef CHARGE_DEBUG
+/* Bench test aid for the multi-phase CHARGE start (charge_seq.h): with
+ * single-step mode on, CHARGE holds after the open-loop precharge (relay
+ * still open) instead of continuing on its own, so step 1 (precharge) can be
+ * checked on the bench before chargeNext releases step 2 (close the relay,
+ * ramp the current). Persists across CHARGE (re-)starts until turned off. */
+void cmd_chargeStep(void) {
+	CLI_CHECK_ARG_CNT(1);
+	char *end;
+	long enable = strtol(arg_locs[1], &end, 10);
+	if (enable != 0 && enable != 1) {
+		printf("Invalid value\r\n");
+		return;
+	}
+	statemachine_charge_test_set_manual((uint8_t) enable);
+}
+
+void cmd_chargeNext(void) {
+	CLI_CHECK_ARG_CNT(0);
+	statemachine_charge_test_advance();
+}
+#endif /* CHARGE_DEBUG */
 
 void cmd_setCtrlGain(void) {
 	float P, I;
@@ -1177,17 +1315,24 @@ void cmd_setCtrlGain(void) {
 	id = strtol(arg_locs[1], &end, 10);
 	P = strtof(arg_locs[2], &end);
 	I = strtof(arg_locs[3], &end);
-	if (id == 0) {
-		ctrl_pi_voltage_buck.P_gain = P;
-		ctrl_pi_voltage_buck.I_gain = I / CTRL_FREQ;
-	}else if (id == 1) {
-			ctrl_pi_voltage_boost.P_gain = P;
-			ctrl_pi_voltage_boost.I_gain = I / CTRL_FREQ;
-	} else if (id == 2) {
-		ctrl_pi_current.P_gain = P;
-		ctrl_pi_current.I_gain = I / CTRL_FREQ;
-
+	if (id < CTRL_PID_TABLE_LEN) {
+		ctrl_pid_table[id].ctrl->P_gain = P;
+		ctrl_pid_table[id].ctrl->I_gain = I / ctrl_pid_table[id].rate_hz;
+	} else {
+		printf("Invalid ID\r\n");
 	}
+}
+
+/**
+ * Sets the RESISTANCE_1A mode's pulsed I_1A_REF DAC level (raw 12-bit
+ * code) for bench calibration. Only updates the live value - run
+ * saveEEPROM afterward to persist it, same as setPI.
+ */
+void cmd_set1ARef(void) {
+	CLI_CHECK_ARG_CNT(1);
+	char *end;
+	config_store.calibration.i_1a_ref_dac_value = strtoul(arg_locs[1], &end, 10);
+	config_store_store();
 }
 
 void cmd_printRTC(void){
@@ -1286,6 +1431,95 @@ void cmd_setRTC(void){
 void cmd_testLCD(void){
 	LCD_Test();
 	return;
+}
+
+/**
+ * Enters keyboard-control mode: drives the on-device menu/encoder/buttons
+ * from the serial terminal instead of the physical hardware, for developing
+ * and testing the UI without the encoder/buttons/display board attached.
+ */
+void cmd_control(void) {
+	cli_control_active = 1;
+	cli_control_esc_state = 0;
+	input_set_source(INPUT_SOURCE_CLI);
+	cli_printf(
+			"\r\nKeyboard control mode.\r\n"
+			"  Arrows = encoder   Enter = OK   Esc = ESC   Space = OUT (toggle)   q = quit\r\n");
+}
+
+/**
+ * (Re)provisions the menu icon store on the QSPI flash from the compiled-in
+ * seed artwork (icon_seed_data.c). Erases and rewrites the whole store.
+ */
+void cmd_flashIcons(void) {
+	if (icon_store_flash_seed() == 0) {
+		printf("Icon store flashed OK.\r\n");
+	} else {
+		printf("Icon store flash FAILED.\r\n");
+	}
+}
+
+/**
+ * Bench check for the watchdog: spins without kicking it, so the board must
+ * reset within WATCHDOG_TIMEOUT_MS and the next boot reports a watchdog reset.
+ * The control ISR keeps running meanwhile, same as in a real main-loop hang.
+ */
+void cmd_wdtTest(void) {
+	CLI_DEBUG_ONLY();
+	printf("Hanging main loop, expecting a watchdog reset in ~%u ms ...\r\n", (unsigned) WATCHDOG_TIMEOUT_MS);
+	// Let the message drain before we stop servicing anything.
+	HAL_Delay(50);
+	while (1) {
+	}
+}
+
+#ifdef EMI_DEBUG
+/** Prints the EMC monitor summary (value, min/max, state, excursions per channel). */
+void cmd_emcReport(void) {
+	emc_monitor_report();
+}
+#endif
+
+/**
+ * Debug dump of the protection module's current classification: worst level,
+ * the warning/error source masks decoded by name, and the raw inputs
+ * (4 temps + OVP/OCP pin states) that fed them.
+ */
+void cmd_printProtection(void) {
+	static const protection_source_t all_sources[] = {
+		PROTECTION_SRC_TEMP_SEC, PROTECTION_SRC_TEMP_TRAFO,
+		PROTECTION_SRC_TEMP_CURRENT, PROTECTION_SRC_TEMP_PRIM,
+		PROTECTION_SRC_OVP, PROTECTION_SRC_OCP,
+		PROTECTION_SRC_LIMIT_V, PROTECTION_SRC_LIMIT_I,
+		PROTECTION_SRC_BMS_STALE
+	};
+	uint16_t warning_mask = protection_get_warning_mask();
+	uint16_t error_mask = protection_get_error_mask();
+
+	printf("Worst level:        %d (0=OK, 1=WARNING, 2=ERROR)\r\n", protection_get_worst_level());
+
+	printf("Warnings: ");
+	for (uint8_t i = 0; i < sizeof(all_sources) / sizeof(all_sources[0]); i++) {
+		if (warning_mask & all_sources[i]) {
+			printf("%s ", protection_source_name(all_sources[i]));
+		}
+	}
+	printf("\r\n");
+
+	printf("Errors:   ");
+	for (uint8_t i = 0; i < sizeof(all_sources) / sizeof(all_sources[0]); i++) {
+		if (error_mask & all_sources[i]) {
+			printf("%s ", protection_source_name(all_sources[i]));
+		}
+	}
+	printf("\r\n");
+
+	printf("temp_sec:            %d\r\n", adc_data.converted.temp_sec);
+	printf("temp_trafo:          %d\r\n", adc_data.converted.temp_trafo);
+	printf("temp_current:        %d\r\n", adc_data.converted.temp_current);
+	printf("temp_prim:           %d\r\n", adc_data.converted.temp_prim);
+	printf("OVP Pin Latch:       %d\r\n", HAL_GPIO_ReadPin(OVP_N_GPIO_Port, OVP_N_Pin));
+	printf("OCP Pin Latch:       %d\r\n", HAL_GPIO_ReadPin(OCP_N_GPIO_Port, OCP_N_Pin));
 }
 
 #endif

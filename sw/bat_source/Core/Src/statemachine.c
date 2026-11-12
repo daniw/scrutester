@@ -7,7 +7,9 @@
 
 #include "statemachine.h"
 #include "aux_io_ctrl.h"
-//#include "display.h"
+#include "display.h"
+#include "menu.h"
+#include "input.h"
 #include "timer.h"
 #include "ctrl_main.h"
 #include "stm32g4xx_hal.h"
@@ -15,222 +17,1399 @@
 #include "ui_ctrl.h"
 #include "tim.h"
 #include "gpio.h"
+#include "hrtim.h"
+#include "bq76905.h"
+#include "ctrl_param.h"
+#include "fault.h"
+#include "calibration.h"
+#include "protection.h"
+#include "balancing.h"
+#include "dac.h"
+#include "config_store.h"
+#include "mode_table.h"
+#include "watchdog.h"
+#include "stopwatch.h"
+#include "tetris.h"
+#ifdef EMI_DEBUG
+#include "emc_monitor.h"
+#endif
 
 statemachine_t statemachine_handle;
 uint16_t ok_button_pressed;
 uint16_t esc_button_pressed;
 uint16_t out_button_pressed;
 extern ctrl_main_t ctrl_main_handle;
+extern ADC_MEAS_DATA adc_data;
+extern BQ76905_handle bms;
 
-void statemachine_switchfromIdle(statemachine_modes_t mode);
-void statemachine_switchtoIdle(void);
+/* Remembers protection_get_error_mask() while a protection fault is forcing
+ * the converter off, so that if CHARGE is ultimately left because of it (see
+ * the protection_forced_output_off recovery branch in statemachine_step()),
+ * the debug print below can still report which source(s) caused it -- by
+ * the time the fault actually clears and the mode transition happens, the
+ * live mask has already gone back to 0. */
+static uint16_t charge_protection_exit_mask;
+
+/* Main-context view of the multi-phase CHARGE sequence, see charge_seq.h. */
+static charge_seq_t charge_seq;
+
+/* Set when CHARGE is left for a reason that would simply recur (ESC,
+ * protection, BMS fault, stuck-open abort): the IDLE auto-entry rule would
+ * otherwise restart CHARGE on the very next tick while the charger is still
+ * connected. Cleared once the charger is removed (see statemachine_step()). */
+static uint8_t charge_lockout;
+// Charge finished or timed out: converter off, finished screen shown.
+static uint8_t charge_done;
+static uint32_t charge_ticks;
+static uint32_t charge_balance_ticks;
+static uint32_t charge_reverse_ticks;
+
+#ifdef CHARGE_DEBUG
+/* One-shot "precharge is done, waiting for chargeNext" notice, since the
+ * periodic debug print alone doesn't call out that the hold is deliberate.
+ * Reset on every CHARGE entry. */
+static uint8_t charge_await_notified;
+#endif
+
+#define STATEMACHINE_INACTIVITY_TIMEOUT_TICKS ((10UL * 60UL * 1000UL) / STATEMACHINE_STEP_PERIOD_mS)
+static uint16_t inactivity_ticks;
+
+// VOLTMETER voltage timer (stopwatch.h): view, mode and stop level.
+static display_vt_view_t vt_view;
+static stopwatch_vt_kind_t vt_kind;
+static int32_t vt_level_mV = 60000;
+static input_encoder_clamp_t vt_clamp;
+#define VT_LEVEL_STEP_mV 500
+#define VT_LEVEL_MAX_STEPS 2000
+
+// Error banner shown on the current mode screen (cleared on restart).
+static uint8_t mode_error_shown;
+// Banner to draw after the next idle redraw.
+static const char *idle_error_pending;
+// Banner text at the last protection trip (for the CHARGE exit).
+static const char *protection_trip_text;
+// OVP lockout: SEK shorted until a user-confirmed reset (see ovp_lockout()).
+typedef enum {
+	OVP_NONE,
+	OVP_LOCKED,      // waiting for OK
+	OVP_REL_WAIT,    // SEK released, waiting before the reset pulse
+	OVP_CHECK_WAIT   // pulse done, waiting before checking OVP_N
+} ovp_state_t;
+#define OVP_MAX_ATTEMPTS 3
+#define OVP_WAIT_TICKS 2
+static ovp_state_t ovp_state;
+static uint8_t ovp_attempts;
+static uint8_t ovp_wait;
+
+/* Service entries unlocked (RAM only, cleared by reset/power-off). */
+static uint8_t service_unlocked;
+static uint8_t pin_digits[4];
+static uint8_t pin_pos;
+static uint8_t pin_wait; // ticks left of the "Wrong PIN" message
+static input_encoder_clamp_t pin_clamp;
+static input_encoder_wrap_t idle_wrap;  // home carousel
+static input_encoder_wrap_t list_wrap;  // Settings list and calibration channel list
+
+/* Settings > Calibration sub-UI state -- 0=channel list, 1=zero step,
+ * 2=optional gain step (see display_calibration_enter/update()). */
+static uint8_t calibration_ui_state = 0;
+static calibration_channel_t calibration_selected_channel = CAL_CH_V_TERM;
+
+// Raw encoder count as of the last tick, to detect movement independently of
+// what any given mode does with it (menu index, setpoint, calibration
+// selection, ...) -- see statemachine_step().
+static uint16_t last_raw_encoder;
+
+#define STATEMACHINE_BUTTON_RELEASED 0
+#define STATEMACHINE_BUTTON_CLICK 1
+#define STATEMACHINE_BUTTON_PRESSED 2
+
+// Forward declarations (used before their definition).
+static uint8_t statemachine_enter_charge(uint8_t recovery);
+static void statemachine_step_charge(void);
+static uint8_t statemachine_step_stopwatch(void);
+static uint8_t statemachine_step_voltmeter(void);
+#ifdef EMI_DEBUG
+static void statemachine_step_emi(void);
+#endif
+static void statemachine_charge_lockout(void);
+static void statemachine_charge_finish(const char *msg, uint8_t error);
+static void statemachine_clear_mode_error(void);
+static uint8_t statemachine_ovp_lockout(void);
+
+/* Encoder-dialed reference value step per channel (in the channel's native
+ * unit) for the optional gain calibration step. V_TERM/I_OUT reuse the same
+ * per-detent scale already used for their live setpoints (ctrl_main.c's
+ * CTRL_MODE_60V/CTRL_MODE_10A); the others are new, sized to give a sensible
+ * dial range for typical reference values on that channel. */
+static const float CALIBRATION_REFERENCE_STEP[CAL_CH_COUNT] = {
+		[CAL_CH_V_TERM] = 500.0f,   // mV/detent, max ~63V
+		[CAL_CH_V_SENS] = 50000.0f, // uV/detent, max ~6.3V
+		[CAL_CH_V_OUT] = 500.0f,    // mV/detent, max ~63V
+		[CAL_CH_V_HV] = 10000.0f,   // mV/detent, max ~1270V
+		[CAL_CH_I_OUT] = 100.0f,    // mA/detent, max ~12.7A
+		[CAL_CH_I_ISO] = 100.0f,    // uA/detent, max ~12.7mA
+		[CAL_CH_V_IN] = 500.0f,     // mV/detent, max ~63V (battery stack
+		                            // rail, nominal ~14V, ADC full scale
+		                            // ~51V per ADC_VIN_GAIN_MV)
+};
 
 void statemachine_init(void) {
 	statemachine_handle.output_on = 0;
 	statemachine_handle.current_mode = STATEMACHINE_IDLE;
+	statemachine_handle.current_menu_index = 0;
+	statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
 	ok_button_pressed = 0;
 	esc_button_pressed = 0;
-	tim_encoder_reset(62);
+	statemachine_handle.protection_forced_output_off = 0;
+
+	input_init();
+
 	timer_add(STATEMACHINE_STEP_PERIOD_mS, TIMER_TYPE_TICK, EVENT_SM_STEP, 0);
+	statemachine_switchtoIdle();
+	idle_error_pending = fault_last_reset_text(); // shown on the first idle draw
 }
 
-void statemachine_step(void) {
-	uint8_t temp;
+static input_encoder_clamp_t encoder_setpoint_clamp;
 
-	adc_convert_data();
+/**
+ * @brief Set the live setpoint (encoder counts); clamped to the mode max on the next tick.
+ * @param count 500 mV (60V/EMI), 100 mA (10A), index (ISOMETER)
+ */
+void statemachine_set_setpoint(uint16_t count) {
+	input_encoder_clamp_reset(&encoder_setpoint_clamp, count);
+}
 
-	// Handle Buttons press
-	if (gpio_readBtnOk())
-		ok_button_pressed += 1;
-	else if (gpio_readBtnEsc())
-		esc_button_pressed += 1;
-	else {
-		ok_button_pressed = 0;
-		esc_button_pressed = 0;
+static void statemachine_apply_encoder_setpoint(void) {
+	ctrl_mode_t cmode = mode_table_ctrl_mode(statemachine_handle.current_mode);
+	uint16_t poti_reference = (uint16_t) input_encoder_read_clamped(
+			&encoder_setpoint_clamp, 0, ctrl_main_poti_max(cmode));
+	ctrl_main_apply_reference(cmode, poti_reference);
+}
+
+uint8_t statemachine_settings_list(statemachine_settings_modes_t *list) {
+	uint8_t n = 0;
+
+	list[n++] = STATEMACHINE_SETTINGS_MODE_DISPLAY;
+	list[n++] = STATEMACHINE_SETTINGS_MODE_ABOUT;
+	list[n++] = STATEMACHINE_SETTINGS_MODE_STORAGE;
+	if (!service_unlocked) {
+		list[n++] = STATEMACHINE_SETTINGS_MODE_SERVICE;
+	} else {
+		list[n++] = STATEMACHINE_SETTINGS_MODE_BMS;
+		list[n++] = STATEMACHINE_SETTINGS_MODE_CALIBRATION;
+		list[n++] = STATEMACHINE_SETTINGS_MODE_ADC1;
+		list[n++] = STATEMACHINE_SETTINGS_MODE_ADC2;
+		list[n++] = STATEMACHINE_SETTINGS_MODE_PROTECTION;
 	}
-	if (gpio_readBtnOut()) {
-		if (out_button_pressed < 2)
+	return n;
+}
+
+/**
+ * @brief Settings > Storage mode: outputs off, then the BMS shuts the pack
+ * down (device loses power; the charger wakes it). Refused with voltage on
+ * the terminals, a connected charger would wake the BMS again. Returns only
+ * if the BMS did not cut the power.
+ */
+static void statemachine_storage_mode(void) {
+	if (adc_data.converted.v_term_ext_mv >= CTRL_PARAM_STORAGE_MAX_VTERM_mV) {
+		display_storage_message("Remove charger/voltage first");
+		return;
+	}
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+	ctrl_main_stop_control();
+	aux_io_ctrl_set_config(STATEMACHINE_IDLE, bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV);
+	GPIO_SET_BMS_CTRL_WAKEUP(0); // TS high at shutdown ends in soft shutdown
+
+	printf("Storage mode - switching off\r\n");
+	display_storage_message("Storage mode - switching off");
+	config_store_store_soc(BQ76905_charge_mAs(&bms), BQ76905_offset_mAs(&bms));
+	BQ76905_Shutdown(&bms);
+	for (uint8_t i = 0; i < 200; i++) { // ~2 s for the power to drop
+		HAL_Delay(10);
+		watchdog_kick();
+	}
+
+	printf("Storage mode failed\r\n");
+	display_storage_message("Storage mode failed");
+	for (uint8_t i = 0; i < 100; i++) {
+		HAL_Delay(10);
+		watchdog_kick();
+	}
+	statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
+	display_show_settings_list(statemachine_handle.current_menu_index);
+}
+
+/**
+ * @brief Back to the Settings list.
+ * @param idx Selected list position.
+ */
+static void statemachine_back_to_settings_list(uint8_t idx) {
+	statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
+	statemachine_handle.current_menu_index = idx;
+	input_encoder_reset(idx);
+	input_encoder_wrap_reset(&list_wrap, idx);
+	display_show_settings_list(idx);
+}
+
+/* Drives the Settings > Service PIN entry: encoder dials a digit, OK =
+ * next/check, ESC = previous digit or back. Wrong PIN: message, then list. */
+static void statemachine_step_service_pin(void) {
+	if (pin_wait) {
+		if (--pin_wait == 0)
+			statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
+		return;
+	}
+
+	uint8_t d = (uint8_t) input_encoder_read_clamped(&pin_clamp, 0, 9);
+	if (d != pin_digits[pin_pos]) {
+		pin_digits[pin_pos] = d;
+		display_service_pin(pin_digits, pin_pos);
+	}
+
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		if (pin_pos < 3) {
+			pin_digits[++pin_pos] = 0;
+			input_encoder_clamp_reset(&pin_clamp, 0);
+			display_service_pin(pin_digits, pin_pos);
+			return;
+		}
+		for (uint8_t i = 0; i < 4; i++) {
+			if (pin_digits[i] != SETTINGS_SERVICE_PIN[i] - '0') {
+				display_service_pin_wrong();
+				pin_wait = 1000 / STATEMACHINE_STEP_PERIOD_mS;
+				return;
+			}
+		}
+		service_unlocked = 1;
+		statemachine_back_to_settings_list(0);
+	} else if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		if (pin_pos == 0) {
+			statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
+			return;
+		}
+		input_encoder_clamp_reset(&pin_clamp, pin_digits[--pin_pos]);
+		display_service_pin(pin_digits, pin_pos);
+	}
+}
+
+/* Drives the Settings > Calibration sub-UI (see calibration_ui_state above).
+ * Zero and gain are each confirmed with their own OK press, so the two
+ * calibration steps of calibration.h can be triggered independently; ESC on
+ * the channel list backs out to the Settings list (handled by the caller),
+ * ESC on the zero/gain steps only cancels that step and returns to the
+ * channel list.
+ *
+ * ADC arming: calibration_ensure_adc_mode() is relatively expensive (stops/
+ * reconfigures/restarts up to three ADC DMA streams) and must run only when
+ * the *armed* channel actually changes, never once per tick -- this
+ * function is the only place that both owns calibration_selected_channel
+ * and can tell when that happens (initial entry into the calibration UI,
+ * and the encoder-driven selection change in case 0), so it -- not
+ * display.c, which only renders whatever calibration_peek_*() already
+ * finds in adc_data -- is where the calls belong. Symmetrically, leaving
+ * the calibration UI entirely (case 0's ESC) restores current_mode's own
+ * ADC routing (STATEMACHINE_MODE_SETTINGS's, unchanged for as long as the
+ * calibration UI is showing -- see statemachine_switchfromIdle()'s
+ * STATEMACHINE_MODE_SETTINGS case and statemachine_step()'s SETTINGS case,
+ * neither of which reassign current_mode while navigating Settings/
+ * Calibration) so the Settings list, and whatever real mode is picked
+ * next, aren't left with calibration's V_OUT/ISOMETER routing. */
+static void statemachine_step_calibration(void) {
+	switch (calibration_ui_state) {
+	case 0: { // channel list
+		uint8_t idx = (uint8_t) input_encoder_read_wrapped(&list_wrap, CAL_CH_COUNT);
+		if (idx != calibration_selected_channel) {
+			calibration_selected_channel = (calibration_channel_t) idx;
+			calibration_ensure_adc_mode(calibration_selected_channel);
+		}
+		display_calibration_update(calibration_selected_channel, 0, 0.0f);
+		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			calibration_ui_state = 1;
+			display_calibration_enter(calibration_selected_channel, 1);
+		}
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			adc_configure_mode(statemachine_handle.current_mode);
+			statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
+		}
+		break;
+	}
+	case 1: // zero step
+		display_calibration_update(calibration_selected_channel, 1, 0.0f);
+		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			calibration_zero(calibration_selected_channel);
+			calibration_ui_state = 2;
+			input_encoder_reset(0);
+			display_calibration_enter(calibration_selected_channel, 2);
+		}
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			calibration_ui_state = 0;
+			display_calibration_enter(calibration_selected_channel, 0);
+		}
+		break;
+	case 2: { // optional gain step
+		float reference_value = input_encoder_read()
+				* CALIBRATION_REFERENCE_STEP[calibration_selected_channel];
+		display_calibration_update(calibration_selected_channel, 2, reference_value);
+		if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			if (calibration_set_gain(calibration_selected_channel, reference_value)
+					== CALIBRATION_STATUS_OK) {
+				calibration_ui_state = 0;
+				input_encoder_wrap_reset(&list_wrap, calibration_selected_channel);
+				display_calibration_enter(calibration_selected_channel, 0);
+			} else {
+				// Invalid gain (see calibration_set_gain()) -- nothing was
+				// stored.
+				display_calibration_enter(calibration_selected_channel, 3);
+			}
+		}
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			calibration_ui_state = 0;
+			input_encoder_wrap_reset(&list_wrap, calibration_selected_channel);
+			display_calibration_enter(calibration_selected_channel, 0);
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+/** @brief Protection trip/recovery for the current mode. */
+static void statemachine_protection_step(void) {
+	uint8_t protection_error = protection_get_worst_level() == PROTECTION_LEVEL_ERROR;
+	if (mode_table_ctrl_mode(statemachine_handle.current_mode) != CTRL_MODE_OFF) {
+		if (protection_error) {
+			if (!statemachine_handle.protection_forced_output_off) {
+				protection_trip_text = protection_error_text();
+				printf("Output stopped: %s\r\n", protection_trip_text);
+				display_show_mode_error(protection_trip_text);
+				mode_error_shown = 1;
+			}
+			if (ctrl_main_handle.mode != CTRL_MODE_OFF) {
+				aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN , 0);
+				aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+				ctrl_main_stop_control();
+			}
+			statemachine_handle.output_on = 0;
+			statemachine_handle.protection_forced_output_off = 1;
+			charge_protection_exit_mask = protection_get_error_mask();
+		} else if (statemachine_handle.protection_forced_output_off) {
+			statemachine_handle.protection_forced_output_off = 0;
+			if (statemachine_handle.current_mode == STATEMACHINE_MODE_CHARGE) {
+				printf("CHARGE exit: protection cleared, was forced off by:");
+				for (uint16_t bit = 1; bit; bit <<= 1) {
+					if (charge_protection_exit_mask & bit)
+						printf(" %s", protection_source_name((protection_source_t) bit));
+				}
+				printf(" (mask=0x%04X)\r\n", charge_protection_exit_mask);
+				statemachine_charge_lockout();
+				statemachine_switchtoIdle();
+				idle_error_pending = protection_trip_text;
+			}
+		}
+	} else {
+		statemachine_handle.protection_forced_output_off = 0;
+		// No controller to stop (AMPMETER shorts SEK): leave the mode.
+		if (protection_error
+				&& (statemachine_handle.current_mode == STATEMACHINE_MODE_AMPMETER
+						|| statemachine_handle.current_mode == STATEMACHINE_MODE_VOLTMETER)) {
+			printf("Mode left: %s\r\n", protection_error_text());
+			statemachine_switchtoIdle();
+			idle_error_pending = protection_error_text();
+		}
+	}
+	// Latched limit trips are released with OUT, so a restart needs a new press.
+	if (!input_btn_out())
+		protection_clear_limits();
+}
+
+/** @brief Updates the OK/ESC/OUT click counters. */
+static void statemachine_buttons_update(void) {
+	if (input_btn_ok())
+		ok_button_pressed += 1;
+	else
+		ok_button_pressed = 0;
+
+	if (input_btn_esc())
+		esc_button_pressed += 1;
+	else
+		esc_button_pressed = 0;
+
+	if ((!statemachine_handle.protection_forced_output_off)
+			&& (input_btn_out())) {
+		if (out_button_pressed != STATEMACHINE_BUTTON_PRESSED)
 			out_button_pressed += 1;
 	} else
 		out_button_pressed = 0;
+}
+
+/** @brief Inactivity timer; powers the device off on timeout. */
+static void statemachine_inactivity_step(void) {
+	uint16_t raw_encoder = input_encoder_read();
+	uint8_t active = (raw_encoder != last_raw_encoder)
+			|| ok_button_pressed || esc_button_pressed || out_button_pressed
+			|| ctrl_main_handle.mode == CTRL_MODE_CHARGE
+			|| stopwatch_busy()
+#ifdef EMI_DEBUG
+			|| ctrl_main_handle.mode == CTRL_MODE_EMI
+#endif
+			;
+	last_raw_encoder = raw_encoder;
+	if (active) {
+		inactivity_ticks = 0;
+	} else if (++inactivity_ticks >= STATEMACHINE_INACTIVITY_TIMEOUT_TICKS) {
+		printf("Auto power-off: untouched for %lus in mode %d\r\n",
+				(unsigned long) STATEMACHINE_INACTIVITY_TIMEOUT_TICKS
+						* STATEMACHINE_STEP_PERIOD_mS / 1000UL,
+				statemachine_handle.current_mode);
+		// Shutdown any running converters
+		statemachine_switchtoIdle();
+		gpio_power_off();
+		inactivity_ticks = 0;
+	}
+}
+
+/** @brief IDLE: carousel, mode selection and CHARGE auto-entry. */
+static void statemachine_idle_step(void) {
+	uint8_t temp = (uint8_t) input_encoder_read_wrapped(&idle_wrap, MENU_ORDER_LENGTH);
+	if (temp != statemachine_handle.current_menu_index) {
+		statemachine_handle.current_menu_index = temp;
+		display_show_idle(temp);
+		if (idle_error_pending) {
+			display_show_idle_error(idle_error_pending);
+			idle_error_pending = NULL;
+		}
+	}
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		statemachine_switchfromIdle(menu_entry_at(temp)->mode);
+	}
+
+	if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK)
+		statemachine_switchfromIdle(STATEMACHINE_MODE_SHUTDOWN);
+
+	// CHARGE is auto-entered, not menu/button-selected: whenever idle and
+	// a 15-24V supply is detected at the output with no BMS fault
+	// latched, start charging on our own -- unless the last charge was
+	// ended by ESC/a fault and the charger has not been removed since
+	// (charge_lockout), or the BMS has not delivered a plausible stack
+	// voltage yet (it reads 0 before the first poll, which would pass the
+	// "below end voltage" test below), or the ext ADC self-test failed.
+	uint8_t entry_ok = !charge_lockout && !BQ76905_data_stale(&bms)
+			&& !(protection_get_error_mask() & PROTECTION_SRC_EXT_ADC);
+	if (entry_ok
+			&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)
+			&& !(bms.SafetyRegisters.safetyStatusA || bms.SafetyRegisters.safetyStatusB)
+			&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_STACK_VOLTAGE_MIN_VALID_mV
+			&& bms.VoltageRegisters.StackVoltage <= CTRL_PARAM_STACK_VOLTAGE_MAX_VALID_mV
+			&& bms.VoltageRegisters.StackVoltage
+					< CTRL_PARAM_CHARGE_END_VOLTAGE_mV - CTRL_PARAM_CHARGE_RESTART_MARGIN_mV) {
+		statemachine_switchfromIdle(STATEMACHINE_MODE_CHARGE);
+	} else if (entry_ok
+			&& (bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)
+			&& !(bms.SafetyRegisters.safetyStatusA & (uint8_t) ~BQ76905_SAFETY_STATUS_A_CUV)
+			&& !bms.SafetyRegisters.safetyStatusB
+			&& charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
+		// Deep-discharge/CUV recovery: called directly, not through
+		// statemachine_switchfromIdle() -- see
+		// statemachine_enter_charge()'s comment.
+		statemachine_enter_charge(1);
+	}
+}
+
+/** @brief 60V/10A/ISOMETER: encoder setpoint and OUT start/stop. */
+static void statemachine_output_step(void) {
+	statemachine_apply_encoder_setpoint();
+	// Start once on the press edge, stop on release.
+	if (out_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		statemachine_clear_mode_error();
+		statemachine_handle.output_on = 1;
+		ctrl_main_start_ctrl(
+				mode_table_ctrl_mode(
+						statemachine_handle.current_mode));
+		aux_io_ctrl_manual_set_io(
+				mode_table_get(statemachine_handle.current_mode)->enable_gpio,
+				1);
+	} else if (out_button_pressed == STATEMACHINE_BUTTON_RELEASED) {
+		statemachine_handle.output_on = 0;
+		aux_io_ctrl_manual_set_io(
+				mode_table_get(statemachine_handle.current_mode)->enable_gpio,
+				0);
+		ctrl_main_stop_control();
+	}
+}
+
+/** @brief SETTINGS list: selection and entering a detail screen. */
+static void statemachine_settings_menu_step(void) {
+	statemachine_settings_modes_t list[STATEMACHINE_SETTINGS_MODE_LENGTH];
+	uint8_t temp = (uint8_t) input_encoder_read_wrapped(&list_wrap,
+			statemachine_settings_list(list));
+	if (temp != statemachine_handle.current_menu_index) {
+		statemachine_handle.current_menu_index = temp;
+		display_show_settings_list(temp);
+	}
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		statemachine_handle.settings_mode =
+				list[statemachine_handle.current_menu_index];
+		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_SERVICE) {
+			pin_pos = 0;
+			pin_digits[0] = 0;
+			pin_wait = 0;
+			input_encoder_clamp_reset(&pin_clamp, 0);
+			display_service_pin(pin_digits, pin_pos);
+		} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
+			calibration_ui_state = 0;
+			calibration_selected_channel = CAL_CH_V_TERM;
+			input_encoder_wrap_reset(&list_wrap, CAL_CH_V_TERM);
+			calibration_ensure_adc_mode(calibration_selected_channel);
+			display_calibration_enter(calibration_selected_channel, 0);
+		} else {
+			display_enter_settings_detail(statemachine_handle.settings_mode);
+		}
+	}
+}
+
+/**
+ * @brief SETTINGS mode dispatch (list, calibration, service, details).
+ * @return 1 if the tick is done (skips the common ESC handling).
+ */
+static uint8_t statemachine_settings_step(void) {
+	if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_MENU) {
+		statemachine_settings_menu_step();
+	} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_CALIBRATION) {
+		statemachine_step_calibration();
+		return 1;
+	} else if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_SERVICE) {
+		statemachine_step_service_pin();
+		return 1;
+	} else {
+		// Easter egg (tetris.c): hold OK 1.5 s on About. The game owns LCD
+		// and inputs; return so its quitting ESC skips the ESC handling below.
+		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_ABOUT) {
+			if (tetris_is_active()) {
+				if (!tetris_step())
+					display_enter_settings_detail(STATEMACHINE_SETTINGS_MODE_ABOUT);
+				return 1;
+			}
+			if (ok_button_pressed == TETRIS_UNLOCK_TICKS) {
+				tetris_start();
+				return 1;
+			}
+		}
+		display_update_settings_detail(statemachine_handle.settings_mode);
+		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
+				&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			balancing_toggle_manual_override();
+		}
+		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_STORAGE
+				&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			statemachine_storage_mode();
+			return 1;
+		}
+		if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+			if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS) {
+				balancing_clear_manual_override();
+			}
+			statemachine_back_to_settings_list(statemachine_handle.current_menu_index);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void statemachine_step(void) {
+	i2c_check_timeout();
+
+	// Due to race conditions
+	adc_snapshot_converted();
+	adc_convert_data();
+	ui_ctrl_step();
+
+	display_refresh_battery_icon();
+	// Update protection and turn off if necessary
+	protection_update(statemachine_handle.current_mode);
+
+	// Unconditional every tick (not just while STATEMACHINE_MODE_CHARGE is
+	// active) -- see balancing.c: this guarantees the balancing mask gets
+	// written back to 0 on the tick after charging stops for any reason.
+	balancing_update();
+
+	if (statemachine_ovp_lockout())
+		return;
+
+	statemachine_protection_step();
+	statemachine_buttons_update();
+
+	// Re-arm the CHARGE auto-entry once the charger has been unplugged.
+	if (charge_lockout
+			&& adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_START_VIN_LOW_mV) {
+		charge_lockout = 0;
+	}
+
+	statemachine_inactivity_step();
 
 	// Select transition to next state
 	switch (statemachine_handle.current_mode) {
 	case STATEMACHINE_IDLE:
-		temp = (tim_encoder_read() / 2) % 6 + 1;
-		if (temp != statemachine_handle.current_menu_index) {
-			statemachine_handle.current_menu_index = temp;
-			//display_show_menu();
-
-		}
-		if (ok_button_pressed == 1) {
-			statemachine_switchfromIdle(statemachine_handle.current_menu_index);
-		}
-
-		if (esc_button_pressed == 1)
-			statemachine_handle.current_mode = STATEMACHINE_MODE_SHUTDOWN;
+		statemachine_idle_step();
 		break;
+
 	case STATEMACHINE_MODE_60V_OUT:
-		if (out_button_pressed == 1) {
-			ctrl_main_start_ctrl(statemachine_handle.current_mode);
-			aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
-		} else if (out_button_pressed == 0) {
-			ctrl_main_stop_control();
-			aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
-		}
-		if (esc_button_pressed == 1) {
-			ctrl_main_stop_control();
-			statemachine_switchtoIdle();
-		}
-		break;
-
-	case STATEMACHINE_MODE_10A_OUT:		//display_draw_measure_data();
-		if (out_button_pressed == 1) {
-			ctrl_main_start_ctrl(statemachine_handle.current_mode);
-			aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
-		} else if (out_button_pressed == 0) {
-			ctrl_main_stop_control();
-			aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
-		}
-		if (esc_button_pressed == 1) {
-			ctrl_main_stop_control();
-			statemachine_switchtoIdle();
-		}
-		break;
+	case STATEMACHINE_MODE_10A_OUT:
+	case STATEMACHINE_MODE_ISOMETER:
+		statemachine_output_step();
+		/* fall through to update display !! */
 	case STATEMACHINE_MODE_RESISTANCE_1A:
 	case STATEMACHINE_MODE_RESISTANCE_1mA:
-	case STATEMACHINE_MODE_ISOMETER:
+	case STATEMACHINE_MODE_AMPMETER:
+		display_update_mode(statemachine_handle.current_mode, statemachine_handle.output_on);
+		break;
 
-		if (esc_button_pressed == 1) {
-			statemachine_switchtoIdle();
-		}
-		break;
 	case STATEMACHINE_MODE_VOLTMETER:
-		if (esc_button_pressed == 1) {
-			ctrl_main_stop_control();
-			statemachine_switchtoIdle();
-		}
+		if (statemachine_step_voltmeter())
+			return;
 		break;
+
+	case STATEMACHINE_MODE_STOPWATCH:
+		if (statemachine_step_stopwatch())
+			return;
+		break;
+
+	case STATEMACHINE_MODE_CHARGE:
+		statemachine_step_charge();
+		break;
+
+#ifdef EMI_DEBUG
+	case STATEMACHINE_MODE_EMI:
+		statemachine_step_emi();
+		break;
+#endif
 
 	case STATEMACHINE_MODE_SETTINGS:
-		temp = (tim_encoder_read() / 2) % STATEMACHINE_SETTINGS_MODE_LENGTH;
-
-		//display_show_settings(temp);
-
-		if (esc_button_pressed == 1 && statemachine_handle.settings_mode == 0)
-			statemachine_switchtoIdle();
-		else if (esc_button_pressed == 1)
-			statemachine_handle.settings_mode = 0;
-		else if (ok_button_pressed)
-			statemachine_handle.settings_mode = temp;
-
+		if (statemachine_settings_step())
+			return;
 		break;
-
-	case STATEMACHINE_MODE_SHUTDOWN:
-		gpio_shutdown();
 
 	default:
 		break;
 	}
+	if (esc_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		if (statemachine_handle.current_mode == STATEMACHINE_MODE_CHARGE) {
+			printf("CHARGE exit: ESC pressed by user\r\n");
+			statemachine_charge_lockout();
+		}
+		statemachine_switchtoIdle();
+	}
 
-	//display_draw();
+}
+
+/**
+ * @brief Stopwatch mode: OK start/stop, ESC stops, resets or leaves.
+ * @return 1 if ESC was used here (no exit to idle).
+ */
+static uint8_t statemachine_step_stopwatch(void) {
+	uint32_t now = HAL_GetTick();
+	uint8_t was_running = stopwatch_running();
+	uint8_t esc = esc_button_pressed == STATEMACHINE_BUTTON_CLICK;
+	uint8_t used = esc && (was_running || stopwatch_elapsed_ms(now));
+
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK || (used && was_running))
+		stopwatch_toggle(now);
+	else if (used)
+		stopwatch_clear();
+	if (was_running && !stopwatch_running()) {
+		uint32_t ms = stopwatch_elapsed_ms(now);
+		printf("STOPWATCH %lu.%03lu s\r\n", (unsigned long) (ms / 1000),
+				(unsigned long) (ms % 1000));
+	}
+	display_update_mode(STATEMACHINE_MODE_STOPWATCH, 0);
+	return used;
+}
+
+static void statemachine_vt_goto(display_vt_view_t view) {
+	vt_view = view;
+	if (view == VT_VIEW_READOUT) {
+		display_enter_mode(STATEMACHINE_MODE_VOLTMETER);
+	} else {
+		display_vtimer_enter(view, vt_kind);
+		input_encoder_clamp_reset(&vt_clamp,
+				view == VT_VIEW_KIND ? vt_kind : vt_level_mV / VT_LEVEL_STEP_mV);
+	}
+}
+
+static void statemachine_vt_print_result(void) {
+	static const char *const names[VT_KIND_COUNT] = { "IMD", "Discharge" };
+	uint32_t ms = stopwatch_vt_elapsed_ms(0);
+	int32_t a = stopwatch_vt_start_mV() / 100, b = stopwatch_vt_stop_mV() / 100;
+
+	printf("STOPWATCH %s %lu.%03lu s (start %ld.%ld V, stop %ld.%ld V)\r\n",
+			names[stopwatch_vt_kind()], (unsigned long) (ms / 1000),
+			(unsigned long) (ms % 1000), (long) (a / 10), (long) (a % 10),
+			(long) (b / 10), (long) (b % 10));
+}
+
+/**
+ * @brief VOLTMETER: plain readout or the timing views.
+ * @return 1 if ESC was used here (no exit to idle).
+ */
+static uint8_t statemachine_step_voltmeter(void) {
+	uint8_t ok = ok_button_pressed == STATEMACHINE_BUTTON_CLICK;
+	uint8_t esc = esc_button_pressed == STATEMACHINE_BUTTON_CLICK;
+	uint8_t used = esc && vt_view != VT_VIEW_READOUT;
+
+	switch (vt_view) {
+	case VT_VIEW_READOUT:
+		if (ok)
+			statemachine_vt_goto(VT_VIEW_KIND);
+		break;
+	case VT_VIEW_KIND:
+		vt_kind = input_encoder_read_clamped(&vt_clamp, 0, VT_KIND_COUNT - 1);
+		if (ok)
+			statemachine_vt_goto(VT_VIEW_LEVEL);
+		else if (esc)
+			statemachine_vt_goto(VT_VIEW_READOUT);
+		break;
+	case VT_VIEW_LEVEL:
+		vt_level_mV = VT_LEVEL_STEP_mV
+				* input_encoder_read_clamped(&vt_clamp, 1, VT_LEVEL_MAX_STEPS);
+		if (ok) {
+			if (stopwatch_vt_arm(vt_kind, vt_level_mV,
+					adc_data.converted.v_term_ext_mv_filt, HAL_GetTick()))
+				statemachine_vt_goto(VT_VIEW_RUN);
+			else
+				display_show_mode_error("Voltage below stop level");
+		} else if (esc) {
+			statemachine_vt_goto(VT_VIEW_KIND);
+		}
+		break;
+	case VT_VIEW_RUN:
+		if (stopwatch_vt_take_done())
+			statemachine_vt_print_result();
+		if (esc || (ok && stopwatch_vt_state() == VT_DONE)) {
+			stopwatch_vt_cancel();
+			statemachine_vt_goto(VT_VIEW_LEVEL);
+		}
+		break;
+	}
+
+	if (vt_view == VT_VIEW_READOUT)
+		display_update_mode(STATEMACHINE_MODE_VOLTMETER, 0);
+	else
+		display_vtimer_update(vt_view, vt_kind, vt_level_mV);
+	return used;
+}
+
+#ifdef EMI_DEBUG
+/* Stops both converters and drops both enables. Same order as the other
+ * stop paths: control first (clears ctrl mode before the PWM goes away, see
+ * ctrl_main_stop_control()), then the gate-driver enables. */
+static void statemachine_emi_stop(void) {
+	statemachine_handle.output_on = 0;
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+	ctrl_main_stop_control();
+}
+
+/* Per-tick EMI handling. Unlike 60V/10A/ISOMETER this is not hold-to-enable:
+ * an OUT press toggles the run state, since an EMI scan outlasts anyone's
+ * thumb. ESC (handled at the bottom of statemachine_step()) leaves the mode
+ * and stops everything via statemachine_switchtoIdle(). */
+static void statemachine_step_emi(void) {
+	statemachine_apply_encoder_setpoint();
+
+	// out_button_pressed is 1 only on the tick the button goes down (2 while
+	// held), so a held button toggles once. It is also forced to 0 while a
+	// protection fault holds the converters off, and output_on is already 0
+	// then, so a fault ends the run and a fresh press is needed afterwards.
+	if (out_button_pressed == STATEMACHINE_BUTTON_CLICK) {
+		if (statemachine_handle.output_on) {
+			statemachine_emi_stop();
+		} else if (!statemachine_handle.protection_forced_output_off) {
+			statemachine_clear_mode_error();
+			statemachine_handle.output_on = 1;
+			// Both converters at once: LV ramps to the setpoint, HV starts at
+			// its fixed duty, so the LV loop absorbs the HV energy from the
+			// first cycle.
+			ctrl_main_start_ctrl(CTRL_MODE_EMI);
+			aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
+			aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 1);
+		}
+	}
+
+	if (ok_button_pressed == STATEMACHINE_BUTTON_CLICK)
+		emc_monitor_reset();
+	emc_monitor_step(statemachine_handle.output_on);
+
+	display_update_mode(statemachine_handle.current_mode, statemachine_handle.output_on);
+}
+#endif /* EMI_DEBUG */
+
+static void statemachine_charge_lockout(void) {
+	charge_lockout = 1;
+	printf("CHARGE locked out until the charger is removed\r\n");
+}
+
+#ifdef CHARGE_DEBUG
+/* charge_seq's `manual` flag lives on the static `charge_seq` instance below,
+ * which charge_seq_init() (called on every CHARGE entry) does not touch -- so
+ * this persists across CHARGE (re-)starts on its own; no separate flag needed
+ * here. */
+void statemachine_charge_test_set_manual(uint8_t enable) {
+	charge_seq_set_manual(&charge_seq, enable);
+	printf("CHARGE test mode: single-step %s\r\n", enable
+			? "enabled -- will hold after precharge (relay still open) until chargeNext"
+			: "disabled");
+}
+
+uint8_t statemachine_charge_test_advance(void) {
+	if (statemachine_handle.current_mode != STATEMACHINE_MODE_CHARGE) {
+		printf("Not charging\r\n");
+		return 0;
+	}
+	if (!charge_seq_awaiting_advance(&charge_seq)) {
+		printf("CHARGE: nothing to advance right now (phase=%s)\r\n",
+				charge_seq_phase_name(ctrl_main_handle.charge_phase));
+		return 0;
+	}
+	charge_seq_request_advance(&charge_seq);
+	printf("CHARGE: advancing -- closing the output relay and starting the current ramp\r\n");
+	return 1;
+}
+#endif /* CHARGE_DEBUG */
+
+/** @brief Deep-discharge recovery: steps the reference back up once CUV clears. */
+static void statemachine_charge_recovery_ramp(void) {
+	// Deep-discharge recovery: once the BMS clears CUV, ramp the current
+	// reference from the reduced recovery target back up to the normal
+	// one, in place -- K1 never opened, so no relay recycle or restart
+	// is needed. ctrl_main_handle.ramp (the ISR's own start-of-charge
+	// ramp) is already saturated past 1.0 by now, so it won't do this on
+	// its own -- this steps current_reference_mA directly, once per 20ms
+	// tick, over CTRL_PARAM_CHARGE_RAMP_s.
+	if (charge_seq.low_current_recovery
+			&& !(bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV)) {
+		uint32_t step_mA = (uint32_t) ((CTRL_PARAM_CHARGE_CURRENT_mA
+				- CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA)
+				* STATEMACHINE_STEP_PERIOD_mS / (CTRL_PARAM_CHARGE_RAMP_s * 1000.0F));
+		if (step_mA == 0)
+			step_mA = 1; // guard against a ramp time too short for this current delta
+		if (ctrl_main_handle.current_reference_mA + step_mA >= CTRL_PARAM_CHARGE_CURRENT_mA) {
+			ctrl_main_handle.current_reference_mA = CTRL_PARAM_CHARGE_CURRENT_mA;
+			charge_seq.low_current_recovery = 0;
+			printf("CHARGE: BMS undervoltage cleared, ramped to full current\r\n");
+		} else {
+			ctrl_main_handle.current_reference_mA += step_mA;
+		}
+	}
+}
+
+#ifdef CHARGE_DEBUG
+/** @brief Debug output of the CHARGE step (peak current, ~10 Hz status line). */
+static void statemachine_charge_debug_print(uint16_t cell_max) {
+	// Debug output, printed here because a blocking UART write in the
+	// control ISR would stall the 25 kHz loop for several milliseconds.
+	int32_t peak_mA;
+	if (ctrl_main_charge_take_peak(&peak_mA)) {
+		printf("CHARGE: peak |I_OUT| after the relay-close command: %ldmA\r\n", peak_mA);
+	}
+	static uint8_t print_div;
+	if (++print_div >= 5) { // ~10 Hz at the 20 ms tick
+		print_div = 0;
+		printf("Charging: %s, I_OUT: %5d, I_OUT_ext_mA: %5ld, V_IN: %5ld, V_OUT: %5ld, "
+				"V_TERM: %5ld, Stack: %5u, max(cell): %4u\r\n",
+				charge_seq_phase_name(ctrl_main_handle.charge_phase),
+				-adc_data.converted.i_out, -adc_data.converted.i_out_ext_mA_filt,
+				adc_data.converted.v_in, adc_data.converted.v_out,
+				adc_data.converted.v_term_ext_mv_filt,
+				bms.VoltageRegisters.StackVoltage, cell_max);
+	}
+}
+#endif /* CHARGE_DEBUG */
+
+/** @brief CHARGE exit conditions: decides, prints the reason, ends the charge. */
+static void statemachine_charge_exit_step(uint16_t cell_min, uint16_t cell_max) {
+	// Exit conditions. End of charge only counts once current is actually
+	// flowing (CC_RAMP/CV); everything else applies in every phase.
+	uint8_t at_end = charge_seq_may_complete(&charge_seq)
+			&& bms.VoltageRegisters.StackVoltage >= CTRL_PARAM_CHARGE_END_VOLTAGE_mV
+			&& -adc_data.converted.i_out_ext_mA <= CTRL_PARAM_CHARGE_TAPER_CURRENT_mA;
+	uint8_t balanced = (cell_max - cell_min <= CTRL_PARAM_CHARGE_CELL_SPREAD_mV);
+	if (at_end && !balanced)
+		charge_balance_ticks++;
+	uint8_t balance_timeout = charge_balance_ticks
+			>= CTRL_PARAM_CHARGE_BALANCE_TIMEOUT_s * 1000UL / STATEMACHINE_STEP_PERIOD_mS;
+	uint8_t charge_completed = at_end && (balanced || balance_timeout);
+	uint8_t charge_timeout = ++charge_ticks
+			>= CTRL_PARAM_CHARGE_MAX_TIME_s * 1000UL / STATEMACHINE_STEP_PERIOD_mS;
+	// While recovering from a deep-discharge CUV fault, CUV is exactly the
+	// condition this run exists to clear -- it must not itself abort the
+	// charge that's trying to recover from it (see
+	// statemachine_enter_charge(1)). Any OTHER fault bit still
+	// aborts immediately, same as a normal charge.
+	uint8_t fault_mask_a = bms.SafetyRegisters.safetyStatusA;
+	if (charge_seq.low_current_recovery) {
+		fault_mask_a &= (uint8_t) ~BQ76905_SAFETY_STATUS_A_CUV;
+	}
+	uint8_t bms_fault = fault_mask_a || bms.SafetyRegisters.safetyStatusB;
+	uint8_t supply_low = adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV;
+	// Charger gone: current reverses long before V_TERM drops.
+	if ((ctrl_main_handle.charge_phase == CHG_PHASE_CC_RAMP
+			|| ctrl_main_handle.charge_phase == CHG_PHASE_CV)
+			&& adc_data.converted.i_out_ext_mA > CTRL_PARAM_CHARGE_REVERSE_mA)
+		charge_reverse_ticks++;
+	else
+		charge_reverse_ticks = 0;
+	uint8_t reverse = charge_reverse_ticks
+			>= CTRL_PARAM_CHARGE_REVERSE_ms / STATEMACHINE_STEP_PERIOD_mS;
+	supply_low |= reverse;
+
+	if (charge_completed || charge_timeout || bms_fault || supply_low) {
+		if (charge_completed) {
+			printf("CHARGE exit: end voltage reached and current tapered off "
+					"(stack=%umV >= end=%dmV, i_out=%ldmA <= taper=%dmA, spread=%umV)\r\n",
+					bms.VoltageRegisters.StackVoltage, CTRL_PARAM_CHARGE_END_VOLTAGE_mV,
+					-adc_data.converted.i_out_ext_mA, CTRL_PARAM_CHARGE_TAPER_CURRENT_mA,
+					cell_max - cell_min);
+		}
+		if (charge_timeout && !charge_completed) {
+			printf("CHARGE exit: timeout after %lus\r\n", CTRL_PARAM_CHARGE_MAX_TIME_s);
+		}
+		if (fault_mask_a) {
+			printf("CHARGE exit: BMS safetyStatusA=0x%02X\r\n", fault_mask_a);
+		}
+		if (bms.SafetyRegisters.safetyStatusB) {
+			printf("CHARGE exit: BMS safetyStatusB=0x%02X\r\n", bms.SafetyRegisters.safetyStatusB);
+		}
+		if (reverse) {
+			printf("CHARGE exit: reverse current (i_out_ext=%ldmA), charger removed\r\n",
+					adc_data.converted.i_out_ext_mA);
+		} else if (supply_low) {
+			printf("CHARGE exit: supply voltage dropped (v_term_ext_mv=%ldmV < stop=%dmV)\r\n",
+					adc_data.converted.v_term_ext_mv, CTRL_PARAM_CHARGE_STOP_VIN_mV);
+		}
+		// Only a finished charge means "full"; a fault, a supply drop or
+		// ESC must not declare the pack 100% or discard the accumulated charge.
+		if (charge_completed) {
+			BQ76905_resetChargeAccumulator(&bms);
+			bms.Accumulator.accumulatedCharge = 0;
+			bms.charge_percentage = 100;
+		}
+		if (bms_fault || supply_low) {
+			if (bms_fault)
+				statemachine_charge_lockout();
+			statemachine_switchtoIdle();
+		} else if (charge_completed) {
+			statemachine_charge_finish(balanced ? "Charging finished"
+					: "Finished, cells unbalanced", 0);
+		} else {
+			statemachine_charge_finish("ERROR: Charge timeout", 1);
+		}
+	}
+}
+
+/* Per-tick CHARGE handling: phase sequencing (charge_seq.h), debug output and
+ * the exit conditions. Runs from statemachine_step()'s CHARGE case. */
+static void statemachine_step_charge(void) {
+	if (charge_done)
+		return; // finished screen is static, ESC / auto power-off end it
+
+	display_update_mode(statemachine_handle.current_mode,
+			statemachine_handle.output_on);
+
+	// Phase sequencing. Not while a protection fault has the converter forced
+	// off: control is stopped then, and the recovery branch at the top of
+	// statemachine_step() ends CHARGE once the fault clears.
+	if (!statemachine_handle.protection_forced_output_off) {
+		charge_seq_in_t in = {
+			.isr_phase = ctrl_main_handle.charge_phase,
+			.ref_mA = ctrl_main_charge_reference_mA(),
+			.charge_mA = -adc_data.converted.i_out_ext_mA,
+		};
+		switch (charge_seq_step(&charge_seq, &in, STATEMACHINE_STEP_PERIOD_mS)) {
+		case CHG_ACT_CLOSE_RELAY:
+			// The relays are normally closed: OUT_SEL_HV low = K1 closed, which
+			// connects the converter output to the charger. The hand-over
+			// steps the SEK duty to the zero-current duty at the same moment,
+			// so OUT_LV is already at the charger voltage when the contacts
+			// meet (and the current loop starts from ~0 A).
+			aux_io_ctrl_manual_set_io(GPIO_OUT_SEL_HV, 0);
+			ctrl_main_charge_handover(adc_data.converted.v_in,
+					adc_data.converted.v_term_ext_mv);
+#ifdef CHARGE_DEBUG
+			printf("CHARGE: precharge done (V_IN=%ldmV, V_TERM=%ldmV), relay closing\r\n",
+					adc_data.converted.v_in, adc_data.converted.v_term_ext_mv);
+#endif
+			break;
+		case CHG_ACT_START_RAMP:
+			ctrl_main_charge_start_ramp();
+#ifdef CHARGE_DEBUG
+			printf("CHARGE: relay settled, current ramp started\r\n");
+#endif
+			break;
+		case CHG_ACT_ABORT_STUCK_OPEN:
+			printf("CHARGE exit: no charge current although the reference is up "
+					"(relay stuck open, or charger gone)\r\n");
+			statemachine_charge_lockout();
+			statemachine_switchtoIdle();
+			return;
+		case CHG_ACT_NONE:
+		default:
+			break;
+		}
+
+#ifdef CHARGE_DEBUG
+		if (charge_seq_awaiting_advance(&charge_seq)) {
+			if (!charge_await_notified) {
+				charge_await_notified = 1;
+				printf("CHARGE: precharge complete, holding (relay still open) "
+						"-- send 'chargeNext' to close it and start the current ramp\r\n");
+			}
+		} else {
+			charge_await_notified = 0;
+		}
+#endif
+
+		statemachine_charge_recovery_ramp();
+	}
+
+	uint16_t cell_min = 0xFFFF;
+	uint16_t cell_max = 0;
+	for (uint8_t i = 0; i < BQ76905_PACK_CELL_COUNT; i++) {
+		if (bms.CellVoltageRegisters.CellVoltages[i] > cell_max) {
+			cell_max = bms.CellVoltageRegisters.CellVoltages[i];
+		}
+		if (bms.CellVoltageRegisters.CellVoltages[i] < cell_min) {
+			cell_min = bms.CellVoltageRegisters.CellVoltages[i];
+		}
+	}
+	ctrl_main_charge_cv_step(cell_max);
+
+#ifdef CHARGE_DEBUG
+	statemachine_charge_debug_print(cell_max);
+#endif
+
+	statemachine_charge_exit_step(cell_min, cell_max);
+}
+
+static void statemachine_charge_reset_timers(void) {
+	charge_done = 0;
+	charge_ticks = 0;
+	charge_reverse_ticks = 0;
+	charge_balance_ticks = 0;
+}
+
+/**
+ * @brief Ends a charge but stays in CHARGE: converter off, IDLE relay
+ *        configuration, finished screen. Inactivity power-off applies again.
+ * @param msg Text for the finished screen.
+ * @param error 1 = shown as error (red).
+ */
+static void statemachine_charge_finish(const char *msg, uint8_t error) {
+	aux_io_ctrl_manual_set_io(mode_table_get(STATEMACHINE_MODE_CHARGE)->enable_gpio, 0);
+	ctrl_main_stop_control();
+	aux_io_ctrl_set_config(STATEMACHINE_IDLE,
+			bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV);
+	statemachine_handle.output_on = 0;
+	ui_ctrl_ledOutOff();
+	charge_done = 1;
+	inactivity_ticks = 0;
+	display_show_charge_done(msg, error);
+}
+
+/* Shared tail of every mode entry: the next mode starts at setpoint 0
+ * (EMI: its default). */
+static void statemachine_entry_tail(statemachine_modes_t mode) {
+	input_encoder_reset(0);
+	input_encoder_wrap_reset(&list_wrap, 0); // Settings list starts at the top
+	(void) mode; // only used by EMI_DEBUG
+	int32_t clamp_start = 0;
+#ifdef EMI_DEBUG
+	// EMI starts at its default setpoint instead of 0 V, so the first OUT
+	// press runs the intended test without dialling up first.
+	if (mode == STATEMACHINE_MODE_EMI)
+		clamp_start = CTRL_PARAM_EMI_VOLTAGE_DEFAULT_mV / CTRL_MAIN_MV_PER_COUNT;
+#endif
+	input_encoder_clamp_reset(&encoder_setpoint_clamp, clamp_start);
+	inactivity_ticks = 0;
+}
+
+/* CHARGE entry. Normal start: called from statemachine_switchfromIdle().
+ * Unlike the other modes the relays are set BEFORE the converter starts: the
+ * sequence begins with K1 (converter output to the jacks) open. Returns 0
+ * (and does nothing) if there is no charger in the allowed window, which also
+ * covers the CLI's `state` command forcing CHARGE without one.
+ *
+ * `recovery`: deep-discharge/CUV recovery. The BMS has latched a cell
+ * undervoltage fault (DSG FET open, V_IN ~0) and the device runs on charger
+ * power fed through K1 into OUT_LV -- see statemachine_switchtoIdle(). Called
+ * directly from the IDLE auto-entry check (which already checked the window). */
+static uint8_t statemachine_enter_charge(uint8_t recovery) {
+	if (!recovery
+			&& !charge_seq_v_term_in_window(adc_data.converted.v_term_ext_mv)) {
+		printf("Unable to switch to CHARGE: charger voltage %ldmV outside %d..%dmV\r\n",
+				adc_data.converted.v_term_ext_mv,
+				CTRL_PARAM_CHARGE_START_VIN_LOW_mV, CTRL_PARAM_CHARGE_START_VIN_HIGH_mV);
+		return 0;
+	}
+
+	ui_ctrl_ledOutOn();
+	statemachine_handle.current_mode = STATEMACHINE_MODE_CHARGE;
+	adc_configure_mode(STATEMACHINE_MODE_CHARGE);
+
+	// Relays before any PWM; recovery keeps K1 closed.
+	aux_io_ctrl_set_config(STATEMACHINE_MODE_CHARGE, recovery);
+	charge_seq_init(&charge_seq, recovery);
+	statemachine_charge_reset_timers();
+#ifdef CHARGE_DEBUG
+	charge_await_notified = 0;
+#endif
+	if (recovery)
+		ctrl_main_start_ctrl_charge_low_current();  // straight to CC_RAMP
+	else
+		ctrl_main_start_ctrl(CTRL_MODE_CHARGE);     // PRECHARGE
+	aux_io_ctrl_manual_set_io(mode_table_get(STATEMACHINE_MODE_CHARGE)->enable_gpio, 1);
+	statemachine_handle.output_on = 1;
+
+	statemachine_entry_tail(STATEMACHINE_MODE_CHARGE);
+
+	display_enter_mode(STATEMACHINE_MODE_CHARGE);
+	if (recovery)
+		printf("CHARGE: deep-discharge recovery at %dmA (BMS reports CUV, V_TERM=%ldmV)\r\n",
+				CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA, adc_data.converted.v_term_ext_mv);
+	else
+		printf("CHARGE: precharging the converter output (V_TERM=%ldmV)\r\n",
+				adc_data.converted.v_term_ext_mv);
+	return 1;
+}
+
+/* Runs the shared, mode_table[]-driven entry sequence used by every real
+ * mode except IDLE (special-cased: redirects to statemachine_switchtoIdle()
+ * instead), SETTINGS (special-cased: sets up its own submenu state) and
+ * AMPMETER's refusal check (handled by the caller *before* this runs - the
+ * rest of AMPMETER's entry, including MODE_F_SEK_FORCE_SHORT below, is
+ * ordinary table-driven behaviour). See mode_table.h for the per-flag
+ * rationale and mode_table.c for the per-mode data. Only ever invoked
+ * from case labels naming a real mode, so mode is always
+ * < STATEMACHINE_MODE_RESERVED here -- the check below is pure
+ * defense-in-depth for mode_table_get()'s contract, not a reachable
+ * path. */
+static void statemachine_enter_mode_generic(statemachine_modes_t mode) {
+	const mode_descriptor_t *d = mode_table_get(mode);
+	if (d == NULL) {
+		return;
+	}
+
+	if (d->flags & MODE_F_LED_OUT_ON)
+		ui_ctrl_ledOutOn();
+	if (d->flags & MODE_F_LED_SENSE_ON)
+		ui_ctrl_ledSenseOn();
+
+	statemachine_handle.current_mode = mode;
+	adc_configure_mode(mode);
+
+	// Must run after adc_configure_mode(mode): the control loop needs the
+	// mode's ADC trigger.
+	if (d->flags & MODE_F_AUTOSTART_CTRL) {
+		aux_io_ctrl_manual_set_io(d->enable_gpio, 1);
+		ctrl_main_start_ctrl(d->ctrl_mode);
+	}
+	if (d->flags & MODE_F_DAC_SQWAVE)
+		dac_sqwave_start(DAC_CHANNEL_2, config_store.calibration.i_1a_ref_dac_value);
+
+	if (d->flags & MODE_F_OUTPUT_ON_ZERO)
+		statemachine_handle.output_on = 0;
+	if (d->flags & MODE_F_OUTPUT_ON_ONE)
+		statemachine_handle.output_on = 1;
+
+	if (d->flags & MODE_F_SEK_FORCE_SHORT) {
+		hrtim_sek_force_short();
+		aux_io_ctrl_manual_set_io(d->enable_gpio, 1);
+	}
+
+	display_enter_mode(mode);
 }
 
 void statemachine_switchfromIdle(statemachine_modes_t mode) {
 	printf("Switch from Idle to %d\r\n", mode);
 
 	switch (mode) {
-	case STATEMACHINE_MODE_60V_OUT:
-		ui_ctrl_ledOutOn();
+	case STATEMACHINE_IDLE:
+		// return: the tail would reset the encoder and drop keep-K1-closed.
+		statemachine_switchtoIdle();
+		return;
 
-		adc_configure_mode(mode);
-		statemachine_handle.current_mode = mode;
-
-		/*display_draw_basic_layout();
-		 display_draw_measure_layout();
-		 display_draw_measure_data();*/
-		break;
-
-	case STATEMACHINE_MODE_10A_OUT:
-		ui_ctrl_ledOutOn();
-		adc_configure_mode(mode);
-		statemachine_handle.current_mode = mode;
-
-		/*display_draw_basic_layout();
-		 display_draw_measure_layout();
-		 display_draw_measure_data();*/
-		break;
-
-	case STATEMACHINE_MODE_RESISTANCE_1A:
-		ui_ctrl_ledOutOn();
-		ui_ctrl_ledSenseOn();
-
-		statemachine_handle.current_mode = mode;
-		ctrl_main_start_ctrl(statemachine_handle.current_mode);
-		aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
-
-		//display_draw_basic_layout();
-		//display_draw_measure_layout();
-		//display_draw_measure_data();
-		break;
-
-	case STATEMACHINE_MODE_RESISTANCE_1mA:
-		ui_ctrl_ledOutOn();
-
-		statemachine_handle.current_mode = mode;
-		ctrl_main_start_ctrl(statemachine_handle.current_mode);
-		aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
-
-		//display_draw_basic_layout();
-		//display_draw_measure_layout();
-		//display_draw_measure_data();
-		break;
-
+	case STATEMACHINE_MODE_AMPMETER:
+		// Shoot-through on the SEK half-bridge is only safe if there's no
+		// significant voltage across it already - refuse to enter otherwise.
+		// return (not break) so the shared tail below doesn't reconfigure
+		// the relays for a mode we just refused to actually enter.
+		if (adc_data.converted.v_term_ext_mv_filt >= 500) { // ext ADC: internal v_term too noisy
+			printf("Unable to switch to %d, voltage present at terminals, returning to Idle\r\n", mode);
+			display_show_idle_error("ERROR: Remove external Voltage");
+			return;
+		}
+        /* fall through */
 	case STATEMACHINE_MODE_ISOMETER:
-		ui_ctrl_ledOutOn();
-
-		statemachine_handle.current_mode = mode;
-
-		//display_draw_basic_layout();
-		//display_draw_measure_layout();
-		//display_draw_measure_data();
-		break;
-
 	case STATEMACHINE_MODE_VOLTMETER:
-		ui_ctrl_ledOutOn();
+#ifdef EMI_DEBUG
+	case STATEMACHINE_MODE_EMI:
+#endif
+	case STATEMACHINE_MODE_60V_OUT:
+	case STATEMACHINE_MODE_10A_OUT:
+	case STATEMACHINE_MODE_RESISTANCE_1A:
+	case STATEMACHINE_MODE_RESISTANCE_1mA:
+	case STATEMACHINE_MODE_STOPWATCH:
+		aux_io_ctrl_set_config(mode, 0); // relays before the converter starts
+		statemachine_enter_mode_generic(mode);
+		statemachine_entry_tail(mode);
+		return;
 
-		statemachine_handle.current_mode = mode;
-		//
-		//display_draw_basic_layout();
-		//display_draw_measure_layout();
-		//display_draw_measure_data();
-		break;
+	case STATEMACHINE_MODE_CHARGE:
+		statemachine_enter_charge(0); // sets relays and runs the tail itself
+		return;
 
 	case STATEMACHINE_MODE_SETTINGS:
-		//display_draw_basic_layout();
-		//display_show_settings(0);
 		statemachine_handle.current_mode = mode;
+		statemachine_handle.settings_mode = STATEMACHINE_SETTINGS_MODE_MENU;
+		statemachine_handle.current_menu_index = 0;
+		display_show_settings_list(statemachine_handle.current_menu_index);
 		break;
-	case 0:
-		statemachine_switchtoIdle();
+
+	case STATEMACHINE_MODE_SHUTDOWN:
+		gpio_shutdown();
 		break;
+
 	default:
 		break;
 	}
-	aux_io_ctrl_set_config(mode);
-	tim_encoder_reset(0);
+	aux_io_ctrl_set_config(mode, 0);
+	statemachine_entry_tail(mode);
+}
+
+/**
+ * @brief Shows the OVP banner on the current screen (attempt counter).
+ */
+static void statemachine_ovp_show(void) {
+	char text[48];
+
+	if (ovp_attempts >= OVP_MAX_ATTEMPTS)
+		snprintf(text, sizeof(text), "ERROR: OVP - power cycle to reset");
+	else
+		snprintf(text, sizeof(text), "OVP: remove ext. V, OK = reset (%d/%d)",
+				ovp_attempts, OVP_MAX_ATTEMPTS);
+	if (statemachine_handle.current_mode == STATEMACHINE_IDLE)
+		display_show_idle_error(text);
+	else
+		display_show_mode_error(text);
+}
+
+/**
+ * @brief Converters off, SEK half-bridge shorted (supports the crowbar until
+ *        the fuse blows on an external source), PRIM blocked by the HW latch.
+ */
+static void statemachine_ovp_enter(void) {
+	ovp_state = OVP_LOCKED;
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+	ctrl_main_stop_control();
+	dac_sqwave_stop();
+	statemachine_handle.output_on = 0;
+	hrtim_sek_force_short();
+	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 1);
+	statemachine_ovp_show();
+}
+
+/**
+ * @brief OVP latch handling. On a trip: lockout (SEK shorted). OK click (max
+ *        OVP_MAX_ATTEMPTS): release SEK, pulse OVP_RESET, check OVP_N, then
+ *        back to IDLE or lockout again. Relays stay as they are. Buttons are
+ *        read here, the normal button update is skipped in lockout.
+ * @return 1 while the lockout is active (skip all mode handling).
+ */
+static uint8_t statemachine_ovp_lockout(void) {
+	switch (ovp_state) {
+	case OVP_NONE:
+		if (!(protection_get_error_mask() & PROTECTION_SRC_OVP))
+			return 0;
+		ovp_attempts = 0;
+		statemachine_ovp_enter();
+		printf("OVP: SEK shorted (mode %d)\r\n",
+				statemachine_handle.current_mode);
+		break;
+	case OVP_LOCKED:
+		// Held OK counts up, so only the first tick of a press is a click.
+		if (input_btn_ok()) {
+			if (ok_button_pressed++ == 0 && ovp_attempts < OVP_MAX_ATTEMPTS) {
+				aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
+				hrtim_sek_restore();
+				ovp_wait = OVP_WAIT_TICKS;
+				ovp_state = OVP_REL_WAIT;
+				printf("OVP: reset %d, SEK released\r\n", ovp_attempts + 1);
+			}
+		} else
+			ok_button_pressed = 0;
+		break;
+	case OVP_REL_WAIT:
+		if (--ovp_wait)
+			break;
+		HAL_GPIO_WritePin(OVP_RESET_GPIO_Port, OVP_RESET_Pin, GPIO_PIN_SET);
+		HAL_Delay(1);
+		HAL_GPIO_WritePin(OVP_RESET_GPIO_Port, OVP_RESET_Pin, GPIO_PIN_RESET);
+		ovp_wait = OVP_WAIT_TICKS;
+		ovp_state = OVP_CHECK_WAIT;
+		printf("OVP: reset pulse done\r\n");
+		break;
+	case OVP_CHECK_WAIT:
+		if (--ovp_wait)
+			break;
+		ovp_attempts++;
+		if (HAL_GPIO_ReadPin(OVP_N_GPIO_Port, OVP_N_Pin) == GPIO_PIN_SET) {
+			printf("OVP: latch cleared\r\n");
+			ovp_state = OVP_NONE;
+			statemachine_switchtoIdle();
+		} else {
+			printf("OVP: latch tripped again (%d/%d)\r\n", ovp_attempts,
+					OVP_MAX_ATTEMPTS);
+			statemachine_ovp_enter();
+		}
+		break;
+	}
+	return 1;
+}
+
+/**
+ * @brief Redraws the mode screen if a protection banner is shown.
+ */
+static void statemachine_clear_mode_error(void) {
+	if (mode_error_shown) {
+		mode_error_shown = 0;
+		display_enter_mode(statemachine_handle.current_mode);
+	}
 }
 
 void statemachine_switchtoIdle(void) {
-	printf("Switch to Idle\r\n");
 
-	aux_io_ctrl_set_config(STATEMACHINE_IDLE);
-	ctrl_main_stop_control();
 	aux_io_ctrl_manual_set_io(GPIO_CONV_CTRL_EN, 0);
-	tim_encoder_reset(62);
+	aux_io_ctrl_manual_set_io(GPIO_HV_CTRL_EN, 0);
+	ctrl_main_stop_control();
+	printf("Switch to Idle\r\n");
+	aux_io_ctrl_set_config(STATEMACHINE_IDLE, bms.SafetyRegisters.safetyStatusA & BQ76905_SAFETY_STATUS_A_CUV);
+
+	hrtim_sek_restore(); // no-op unless AMPMETER left the SEK half-bridge shorted
+	dac_sqwave_stop(); // no-op unless RESISTANCE_1A left the DAC square wave running
+	// Carousel shows the entry of the mode just left (first entry if none).
+	const menu_entry_t *left = menu_entry_for_mode(statemachine_handle.current_mode);
+	int32_t idle_idx = left ? (int32_t) (left - menu_order) : 0;
+	input_encoder_wrap_reset(&idle_wrap,
+			idle_idx < MENU_ORDER_LENGTH ? idle_idx : 0);
+	adc_configure_mode(STATEMACHINE_IDLE);
 	statemachine_handle.current_mode = STATEMACHINE_IDLE;
+	statemachine_handle.current_menu_index = 0xFF; /* force a redraw on the next tick */
 	ui_ctrl_ledOutOff();
 	ui_ctrl_ledSenseOff();
-//display_draw_basic_layout();
-
+	inactivity_ticks = 0;
+	mode_error_shown = 0;
+	stopwatch_reset();
+	vt_view = VT_VIEW_READOUT;
 }

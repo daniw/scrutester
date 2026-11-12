@@ -55,7 +55,7 @@ void aux_io_ctrl_manual_set_io(uint8_t pin, uint8_t value);
  * Sets the GPIO Config to the specified mode
  * @param mode statemachine mode to be set.
  */
-void aux_io_ctrl_set_config(statemachine_modes_t mode);
+void aux_io_ctrl_set_config(statemachine_modes_t mode, uint8_t keep_k1_closed);
 
 
 #endif /* SRC_AUX_IO_CTRL_H_ */

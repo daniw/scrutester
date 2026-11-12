@@ -1,0 +1,121 @@
+/*
+ * vout_region.c -- see vout_region.h.
+ */
+
+#include "vout_region.h"
+#include "ctrl_param.h"
+
+#define EDGE_LOW  (1.0F - CTRL_PARAM_VOUT_REGION_MARGIN)
+#define EDGE_HIGH (1.0F + CTRL_PARAM_VOUT_REGION_MARGIN)
+#define HYST      CTRL_PARAM_VOUT_REGION_HYSTERESIS
+
+vout_region_t vout_region_select(vout_region_t current, float ratio) {
+	switch (current) {
+	case VOUT_REGION_BUCK:
+		if (ratio > EDGE_HIGH)
+			return VOUT_REGION_BOOST;
+		if (ratio > EDGE_LOW)
+			return VOUT_REGION_FOUR_SWITCH;
+		return VOUT_REGION_BUCK;
+
+	case VOUT_REGION_FOUR_SWITCH:
+		if (ratio < EDGE_LOW - HYST)
+			return VOUT_REGION_BUCK;
+		if (ratio > EDGE_HIGH)
+			return VOUT_REGION_BOOST;
+		return VOUT_REGION_FOUR_SWITCH;
+
+	case VOUT_REGION_BOOST:
+	default:
+		if (ratio < EDGE_LOW - HYST)
+			return VOUT_REGION_BUCK;
+		if (ratio < EDGE_HIGH - HYST)
+			return VOUT_REGION_FOUR_SWITCH;
+		return VOUT_REGION_BOOST;
+	}
+}
+
+float vout_region_duty_for_ratio(vout_region_t region, float ratio) {
+	if (ratio < 0.0F)
+		ratio = 0.0F;
+	switch (region) {
+	case VOUT_REGION_BUCK:
+		// Parked SEK duty is CONST_DUTY_LOW, so D_prim = m * (1 - D_low).
+		return ratio * (1.0F - (float) CTRL_PARAM_CONST_DUTY_LOW);
+	case VOUT_REGION_FOUR_SWITCH:
+		return ratio / (1.0F + ratio);
+	case VOUT_REGION_BOOST:
+	default:
+		// Parked PRIM duty is CONST_DUTY_HIGH: m = D_high / (1 - D_sek).
+		if (ratio < (float) CTRL_PARAM_CONST_DUTY_HIGH)
+			ratio = (float) CTRL_PARAM_CONST_DUTY_HIGH;
+		return 1.0F - (float) CTRL_PARAM_CONST_DUTY_HIGH / ratio;
+	}
+}
+
+float vout_region_ratio_from_duties(float duty_prim, float duty_sek) {
+	float den = 1.0F - duty_sek;
+	if (den < 0.01F)
+		den = 0.01F;
+	return duty_prim / den;
+}
+
+vout_burst_t vout_burst_plan(float duty_avg, unsigned frame_cycles,
+		unsigned sync_cycles, int allow_skip, float min_run_duty,
+		float max_run_duty) {
+	vout_burst_t b;
+
+	if (duty_avg < 0.0F)
+		duty_avg = 0.0F;
+	if (sync_cycles > frame_cycles)
+		sync_cycles = frame_cycles;
+
+	unsigned run = frame_cycles - sync_cycles;
+	float duty = run ? duty_avg * (float) frame_cycles / (float) run : max_run_duty;
+
+	if (allow_skip && run && duty < min_run_duty) {
+		// Fewer cycles at the floor duty: average = floor * run / frame.
+		float r = duty_avg * (float) frame_cycles / min_run_duty;
+		run = (unsigned) (r + 0.5F);
+		if (run > frame_cycles - sync_cycles)
+			run = frame_cycles - sync_cycles;
+		duty = min_run_duty;
+	}
+	if (duty > max_run_duty)
+		duty = max_run_duty;
+
+	b.idle_cycles = frame_cycles - run;
+	b.duty_run = duty;
+	return b;
+}
+
+vout_burst_t vout_burst_plan_low_side(float duty_avg, unsigned frame_cycles,
+		unsigned sync_cycles, float max_run_duty) {
+	if (duty_avg > 1.0F)
+		duty_avg = 1.0F;
+	vout_burst_t b = vout_burst_plan(1.0F - duty_avg, frame_cycles,
+			sync_cycles, 0, 0.0F, max_run_duty);
+	b.duty_run = 1.0F - b.duty_run;
+	return b;
+}
+
+vout_legs_t vout_region_legs(vout_region_t region) {
+	switch (region) {
+	case VOUT_REGION_BUCK:
+		return (vout_legs_t) { VOUT_LEG_PRIM, VOUT_LEG_PRIM };
+	case VOUT_REGION_FOUR_SWITCH:
+		return (vout_legs_t) { VOUT_LEG_PRIM | VOUT_LEG_SEK, 0 };
+	case VOUT_REGION_BOOST:
+	default:
+		return (vout_legs_t) { VOUT_LEG_SEK, VOUT_LEG_SEK };
+	}
+}
+
+vout_legs_t vout_transition_step(vout_region_t from, vout_region_t to,
+		unsigned step) {
+	vout_legs_t a = vout_region_legs(from);
+	vout_legs_t b = vout_region_legs(to);
+	if (step >= 2)
+		return b;
+	return (vout_legs_t) { a.fast | b.fast, step == 0 ? a.burst : b.burst };
+}

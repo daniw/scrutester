@@ -94,6 +94,19 @@
 
 \newenvironment{ModTable}{\begin{longtable}{ |p{\ModWidthIssue}|p{\ModWidthModification}|p{\ModWidthCompBy}|p{\ModWidthCompDate}| } \ModHeader}{\end{longtable}}
 
+% FMEA table (lightweight: failure mode / effect / current mitigation, row
+% colour is the severity indicator -- see the legend in src/fmea.tex).
+\newcommand{\FMEAWidthMode}{0.30\textwidth}
+\newcommand{\FMEAWidthEffect}{0.28\textwidth}
+\newcommand{\FMEAWidthMitigation}{0.32\textwidth}
+
+\newcommand{\FMEAHeader}{\hline \rowcolor{gray} \textbf{Failure mode} & \textbf{Effect} & \textbf{Current mitigation} \\ \hline \endhead}
+\newcommand{\FMEAItemCritical}[4]{\rowcolor{lred}      \textbf{#1} \newline #2 & #3 & #4 \\ \hline}
+\newcommand{\FMEAItemModerate}[4]{\rowcolor{orange!30} \textbf{#1} \newline #2 & #3 & #4 \\ \hline}
+\newcommand{\FMEAItemMinor}[4]{\rowcolor{lgreen}       \textbf{#1} \newline #2 & #3 & #4 \\ \hline}
+
+\newenvironment{FMEATable}{\begin{longtable}{ |p{\FMEAWidthMode}|p{\FMEAWidthEffect}|p{\FMEAWidthMitigation}| } \FMEAHeader}{\end{longtable}}
+
 % Standards table
 \newcommand{\StdNameWidth}{3.0cm}
 \newcommand{\StdDescWidth}{11.0cm}

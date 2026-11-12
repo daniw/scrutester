@@ -22,7 +22,7 @@
 #include "dma.h"
 
 /* USER CODE BEGIN 0 */
-
+#include "irq_priority.h"
 /* USER CODE END 0 */
 
 /*----------------------------------------------------------------------------*/
@@ -46,36 +46,59 @@ void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
   /* DMA1_Channel2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
   /* DMA1_Channel3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
   /* DMA1_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
   /* DMA1_Channel5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
   /* DMA1_Channel6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
   /* DMA1_Channel7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
   /* DMA2_Channel1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Channel1_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA2_Channel1_IRQn, 8, 0);
   HAL_NVIC_EnableIRQ(DMA2_Channel1_IRQn);
+  /* DMA2_Channel2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Channel2_IRQn, 8, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Channel2_IRQn);
   /* DMA1_Channel8_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel8_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel8_IRQn, 8, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel8_IRQn);
 
 }
 
 /* USER CODE BEGIN 2 */
-
+/*
+ * Overrides the priorities MX_DMA_Init() above just set, from
+ * irq_priority.h -- see that file's "generated line + USER CODE override"
+ * note. Unlike the per-peripheral MSP-init files, MX_DMA_Init() has no
+ * USER CODE block of its own inside its body (CubeMX doesn't emit one here),
+ * so this can't be a handful of bare statements dropped in place the way the
+ * other files' overrides are -- it has to be a function, called once from
+ * main.c's USER CODE BEGIN 2 right after MX_DMA_Init().
+ */
+void dma_irq_priority_override(void) {
+	HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, IRQ_PRIO_CTRL_LOOP, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, IRQ_PRIO_EXT_ADC, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA2_Channel1_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA2_Channel2_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+	HAL_NVIC_SetPriority(DMA1_Channel8_IRQn, IRQ_PRIO_AUX, IRQ_SUBPRIO_NONE);
+}
 /* USER CODE END 2 */
 

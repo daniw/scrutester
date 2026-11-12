@@ -19,6 +19,8 @@ extern lp581x_handle hbacklight;
 void ui_ctrl_init(void);
 
 void ui_ctrl_Dim(void);
+void ui_ctrl_step(void);
+uint8_t ui_ctrl_readBacklightPercent(void);
 
 static inline void ui_ctrl_ledSenseOn(void) {
 	lp581x_enableChannel(&hled, 2);

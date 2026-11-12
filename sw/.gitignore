@@ -9,6 +9,9 @@
 bat_source/Debug
 bat_source/Release
 
+# Kept locally, never committed (see project conventions)
+README.md
+
 DisplayTest/Debug
 DisplayTest/Release
 DisplayTest/Drivers
@@ -17,4 +20,5 @@ DisplayTest/.settings
 
 Ext_Loader/Debug
 Ext_Loader/Release
-Ext_Loader/External Loader
+Ext_Loader/External Loader Windows
+Ext_Loader/External Loader Linux

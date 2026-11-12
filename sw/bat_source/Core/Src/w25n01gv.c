@@ -6,7 +6,9 @@
  */
 
 #include "w25n01gv.h"
+#include "watchdog.h"
 #include "stdio.h"
+#include <string.h>
 
 uint8_t buffer[W25N01GV_PAGE_SIZE];
 
@@ -93,6 +95,9 @@ w25n01gv_status_t w25n01gv_read(w25n01gv_handle *hw25n01gv, uint8_t *data, uint3
 		if (status == W25N01GV_OK) {
 			status = w25n01gv_wait_busy(hw25n01gv);
 		}
+		if (status == W25N01GV_OK && hw25n01gv->reg_status.fields.ecc_status == 2) {
+			status = W25N01GV_ECC_UNCORRECTABLE;
+		}
 		if (status == W25N01GV_OK) {
 			status = w25n01gv_read_data(hw25n01gv, data, column_addr, size_preread);
 		}
@@ -116,6 +121,9 @@ w25n01gv_status_t w25n01gv_read(w25n01gv_handle *hw25n01gv, uint8_t *data, uint3
 		}
 		if (status == W25N01GV_OK) {
 			status = w25n01gv_wait_busy(hw25n01gv);
+		}
+		if (status == W25N01GV_OK && hw25n01gv->reg_status.fields.ecc_status == 2) {
+			status = W25N01GV_ECC_UNCORRECTABLE;
 		}
 		if (status == W25N01GV_OK) {
 			status = w25n01gv_read_data(hw25n01gv, data, column_addr, size);
@@ -309,7 +317,7 @@ w25n01gv_status_t w25n01gv_write(w25n01gv_handle *hw25n01gv, uint8_t *data, uint
 		column_addr = W25N01GV_ADDR_TO_COLUMN_ADDR(address);
 		write_size = (column_addr + size >= W25N01GV_PAGE_SIZE) ? W25N01GV_PAGE_SIZE - column_addr : size;
 
-		printf("Writing data to external flash\n");
+		printf("Writing data to external flash\r\n\t");
 		//printf("Page address:   0x%4X\n", page_addr);
 		//printf("Column address: 0x%4X\n", column_addr);
 		//printf("Write size:     0x%4X\n", write_size);
@@ -397,6 +405,33 @@ w25n01gv_status_t w25n01gv_write(w25n01gv_handle *hw25n01gv, uint8_t *data, uint
 }
 
 /*
+ * Verify data previously written to flash memory by reading it back and
+ * comparing it against the expected data.
+ * @param hw25n01gv W25N01GV handle to the device
+ * @param data pointer to the expected data
+ * @param address address
+ * @param size size of data to be verified
+ */
+w25n01gv_status_t w25n01gv_verify(w25n01gv_handle *hw25n01gv, uint8_t *data, uint32_t address, uint32_t size) {
+	w25n01gv_status_t status;
+	uint32_t chunk;
+	while (size > 0) {
+		chunk = (size > W25N01GV_PAGE_SIZE) ? W25N01GV_PAGE_SIZE : size;
+		status = w25n01gv_read(hw25n01gv, buffer, address, chunk);
+		if (status != W25N01GV_OK) {
+			return status; // propagates W25N01GV_ECC_UNCORRECTABLE etc. as-is
+		}
+		if (memcmp(buffer, data, chunk) != 0) {
+			return W25N01GV_VERIFY_FAILED;
+		}
+		address += chunk;
+		data += chunk;
+		size -= chunk;
+	}
+	return W25N01GV_OK;
+}
+
+/*
  * Reset flash memory
  * @param hw25n01gv W25N01GV handle to the device.
  */
@@ -418,6 +453,9 @@ w25n01gv_status_t w25n01gv_reset(w25n01gv_handle *hw25n01gv) {
 	cmd.DdrHoldHalfCycle    = QSPI_DDR_HHC_ANALOG_DELAY;
 	cmd.SIOOMode            = QSPI_SIOO_INST_EVERY_CMD;
 	status = w25n01gv_wait_busy(hw25n01gv);
+	if (status != W25N01GV_OK) {
+		return status;
+	}
 	status = (w25n01gv_status_t) HAL_QSPI_Command(hw25n01gv->hqspi, &cmd, hw25n01gv->timeout);
 	/*if (status == W25N01GV_OK) {
 		uint8_t pData;
@@ -743,6 +781,10 @@ w25n01gv_status_t w25n01gv_wait_busy(w25n01gv_handle *hw25n01gv) {
 	cmd.DdrHoldHalfCycle    = QSPI_DDR_HHC_ANALOG_DELAY;
 	cmd.SIOOMode            = QSPI_SIOO_INST_EVERY_CMD;
 	do {
+		// Block erase / program can keep the chip busy for ms to tens of ms
+		// each, and a full erase or icon re-flash strings many of these
+		// together -- far longer than the watchdog timeout.
+		watchdog_kick();
 		status = (w25n01gv_status_t) HAL_QSPI_Command(hw25n01gv->hqspi, &cmd, hw25n01gv->timeout);
 		if (status == W25N01GV_OK) {
 			status = (w25n01gv_status_t) HAL_QSPI_Receive(hw25n01gv->hqspi, &hw25n01gv->reg_status.reg, hw25n01gv->timeout);

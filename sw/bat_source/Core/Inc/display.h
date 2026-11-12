@@ -1,29 +1,74 @@
 /*
  * display.h
  *
- *  Created on: Aug 9, 2025
- *      Author: ahorat
+ * UI rendering for the 320x240 color TFT (ST7789, via lcd.h/ugui.h). Replaces
+ * the old display.c/display_icons.h, which targeted a monochrome SSD1309
+ * OLED whose driver no longer exists in this repo.
  */
 
 #ifndef INC_DISPLAY_H_
 #define INC_DISPLAY_H_
 
 #include "stdint.h"
+#include "statemachine.h"
+#include "calibration.h"
+#include "stopwatch.h"
 
-uint8_t display_init(void);
+void display_init(void);
 
+/* Redraws the status bar's battery icon, but only when bms.charge_percentage
+ * has actually changed since the last redraw -- cheap to call unconditionally
+ * once per tick from statemachine_step(), regardless of which screen is
+ * showing (the icon sits at the same spot in every screen's status bar). See
+ * display.c for why this replaced a handful of per-mode update_*() calls. */
+void display_refresh_battery_icon(void);
 
-void display_clear(void);
-void display_debug_state(void);
-void display_draw_basic_layout(void);
-void display_draw_measure_layout(void);
-void display_draw_measure_data(void);
-void display_show_menu(void);
-void display_show_settings(uint8_t menu_id);
-void display_draw(void) ;
+/* Home / carousel screen. menu_index is the raw carousel position (0..MENU_ORDER_LENGTH-1). */
+void display_show_idle(uint8_t menu_index);
 
+/* Red, single-line error banner on the idle carousel screen (e.g. a mode
+ * entry refused for a hardware-safety reason). See display.c for how it's
+ * cleared. Call only while STATEMACHINE_IDLE is the current/displayed mode. */
+void display_show_idle_error(const char *msg);
+/* Red error text in the footer of a mode screen, until display_enter_mode(). */
+void display_show_mode_error(const char *msg);
+/* Charge finished screen: charge icon and msg (red if error). */
+void display_show_charge_done(const char *msg, uint8_t error);
 
+/* Static chrome (title, labels, units, footer) for a mode's detail screen -- call once on entry. */
+void display_enter_mode(statemachine_modes_t mode);
 
+/* Live data refresh for a mode's detail screen -- call every statemachine_step() tick while active.
+ * output_active selects the accent-border "energized" indicator (hold-to-enable / latched modes). */
+void display_update_mode(statemachine_modes_t mode, uint8_t output_active);
 
+/* VOLTMETER timing views (stopwatch.h): mode pick, stop level, run/result. */
+typedef enum {
+	VT_VIEW_READOUT = 0, /* plain voltmeter, not drawn here */
+	VT_VIEW_KIND,
+	VT_VIEW_LEVEL,
+	VT_VIEW_RUN
+} display_vt_view_t;
+void display_vtimer_enter(display_vt_view_t view, stopwatch_vt_kind_t kind);
+/* Per tick. level_mV: stop level being edited (VT_VIEW_LEVEL). */
+void display_vtimer_update(display_vt_view_t view, stopwatch_vt_kind_t kind,
+		int32_t level_mV);
+
+/* Settings: vertical list of sub-screens. */
+void display_show_settings_list(uint8_t submenu_index);
+void display_enter_settings_detail(uint8_t submenu_index);
+void display_update_settings_detail(uint8_t submenu_index);
+
+/* Service PIN screen: digits before pos shown as '*', pos highlighted, rest '-'. */
+void display_service_pin(const uint8_t *digits, uint8_t pos);
+void display_service_pin_wrong(void);
+/* Red status line on the Storage mode screen. */
+void display_storage_message(const char *msg);
+
+/* Calibration sub-screen (STATEMACHINE_SETTINGS_MODE_CALIBRATION). ui_state:
+ * 0 = channel list, 1 = zero step, 2 = optional gain step (reference_value is
+ * only meaningful/used for ui_state == 2, the encoder-dialed reference). */
+void display_calibration_enter(calibration_channel_t ch, uint8_t ui_state);
+void display_calibration_update(calibration_channel_t ch, uint8_t ui_state, float reference_value);
 
 #endif /* INC_DISPLAY_H_ */

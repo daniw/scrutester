@@ -40,12 +40,7 @@ typedef struct
 } EVENT_STRUCT;
 
 int event_Init(void);
-void event_TimerStart(void);
-void event_TimerStop(void);
-uint32_t event_Timer(EVENTS e);
 void event_Add(EVENTS e, void* callback, void* argument);
 EVENT_STRUCT event_Get(void);
-void event_Take(EVENTS e);
-void event_Give(void);
 
 #endif /* SRC_EVENT_H_ */

@@ -189,7 +189,9 @@ typedef enum
   W25N01GV_TIMEOUT         = HAL_TIMEOUT, // 0x03U,
   W25N01GV_ADDR_OVERRUN    = 0x04U,
   W25N01GV_WRITE_NON_EMPTY = 0x05U,
-  W25N01GV_PROG_FAILURE    = 0x06U
+  W25N01GV_PROG_FAILURE    = 0x06U,
+  W25N01GV_ECC_UNCORRECTABLE = 0x07U,
+  W25N01GV_VERIFY_FAILED     = 0x08U
 } w25n01gv_status_t;
 
 typedef union {
@@ -297,6 +299,8 @@ w25n01gv_status_t w25n01gv_read_otp(w25n01gv_handle *hw25n01gv, uint8_t *data, u
 w25n01gv_status_t w25n01gv_erase(w25n01gv_handle *hw25n01gv, uint32_t start_address, uint32_t end_address);
 
 w25n01gv_status_t w25n01gv_write(w25n01gv_handle *hw25n01gv, uint8_t *data, uint32_t address, uint32_t size);
+
+w25n01gv_status_t w25n01gv_verify(w25n01gv_handle *hw25n01gv, uint8_t *data, uint32_t address, uint32_t size);
 
 w25n01gv_status_t w25n01gv_reset(w25n01gv_handle *hw25n01gv);
 

@@ -38,6 +38,17 @@
 
     void BQ76905_onI2CError(BQ76905_handle* handle);
 
+    /**
+     * Recomputes handle->charge_percentage from the freshly-read
+     * Accumulator.accumulatedCharge and handle->battery_capacity_mAs.
+     */
+    static void BQ76905_updateChargePercentage(BQ76905_handle* handle);
+
+    /**
+     * Applies the EEPROM charge once if PASSQ restarted recently (BMS reset).
+     */
+    static void BQ76905_applyRestore(BQ76905_handle* handle);
+
 
     /**
      * Defined in bq76905_config.h
@@ -59,8 +70,17 @@ void BQ76905_init(BQ76905_handle* handle, uint8_t i2c_address){
 	for(int i = 0; i<4; i++){
 		printf("Read Cell Voltages %d\r\n", handle->CellVoltageRegisters.CellVoltages[i]);
 	}
+	 command = BQ76905_COMMAND_ALERT_A;
+	i2c_WriteBlocking(handle->address, &command, 1);
+	i2c_ReadBlocking(handle->address, (uint8_t*) &handle->SafetyRegisters,
+			sizeof(handle->SafetyRegisters));
 
-	if((handle->CellVoltageRegisters.BatteryStatus & 0x80) || (handle->CellVoltageRegisters.BatteryStatus == 0x0)){
+	  printf("SafetyRegisters.safetyAlertA         = 0x%02X\r\n", handle->SafetyRegisters.safetyAlertA);
+	  printf("SafetyRegisters.safetyStatusA        = 0x%02X\r\n", handle->SafetyRegisters.safetyStatusA);
+	  printf("SafetyRegisters.safetyAlertB         = 0x%02X\r\n", handle->SafetyRegisters.safetyAlertB);
+	  printf("SafetyRegisters.safetyStatusB        = 0x%02X\r\n", handle->SafetyRegisters.safetyStatusB);
+	  printf("\n");
+	if((handle->CellVoltageRegisters.BatteryStatus & 0x80) || (handle->CellVoltageRegisters.BatteryStatus == 0x0) ||  BQ76905_FORCE_CONFIG){
 		BQ76905_resetDevice(handle);
 		BQ76905_configure(handle);
 	}else if (handle->CellVoltageRegisters.BatteryStatus & 0x8000){
@@ -69,8 +89,14 @@ void BQ76905_init(BQ76905_handle* handle, uint8_t i2c_address){
 	}else{
 		printf("Skipped BMS reconfiguration: %x\r\n", handle->CellVoltageRegisters.BatteryStatus);
 	}
+
+
+	if (handle->SafetyRegisters.safetyStatusA || handle->SafetyRegisters.safetyStatusB)
+		printf("BMS: clearing latched faults A=0x%02X B=0x%02X\r\n",
+				handle->SafetyRegisters.safetyStatusA, handle->SafetyRegisters.safetyStatusB);
 	BQ76905_RecoverProtection(handle, 0xFF);
-	timer_add(1000,  TIMER_TYPE_TICK, EVENT_BMS_TIMER, 0);
+	handle->last_update_ms = HAL_GetTick();
+	timer_add(BQ76905_POLL_ms, TIMER_TYPE_TICK, EVENT_BMS_TIMER, 0);
 }
 
 /**************************** Public Functions ***********************************/
@@ -101,11 +127,15 @@ void BQ76905_readAllValues(BQ76905_handle* handle) {
 
 	BQ76905_ReadRamRegister(handle, BQ76905_SUBCOMMAND_PASSQ, (uint8_t*)&handle->Accumulator, 12);
 
-
+	BQ76905_applyRestore(handle);
+	BQ76905_updateChargePercentage(handle);
 }
 
 // Initiates asynchronous read of all cell voltages
 void BQ76905_readAllValuesAsync(BQ76905_handle *handle) {
+	// A cycle that never completed: restart it (bus recovery is in i2c.c).
+	if (handle->asyncState != IDLE && BQ76905_data_stale(handle))
+		handle->asyncState = IDLE;
 	if (handle->asyncState == IDLE) {
 		handle->asyncState = READ_SAFETY;
 		handle->command_tx = BQ76905_COMMAND_ALERT_A;
@@ -117,12 +147,72 @@ void BQ76905_readAllValuesAsync(BQ76905_handle *handle) {
 }
 
 
+/**
+ * @brief Time since the last complete read cycle.
+ * @param handle BMS handle.
+ * @return Age in ms.
+ */
+uint32_t BQ76905_data_age_ms(const BQ76905_handle *handle) {
+	return HAL_GetTick() - handle->last_update_ms;
+}
+
+/**
+ * @brief Checks whether the BMS data is older than BQ76905_STALE_ms.
+ * @param handle BMS handle.
+ * @return 1 if stale.
+ */
+uint8_t BQ76905_data_stale(const BQ76905_handle *handle) {
+	return BQ76905_data_age_ms(handle) > BQ76905_STALE_ms;
+}
+
 inline void BQ76905_resetAlarmStatus(BQ76905_handle* handle){
 	writeCommand(handle, BQ76905_COMMAND_ALARM_STATUS, 0xFFFF,2 );
 }
 
 inline void BQ76905_resetChargeAccumulator(BQ76905_handle* handle){
 	BQ76905_WriteRamRegister(handle,BQ76905_SUBCOMMAND_RESET_PASSQ, 0, 0);
+	handle->charge_offset = 0;
+}
+
+int32_t BQ76905_charge_mAs(const BQ76905_handle* handle){
+	return (int32_t) ((handle->Accumulator.accumulatedCharge + handle->charge_offset) / 4);
+}
+
+int32_t BQ76905_offset_mAs(const BQ76905_handle* handle){
+	return (int32_t) (handle->charge_offset / 4);
+}
+
+static void BQ76905_applyRestore(BQ76905_handle* handle) {
+	if (!handle->restore_pending)
+		return;
+	handle->restore_pending = 0;
+	if (handle->Accumulator.passedTime / 4 < BQ76905_RESTORE_MAX_PASSED_s) {
+		handle->charge_offset = (int64_t) handle->restore_mAs * 4;
+		printf("BMS: charge restored from EEPROM (%ld mAs)\r\n", (long) handle->restore_mAs);
+	} else {
+		// BMS kept counting across the MCU power-off: keep the old offset.
+		handle->charge_offset = (int64_t) handle->restore_offset_mAs * 4;
+	}
+}
+
+/**
+ * PASSQ accumulates net charge INTO the pack (positive while charging,
+ * negative while discharging). Called with accumulatedCharge==0 taken to
+ * mean "full" (see BQ76905_resetChargeAccumulator(), called on charge
+ * completion in statemachine.c), percentage is 100 at that reference point
+ * and falls as the pack discharges, clamped to [0,100].
+ */
+static void BQ76905_updateChargePercentage(BQ76905_handle* handle) {
+	if (handle->battery_capacity_mAs == 0)
+		return;
+
+	int64_t pct = 100 + ((handle->Accumulator.accumulatedCharge + handle->charge_offset) / 4 * 100)
+			/ (int64_t) handle->battery_capacity_mAs;
+	if (pct < 0)
+		pct = 0;
+	else if (pct > 100)
+		pct = 100;
+	handle->charge_percentage = (uint8_t) pct;
 }
 
 inline void BQ76905_resetDevice(BQ76905_handle* handle){
@@ -138,8 +228,17 @@ inline void BQ76905_ExitDeepsleep(BQ76905_handle* handle){
 
 }
 
+/**
+ * @brief Shuts the BMS down (FETs open, ~1 uA; wake by charger voltage).
+ * Blocking I2C. TRM SLUUCI8A: SHUTDOWN only takes effect when sent twice
+ * within 4 s, a third send skips the 10 s delay. Sent 3x, 30 ms apart.
+ */
 inline void BQ76905_Shutdown(BQ76905_handle* handle){
-	BQ76905_WriteRamRegister(handle,BQ76905_SUBCOMMAND_SHUTDOWN, 0, 0);
+	for (uint8_t i = 0; i < 3; i++) {
+		if (i)
+			HAL_Delay(30);
+		BQ76905_WriteRamRegister(handle,BQ76905_SUBCOMMAND_SHUTDOWN, 0, 0);
+	}
 }
 
 inline void BQ76905_FETEnable(BQ76905_handle* handle){
@@ -309,11 +408,18 @@ void BQ76905_onI2CComplete(BQ76905_handle* handle) {
 		handle->command_tx2[3] = BQ76905_TRANSFER_BUFFER_LOW;
 		i2c_Write(handle->address, handle->command_tx2, 3, 0,handle, &BQ76905_onI2CError);
 		i2c_Write(handle->address, &handle->command_tx2[3], 1, 0,handle, &BQ76905_onI2CError);
-		i2c_Read(handle->address, (uint8_t*) &handle->Accumulator, sizeof(handle->Accumulator),&BQ76905_onI2CComplete, handle, &BQ76905_onI2CError);
+		// 12, not sizeof(handle->Accumulator): the struct's 8-byte alignment
+		// (forced by the int64_t member) pads sizeof() up to 16, which would
+		// over-read 4 bytes past the real 12-byte PASSQ register into
+		// whatever RAM address follows it on the chip.
+		i2c_Read(handle->address, (uint8_t*) &handle->Accumulator, 12,&BQ76905_onI2CComplete, handle, &BQ76905_onI2CError);
 		break;
 
 	case READ_PASSQ:
 		handle->asyncState = IDLE;
+		handle->last_update_ms = HAL_GetTick();
+		BQ76905_applyRestore(handle);
+		BQ76905_updateChargePercentage(handle);
 		break;
 	default:
 		break;

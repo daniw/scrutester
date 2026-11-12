@@ -32,10 +32,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "i2c.h"
 #include "driver_pca9554.h"
 #include "aux_io_ctrl.h"
-#include "dac.h"
 #include "bq76905.h"
 #include "bq76905_config.h"
 #include "ctrl_main.h"
@@ -43,16 +41,23 @@
 #include "display.h"
 #include "opt3004.h"
 #include "lp581x.h"
-#include "hrtim.h"
 #include "ui_ctrl.h"
 #include "statemachine.h"
-#include "adc.h"
 #include "cli.h"
+#include "config_store.h"
 #include <stdio.h>
 #include "stdint.h"
 #include "lcd.h"
 #include "w25n01gv.h"
+#include "icon_store.h"
 #include "ads131m04.h"
+#include "stopwatch.h"
+#include "protection.h"
+#include "splash.h"
+#include "watchdog.h"
+#include "fault.h"
+#include "error.h"
+#include "version.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -89,37 +94,30 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
+/* main() lives here, not in the generated part: the .ioc has NoMain set,
+ * so CubeMX never touches it (and gpio_turnOn() can sit right after
+ * MX_GPIO_Init()). */
 int main(void)
 {
 
-  /* USER CODE BEGIN 1 */
 	EVENT_STRUCT e;
-  /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
-  /* USER CODE BEGIN Init */
 
-  /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
-  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+
+  gpio_turnOn();
+
   MX_DMA_Init();
   MX_HRTIM1_Init();
   MX_QUADSPI1_Init();
@@ -137,30 +135,48 @@ int main(void)
   MX_USART2_UART_Init();
   MX_RTC_Init();
   MX_TIM2_Init();
-  /* USER CODE BEGIN 2 */
+  MX_TIM6_Init();
+
+  dma_irq_priority_override();
+  gpio_irq_priority_override();
+
+
+  LCD_init();
+  splash_show();
+
+  event_Init();
+  error_Init();
+
   /*
    * Setup internal timer structure
    */
-  //gpio_turnOn();
   timer_init();
 
   /*
    * DAC test setup
    */
-  uint16_t dac_value = 0;
   dac_setValueRef2(2048);
-  dac_setValue1ARef(dac_value);
+  dac_sqwave_init(DAC_CHANNEL_2, 0); // high value set by dac_sqwave_start()
 
   /*
    * CLI Setup
    */
   cli_init(&huart2);
+  printf("FW %d.%d %s %s\r\n", FW_VERSION_MAJOR, FW_VERSION_MINOR, GIT_HASH, GIT_DATE);
+  fault_report_reset();
 
   /*
    * Init UI control (LEDs)
    */
   ui_ctrl_init();
 
+
+  /*
+   * Load calibration / ID data from EEPROM (or default it, on first
+   * boot / missing chip). Must run before adc_init() and
+   * ctrl_main_init() so both see the loaded calibration.
+   */
+  config_store_init();
 
   /*
    * ADC Init
@@ -176,15 +192,16 @@ int main(void)
   HAL_Delay(100);
   GPIO_SET_BMS_CTRL_WAKEUP(0);
   BQ76905_init(&bms, BQ76905_I2C_ADDRESS);
+  bms.battery_capacity_mAs = config_store.calibration.battery_capacity_mAs;
+  if (config_store.soc.valid)
+  {
+    bms.restore_mAs = config_store.soc.charge_mAs;
+    bms.restore_offset_mAs = config_store.soc.offset_mAs;
+    bms.restore_pending = 1;
+  }
 
 
-  /*
-   * PWM Init
-   */
-  hrtim_set_freq(HRTIM_CHANNEL_PRIM, 50000);
-  hrtim_set_freq(HRTIM_CHANNEL_SEK, 150000);
-  hrtim_set_duty(HRTIM_CHANNEL_PRIM, 0.985);
-
+  // HRTIM counters run, outputs stay disabled until a mode starts
   hrtim_start_timer();
   timer_start();
 
@@ -192,137 +209,78 @@ int main(void)
    * QSPI flash memory init
    */
   flash_status = w25n01gv_init(&flash, &hqspi1, 1000);
-/*  if (flash_status == HAL_OK){
-    flash_status = w25n01gv_wait_busy(&flash);
-  }
-  if (flash_status == HAL_OK){
-  	flash_status = w25n01gv_buffer_mode_disable(&flash);
-  }
-  if (flash_status == HAL_OK){
-    flash_status = w25n01gv_wait_busy(&flash);
-  }*/
   if (flash_status != W25N01GV_OK) {
     printf("Flash initialisation failed!\r\n");
   }
+  icon_store_init(); // safe even if flash init failed above -- just reports unavailable
 
-  gpio_turnOn();
-
-  LCD_init();
-
+  protection_init();
   ctrl_main_init();
   statemachine_init();
 
+  /*
+   * Start the watchdog last: it can't be stopped once running, and everything
+   * above (splash, flash/BMS init, 100 ms waits) would otherwise need kicks.
+   */
+  watchdog_init();
 
-  /* USER CODE END 2 */
 
   /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
   while (1)
   {
-
-
-	  /*
-	   * DAC Test
-	   */
-	  /*if (dac_value + 256 >= 4096)
-	  {
-		  dac_value = 0;
-	  }
-	  else
-	  {
-		  dac_value += 256;
-	  */
-	  if (dac_value <= 2048) {
-		  dac_value = 3804;
-	  }
-	  else {
-		  dac_value = 2048;
-	  }
-	  dac_setValue1ARef(dac_value);
-	  /*
-	   * LED test
-	   */
-	  /*if (led_current < 192)
-	  {
-		  led_current *= 2;
-	  }
-	  else
-	  {
-		  led_current = 3;
-	  }
-	  uint8_t led_currents[] = {0x14, led_current, led_current, led_current};
-	  i2c_WriteBlocking(led_address, led_currents, sizeof(led_currents));
-	  */
+	  watchdog_kick();
 
 	  cli_loop();
+	  error_Work();
 
+	  // Drain the queue: one event per pass let events pile up behind the CLI.
+	  while ((e = event_Get()).event != EVENT_VOID) {
+		  switch(e.event){
+			case EVENT_VOID:
+			case EVENT_INIT:
+				break;
+			case EVENT_IIC_RX:
+			case EVENT_IIC_TX:
+				if(e.callback != 0)
+					e.callback(e.argument);
+				break;
+			case EVENT_IIC_ERROR:
+				if(e.callback != 0)
+					e.callback(e.argument);
+				break;
+			case EVENT_EEPROM_READ:
+				break;
+			case EVENT_EEPROM_TIMEOUT:
+				break;
+			case EVENT_SM_STEP:
+				statemachine_step();
+				break;
+			case EVENT_BMS_TIMER:
+				BQ76905_readAllValuesAsync(&bms);
+				break;
+			case EVENT_EVENT:
+			default:
+				break;
 
-	  /*
-	   * Ambient light sensor test
-	   */
-
-
-	  /*amb_brightness = opt3004_readLux(&hamb);
-
-	  led_current = amb_brightness/1000;
-
-	  if (led_current > 200)
-	  {
-		  led_current = 200;
-	  }
-	  else if (amb_brightness < 1000)
-	  {
-		  led_current = 2;
-	  }
-	  uint8_t led_currents[] = {0x14, led_current, led_current/2, led_current/2};
-	  lp581x_setAnalogDimming(&hled, 0, led_current);
-	  lp581x_setAnalogDimming(&hled, 0, led_current/2);
-	  lp581x_setAnalogDimming(&hled, 0, led_current/2);
-
-	  i2c_WriteBlocking(led_address, led_currents, sizeof(led_currents));*/
-
-	  e = event_Get();
-	  switch(e.event){
-		case EVENT_VOID:
-		case EVENT_INIT:
-			break;
-		case EVENT_IIC_RX:
-		case EVENT_IIC_TX:
-			if(e.callback != 0)
-				e.callback(e.argument);
-			break;
-		case EVENT_IIC_ERROR:
-			break;
-		case EVENT_EEPROM_READ:
-			break;
-		case EVENT_EEPROM_TIMEOUT:
-			break;
-		case EVENT_SM_STEP:
-			statemachine_step();
-			break;
-		case EVENT_BMS_TIMER:
-			BQ76905_readAllValuesAsync(&bms);
-			break;
-		case EVENT_EVENT:
-		default:
-			break;
-
+		  }
+		  // One step per pass: a step longer than the 20 ms tick re-queues the
+		  // next one, and draining it here would never reach the watchdog kick.
+		  if (e.event == EVENT_SM_STEP)
+			  break;
 	  }
 
 
-	  /*
-	   * Loop delay
-	   */
-	  HAL_Delay(1);
 
-	  //LCD_Test();
 
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
   }
-  /* USER CODE END 3 */
 }
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
 
 /**
   * @brief System Clock Configuration
@@ -381,7 +339,10 @@ void SystemClock_Config(void)
  * External ADC finished SPI communication
  */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
-	ADS131M04_handleSPIComplete(&ext_adc);
+	if (hspi == ext_adc.hspi) {
+		ADS131M04_handleSPIComplete(&ext_adc);
+		stopwatch_sample(adc_v_term_ext_mv_now(), HAL_GetTick());
+	}
 }
 
 
@@ -404,11 +365,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+	fault_halt("Error_Handler", (uint32_t) __builtin_return_address(0));
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

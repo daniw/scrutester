@@ -1,2 +1,289 @@
 \section{Firmware}
+\label{sec:firmware}
 
+This section summarises the firmware's current implementation state at
+thesis level. The maintained, code-level reference is
+\texttt{sw/architecture.md} in the firmware repository -- it is updated in
+the same commit as any structural firmware change, so it is authoritative
+where this section and it disagree. Failure modes and their mitigations are
+not repeated here; see \autoref{sec:fmea} for that. State as of firmware
+version 0.1 (\texttt{version.h}), branch \texttt{sw\_rework} (November 2026,
+after the October 2026 code review).
+
+\FloatBarrier
+
+\subsection{Platform and design pattern}
+
+The firmware runs on an STM32G474VET6 (Arm Cortex-M4, \qty{512}{\kibi\byte} flash, \qty{128}{\kibi\byte} RAM), chosen primarily for its \ac{HRTIM} needed for the converter \ac{PWM}. The core is rated for \qty{170}{\mega\hertz} but clocked at \qty{160}{\mega\hertz} from the internal \qty{16}{\mega\hertz} oscillator via the PLL, which gives an \ac{HRTIM} resolution of about \qty{195}{\pico\second}. The application is bare-metal, event-driven and single-threaded -- no real-time operating system. Each main-loop pass kicks the independent watchdog, services the \ac{CLI}, prints queued error codes and then drains all pending events from a 64-entry circular queue (\texttt{event.c}):
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{ll}
+        \rowcolor{gray} \textbf{Event} & \textbf{Trigger} \\
+        \texttt{EVENT\_IIC\_RX / IIC\_TX} & \ac{I2C} \ac{DMA} transfer complete \\
+        \texttt{EVENT\_IIC\_ERROR} & \ac{I2C} NACK / bus error \\
+        \texttt{EVENT\_EEPROM\_READ / EEPROM\_TIMEOUT} & \ac{EEPROM} read complete / no response \\
+        \texttt{EVENT\_SM\_STEP} & State-machine tick (\qty{20}{\milli\second}) \\
+        \texttt{EVENT\_BMS\_TIMER} & \ac{BMS} polling timer (\qty{100}{\milli\second}) \\
+    \end{tabular}
+    \caption{Firmware event types}
+\end{table}
+
+\subsection{State machine and operating modes}
+
+\texttt{statemachine.c} steps every \qty{20}{\milli\second} and dispatches
+between 12 modes, handling \ac{UI} navigation, output-enable logic and the
+protection interlock:
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{lp{9cm}}
+        \rowcolor{gray} \textbf{Mode} & \textbf{Description} \\
+        IDLE & Startup / menu navigation \\
+        60V\_OUT & Regulated voltage output \qtyrange{0}{60}{\volt}, buck, 4-switch or boost chosen on the fly, held on with the OUT button (\ReqRef{R:60V}) \\
+        10A\_OUT & Regulated current output up to \qty{10}{\ampere}, held on with the OUT button (\ReqRef{R:BSPD}) \\
+        RESISTANCE\_1A & Milliohmmeter, pulsed \qty{1}{\ampere} excitation \\
+        RESISTANCE\_1mA & Ohmmeter, \qty{1}{\milli\ampere} excitation \\
+        ISOMETER & Insulation resistance test, high-voltage flyback active \\
+        VOLTMETER & Passive voltage measurement; OK opens a voltage-triggered timer (IMD: manual start, stop below \qty{60}{\volt}; Discharge: start below 95\,\% of the arming voltage) \\
+        AMPMETER & Passive current measurement (secondary half-bridge shorted) \\
+        STOPWATCH & Manual stopwatch, no outputs \\
+        SETTINGS & Settings menu (submodes: MENU, BMS, DISPLAY, CALIBRATION, ADC1, ADC2, PROTECTION, ABOUT, SERVICE, STORAGE; the service entries are PIN-protected until reset, STORAGE switches the BMS off for storage) \\
+        SHUTDOWN & Controlled power-down sequence \\
+        CHARGE & Battery charging -- auto-entered from IDLE, not user-selectable \\
+        EMI & EMI test, debug builds only (\texttt{EMI\_DEBUG}): both converters switch, the LV loop returns the flyback energy to the battery \\
+    \end{tabular}
+    \caption{Statemachine operating modes (\texttt{statemachine.h})}
+\end{table}
+
+Per-mode data that used to be hand-kept in lockstep across four separate
+switch statements (control mode, relay/shunt \ac{GPIO} mask, enable
+\ac{GPIO}, entry flags, \ac{ADC} trigger) is centralised into one table,
+\texttt{mode\_table.c} -- adding a mode or changing its behaviour means
+editing one row instead of four call sites.
+
+In debug builds the EMI mode additionally runs an EMC immunity monitor
+(\texttt{emc\_monitor.c}) that checks the output, supply rails, cells,
+temperatures and communication error counters against a limit table every
+\qty{20}{\milli\second} and latches excursions with their time, min/max and
+count, shown as a pass/fail list on the display and on the serial interface.
+
+\subsection{Control loop}
+
+The control loop runs from the \ac{ADC}1 \ac{DMA}-complete \ac{ISR}, not
+directly from \ac{HRTIM}: an \ac{HRTIM} timer period triggers the \ac{ADC}
+conversion through a post-scaler (\qty{50}{\kilo\hertz}), and the \ac{ISR}
+decimates by 2, landing the control loop at \qty{25}{\kilo\hertz}
+(\texttt{CTRL\_FREQ}). The trigger source is part of the mode table: the
+LV output modes (60V\_OUT, 10A\_OUT, both resistance modes, EMI) use Timer D,
+which has no outputs and runs at a fixed \qty{1}{\mega\hertz} ($\div20$), as
+the primary and secondary legs change frequency with the operating region;
+CHARGE uses the secondary timer (\qty{1}{\mega\hertz}, $\div20$) and
+ISOMETER the flyback timer (\qty{350}{\kilo\hertz}, $\div7$). Every
+integral gain and startup ramp is scaled by this rate, so changing the
+switching frequency or post-scaler changes the effective loop tuning.
+
+The controller (\texttt{ctrl\_PID\_control.c}) is a generic P/I/D with
+integrator-clamping anti-windup; the D term is compiled out, so every loop
+runs as PI. In the main voltage and current loops the proportional part acts
+on the fast internal \ac{ADC}, the integral part on the more accurate but slower external \ac{ADC}
+(ADS131M04, about \qty{246}{\hertz}). Ten tunable loops share one registry,
+\texttt{ctrl\_pid\_table[]} in \texttt{ctrl\_main.c}, which
+\texttt{ctrl\_main\_init()}, the \ac{EEPROM} store and the \ac{CLI}'s
+\texttt{setPI}/\texttt{saveEEPROM}/\texttt{readEEPROM} commands all iterate:
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{p{3.5cm}p{7cm}p{2.5cm}}
+        \rowcolor{gray} \textbf{Loop} & \textbf{Used for} & \textbf{Gains} \\
+        Buck & Buck region of 60V\_OUT, resistance modes & bench-tuned \\
+        Boost & Boost region of 60V\_OUT & bench-tuned \\
+        FourSwitch & 4-switch region of 60V\_OUT & bench-tuned \\
+        Current & \qty{10}{\ampere} output & bench-tuned \\
+        BoostIoutLimit & \qty{1}{\ampere} output current limiter of 60V\_OUT (all regions) & initial \\
+        10AVoltLimit & Compliance limit of 10A\_OUT (\qty{5}{\volt}) & initial \\
+        ChargeCurrent & CC loop of charging & initial \\
+        ChargeVoltage & CV outer loop of charging (\qty{50}{\hertz}) & initial \\
+        HVVoltage & ISOMETER high-voltage flyback voltage & initial \\
+        HVCurrent & ISOMETER leakage-current limiter (\qty{1.2}{\milli\ampere}, pending bench verification) & initial \\
+    \end{tabular}
+    \caption{Tunable PI loops}
+\end{table}
+
+The bench-tuned gains were found at a battery voltage of about
+\qty{13}{\volt} and light load. Loops marked \emph{initial} still run their
+first values; \autoref{sec:fmea} lists what backs them up in the meantime.
+
+\paragraph{Full-range voltage source.} The LV converter is a 4-switch
+buck-boost with $V_\mathrm{out} = D_\mathrm{prim} V_\mathrm{in} / (1 - D_\mathrm{sek})$.
+60V\_OUT picks the region from $m = V_\mathrm{ref}/V_\mathrm{in}$
+(\texttt{vout\_region.c}): buck below $m = 0.75$ (primary leg at
+\qty{1}{\mega\hertz}, secondary leg parked at \qty{50}{\kilo\hertz} with
+its high side almost always on), boost above $m = 1.25$ (roles swapped) and
+4-switch in between (both legs at \qty{1}{\mega\hertz} with the same duty).
+A hysteresis, a filtered input voltage and a minimum dwell time prevent
+toggling at the edges, and a region change preloads the incoming PI with the
+duty of the same ideal ratio. The parked leg only switches to recharge its
+bootstrap capacitor. That short low-side pulse used to land anywhere in the
+period, also while the fast leg's high side conducted, which gave a current
+floor of more than \qty{2}{\ampere} into a short. A master timer therefore
+defines a \qty{20}{\micro\second} frame, and the \ac{HRTIM} burst controller
+holds the fast leg idle (low side on) for a block of three cycles around the
+parked pulse. Below the \ac{HRTIM} compare floor the block grows (pulse
+skipping), so the buck region reaches low output voltages. This is used in
+60V\_OUT, 10A\_OUT and the resistance modes, not in CHARGE.
+
+\paragraph{Charging.} CHARGE is auto-entered from IDLE when a
+\qtyrange{15}{24}{\volt} charger is present, no \ac{BMS} fault is latched, the
+pack is below the end voltage and no lockout from an earlier abort is active.
+Closing the output relay onto a converter output that is not at the charger
+voltage, and a current loop that started at its maximum-current duty, caused
+large inrush currents, so the start is a sequence (\texttt{charge\_seq.c}):
+\emph{precharge} (relay open, converter run as an open-loop boost to
+\qty{99}{\percent} of the charger voltage, ramps and hold of
+\qty{0.2}{\second} each,
+since the converter output node is not measured), \emph{close} (relay
+commanded closed while the duty is stepped to the zero-current value),
+\emph{CC ramp} (current reference from \qty{0}{\ampere} to \qty{1}{\ampere}
+over \qty{5}{\second}) and finally the constant-voltage tail. In CV an outer
+loop at \qty{50}{\hertz} regulates four times the highest cell voltage and
+sets the current reference of the CC loop, so the current stays limited. The I part of the CC loop uses the battery current measured by the \ac{BMS}, so the device's own consumption does not reduce the charge current. The
+charge ends once the pack is at end voltage, the current has tapered below
+\qty{100}{\milli\ampere} and the cell spread is at most
+\qty{50}{\milli\volt}, or after one hour of balancing at end voltage or
+five hours in total. If the \ac{BMS} has latched a cell undervoltage and
+opened its discharge \ac{FET}, the device is supplied from the charger through
+the normally closed output relay only; the firmware then keeps that relay
+closed and starts a recovery charge at \qty{100}{\milli\ampere} without the
+precharge, and ramps to the full current once the fault clears. The start
+sequence is host-tested; normal and deep-discharge recovery charging are
+validated on hardware. \autoref{sec:fmea} lists what is open (unmeasured
+converter output, relay timing, untuned gains).
+
+\subsection{Peripherals}
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{p{3cm}p{6cm}p{2.5cm}}
+        \rowcolor{gray} \textbf{IC} & \textbf{Role} & \textbf{Interface} \\
+        BQ76905 & 4-cell \ac{LFP} \ac{BMS}: monitoring, protection, passive balancing & \ac{I2C}4 (0x08) \\
+        ADS131M04 & 4-ch precision $\Sigma\Delta$ \ac{ADC}: \texttt{V\_TERM}, \texttt{I\_OUT}, \texttt{V\_SENS}, \texttt{I\_ISO} & \ac{SPI}3 \\
+        LMG2100R044 $\times$2 & \ac{GaN} half-bridge drivers, primary converter & \ac{HRTIM} \ac{GPIO} \\
+        1EDN7512B & Gate driver, high-voltage flyback primary switch & \ac{HRTIM} \ac{GPIO} \\
+        W25N01GV & 1\,Gbit QSPI NAND flash -- menu icon store, logging not yet wired up & QUADSPI \\
+        ZD24C02B & \qty{2}{\kilo bit} \ac{I2C} \ac{EEPROM}, calibration/ID data & \ac{I2C}4 (0x50) \\
+        TCA9554 & \ac{I2C} \ac{IO} expander, hardware ID reading & \ac{I2C}4 (0x20) \\
+        LP5817 / LP5816 & \ac{LED} drivers, status \acp{LED} and \ac{LCD} backlight & \ac{I2C}4 (0x2D/0x2C) \\
+        OPT3004 & Ambient light sensor, automatic backlight & \ac{I2C}4 (0x44) \\
+        \ac{LCD} (240$\times$320) & Display & \ac{SPI}4 (hardware, \ac{DMA}) \\
+    \end{tabular}
+    \caption{Key external \acp{IC} and their bus interfaces}
+\end{table}
+
+\ac{ADC}1--5 each own a \ac{DMA} channel: \ac{ADC}1 carries \texttt{I\_OUT}
+and the control loop, \ac{ADC}2 \texttt{V\_TERM}, \ac{ADC}3 \texttt{V\_IN},
+\ac{ADC}4 \texttt{V\_OUT}/\texttt{V\_HV} (switched per mode), and \ac{ADC}5
+a 12-channel scan (rails, \acp{NTC}, VBAT, VREFINT) plus an injected group
+for \texttt{I\_ISO}/\texttt{I\_BAT}, oversampled 256$\times$ for an
+effective 16-bit result. \texttt{adc\_configure\_mode()} re-points triggers
+and channels per operating mode. The external ADS131M04 runs at about
+\qty{246}{\hertz}; every frame is checked against its \ac{CRC}, and a boot
+self-test checks the offsets and every channel against the internal test
+signal.
+
+Two \ac{DAC} channels are used: \texttt{DAC1\_CH1} drives an analog
+reference voltage, \texttt{DAC1\_CH2} drives the \qty{1}{\ampere} reference
+for the milliohm mode as a \qty{1}{\hertz} \qty{50}{\percent} square wave
+(TIM6), so the reading can be gated to the on-phase.
+
+All \ac{I2C}4 slaves share one bus; transactions are queued and
+\ac{DMA}/event-driven, dropping with an error code rather than blocking
+when the queue is full; a transfer that hangs for \qty{50}{\milli\second} is
+aborted and the bus recovered. \ac{SPI}3 talks to the external \ac{ADC}; \ac{SPI}4
+is a real hardware \ac{SPI} peripheral driving the \ac{LCD}, with bulk
+transfers \ac{DMA}-driven -- only the chip-select and data/command lines
+are toggled by \ac{GPIO}, which is the usual wiring for an \ac{SPI} \ac{LCD},
+not bit-banging. \ac{HRTIM}
+drives three output channels -- the primary and secondary half-bridges of
+the buck-boost converter and the high-voltage flyback -- with hardware
+dead-time insertion on the two half-bridges (see \autoref{sec:fmea}), plus
+Timer D without outputs as the fixed \ac{ADC} trigger and burst clock.
+
+Interrupts run in three fixed priority tiers (\texttt{irq\_priority.h}):
+the control loop's \ac{DMA} channel alone at the top, the remaining
+\ac{ADC}/\ac{SPI}3/external-\ac{ADC}-ready interrupts next, and \ac{I2C},
+\ac{LCD} \ac{SPI} and the state-machine timer last. Because the control
+loop can preempt the state-machine step, \texttt{ctrl\_main\_start\_ctrl()}
+and \texttt{ctrl\_main\_stop\_control()} order their writes to \texttt{mode}
+so a preempting tick always observes either \texttt{CTRL\_MODE\_OFF} or a
+fully configured mode, never a half-built one.
+
+\subsection{Persistent configuration and calibration}
+
+\texttt{config\_store.c} keeps a versioned layout on the \ac{I2C}
+\ac{EEPROM} (layout version 3): an 8-byte header, a 16-byte hardware-data
+block (serial number), a 96-byte calibration block and a 96-byte block with
+the gains of all ten PI loops, each with its own \ac{CRC}32. On a layout
+upgrade the calibration and serial number are kept and the gains reset to
+their defaults. \texttt{calibration.c} exposes seven calibratable channels
+(\texttt{V\_TERM}, \texttt{V\_SENS}, \texttt{V\_OUT}, \texttt{V\_HV},
+\texttt{I\_OUT}, \texttt{I\_ISO}, \texttt{V\_IN}), reachable from Settings > Calibration or the \ac{CLI}
+(\texttt{zeroCal}/\texttt{gainCal}/\texttt{setOffset}/\texttt{setGain}), and
+persists each step immediately. \autoref{sec:fmea} covers what happens on a
+corrupted block.
+
+\subsection{Protection}
+
+\texttt{protection.c} polls the \ac{OVP}/\ac{OCP} fault-latch pins and four
+external \ac{NTC} temperatures once per state-machine tick, classifying
+each temperature into OK/WARNING/ERROR with hysteresis; an open \ac{NTC}
+is an ERROR. Per-mode limits on terminal voltage, output current and
+leakage current (external \ac{ADC}) trip as latched errors, stale \ac{BMS}
+data (older than \qty{3}{\second}) stops a charge, and a failed external
+\ac{ADC} self-test blocks all output modes. An ERROR of any kind forces the
+converter output off from \texttt{statemachine\_step()} and shows a red
+banner; the passive meter modes return to IDLE. An \ac{OVP} latch trip
+switches the converters off and shorts the secondary half-bridge until the
+user confirms a reset with OK (three attempts, then power cycle). Fault handlers switch the power stage off at register
+level, record the fault in RAM for the next boot report and halt, and the independent watchdog (about
+\qty{2}{\second}) resets a hung main loop. The mechanism is summarised here; the full
+failure-by-failure treatment, including where this protection does and
+does not currently reach, is in \autoref{sec:fmea}.
+
+\subsection{User interface}
+
+A 240$\times$320 \ac{TFT} \ac{LCD} is driven through a custom driver and
+$\mu$\ac{GUI}. Backlight brightness (LP5816) fades toward a target derived
+from the OPT3004 ambient-light sensor, in lux. A rotary encoder plus
+three buttons (ESC, OUT, OK) are debounced in \texttt{input.c}. Menu icons
+come from bitmaps in the QSPI flash's icon store when available, falling
+back to procedural vector glyphs otherwise. Status \acp{LED} and the
+backlight are managed by \texttt{ui\_ctrl.c}.
+
+\subsection{Command-line interface}
+
+\texttt{cli.c} implements a command parser over USART2 (reception by
+interrupt into a ring buffer, so pasted input is not lost), used for
+calibration, diagnostics and parameter read/write during bench work. It
+includes a keyboard-driven \texttt{control} mode that maps terminal keys to
+the encoder/buttons, so the \ac{UI} can be exercised without the display
+board attached.
+
+\subsection{Build and verification}
+
+The firmware is built with STM32CubeIDE (managed build, \texttt{-Os}).
+There is no unit-test harness and no host build of the whole firmware. Three
+host tests compile the hardware-independent modules (charge start sequence,
+voltage-source regions and burst plan, \ac{EEPROM} layout and upgrade) with
+the host compiler. The automated compile check is \texttt{sw/bat\_source/tools/check.sh}: it syntax-compiles every
+\texttt{Core/Src/*.c} file with \texttt{-Wall -Wextra} using the same flags
+as the project file, and diffs the resulting warnings against a checked-in
+baseline, failing on anything new. It does not link, so section sizes and
+stack headroom still require a full CubeIDE build.
+
+\subsection{Open items}
+
+Safety-relevant open items are tracked as failure modes in
+\autoref{sec:fmea}. Remaining open items with no safety impact --
+bench tuning of the remaining PI loops and data logging to the QSPI flash not yet being wired up -- are
+tracked in \texttt{sw/architecture.md}, \S10.

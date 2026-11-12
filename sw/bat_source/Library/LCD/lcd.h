@@ -5,6 +5,7 @@
 #include "ugui.h"
 #include "main.h"
 
+#define LCD_TEST_WINDOWS
 
 /* choose a Hardware SPI port to use. */
 #define LCD_HANDLE            hspi4
@@ -15,7 +16,7 @@
 #define LCD_CS                DISPLAY_CS  /* Disable if your display has no CS pin */
 //#define LCD_BL              LCD_BL  /* Enable if you need backlight control */
 
-//#define USE_DMA                       /* Use DMA for transfers when possible */
+#define USE_DMA                       /* Use DMA for transfers when possible */
 //#define LCD_LOCAL_FB                /* Use local framebuffer. Needs a lot of ram, but removes flickering and redrawing glitches  */
 
 //#define USE_ST7735                    /* LCD Selection */
@@ -245,7 +246,21 @@ typedef enum{
 #endif // LCD_DC
 
 #define SPI_PRESCALER_LCD_READ	32	//  5MHz
-#define SPI_PRESCALER_LCD_WRITE	16//4	// 40MHz
+/* Was left at 16 (10MHz, a quarter of the intended rate) since the initial
+ * "getting the LCD running" bring-up commit (317ef30) -- the trailing "//4"
+ * is that commit's own leftover note of the value actually wanted. spi.c's
+ * static MX_SPI4_Init() and bat_source.ioc (SPI4.BaudRatePrescaler,
+ * CalculateBaudRate=40.0 MBits/s) both already agree on 4/40MHz; nothing
+ * documents 16 as a deliberate fallback (no known-issues entry, no comment
+ * on a signal-integrity problem), so this restores that already-configured
+ * value. It matters beyond boot: LCD_ReadCmd() (only ever called from
+ * LCD_init()'s panel-ID reads) leaves the SPI peripheral at whichever of
+ * these two defines it restores to when it's done, and every draw for the
+ * rest of runtime -- splash, menus, this driver's own LCD_Fill/LCD_WriteData
+ * bulk transfers -- runs at that same rate. If 40MHz turns out to be
+ * electrically unreliable on the bench (this has not been possible to test
+ * without hardware), try 8 (20MHz) before reverting to 16. */
+#define SPI_PRESCALER_LCD_WRITE	4	// 40MHz
 
 #define color565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
 #define ABS(x) ((x) > 0 ? (x) : -(x))
@@ -259,11 +274,11 @@ void LCD_init(void);
 void LCD_SetRotation(uint8_t m);
 void LCD_DrawPixel(int16_t x, int16_t y, uint16_t color);
 void LCD_DrawPixelFB(int16_t x, int16_t y, uint16_t color);
-int8_t LCD_Fill(uint16_t xSta, uint16_t ySta, uint16_t xEnd, uint16_t yEnd, uint16_t color);
+int8_t LCD_Fill(int16_t xSta, int16_t ySta, int16_t xEnd, int16_t yEnd, uint16_t color);
 
 /* Graphical functions. */
-int8_t LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
-void LCD_DrawImage(uint16_t x, uint16_t y, UG_BMP* bmp);
+int8_t LCD_DrawLine(int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16_t color);
+void LCD_DrawImage(int16_t x, int16_t y, UG_BMP* bmp);
 void LCD_InvertColors(uint8_t invert);
 
 /* Text functions. */

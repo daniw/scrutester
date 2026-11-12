@@ -58,8 +58,10 @@ typedef UG_U8                        UG_COLOR;
 /* -- DEFINES                                                                    -- */
 /* -------------------------------------------------------------------------------- */
 /* Internal helpers */
-#define UG_GetFontWidth(f)                            *(f+1)
-#define UG_GetFontHeight(f)                           *(f+2)
+/* Font table layout (see _UG_FontSelect() in ugui.c): byte 0 = char width,
+ * byte 1 = char height. */
+#define UG_GetFontWidth(f)                            *(f+0)
+#define UG_GetFontHeight(f)                           *(f+1)
 #define swap(a, b)                                    { UG_U16 t=a; a=b; b=t; }
 
 /* Sizing helpers */
