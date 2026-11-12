@@ -193,6 +193,12 @@ int main(void)
   GPIO_SET_BMS_CTRL_WAKEUP(0);
   BQ76905_init(&bms, BQ76905_I2C_ADDRESS);
   bms.battery_capacity_mAs = config_store.calibration.battery_capacity_mAs;
+  if (config_store.soc.valid)
+  {
+    bms.restore_mAs = config_store.soc.charge_mAs;
+    bms.restore_offset_mAs = config_store.soc.offset_mAs;
+    bms.restore_pending = 1;
+  }
 
 
   // HRTIM counters run, outputs stay disabled until a mode starts

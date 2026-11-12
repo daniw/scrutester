@@ -44,6 +44,11 @@
      */
     static void BQ76905_updateChargePercentage(BQ76905_handle* handle);
 
+    /**
+     * Applies the EEPROM charge once if PASSQ restarted recently (BMS reset).
+     */
+    static void BQ76905_applyRestore(BQ76905_handle* handle);
+
 
     /**
      * Defined in bq76905_config.h
@@ -122,6 +127,7 @@ void BQ76905_readAllValues(BQ76905_handle* handle) {
 
 	BQ76905_ReadRamRegister(handle, BQ76905_SUBCOMMAND_PASSQ, (uint8_t*)&handle->Accumulator, 12);
 
+	BQ76905_applyRestore(handle);
 	BQ76905_updateChargePercentage(handle);
 }
 
@@ -165,6 +171,28 @@ inline void BQ76905_resetAlarmStatus(BQ76905_handle* handle){
 
 inline void BQ76905_resetChargeAccumulator(BQ76905_handle* handle){
 	BQ76905_WriteRamRegister(handle,BQ76905_SUBCOMMAND_RESET_PASSQ, 0, 0);
+	handle->charge_offset = 0;
+}
+
+int32_t BQ76905_charge_mAs(const BQ76905_handle* handle){
+	return (int32_t) ((handle->Accumulator.accumulatedCharge + handle->charge_offset) / 4);
+}
+
+int32_t BQ76905_offset_mAs(const BQ76905_handle* handle){
+	return (int32_t) (handle->charge_offset / 4);
+}
+
+static void BQ76905_applyRestore(BQ76905_handle* handle) {
+	if (!handle->restore_pending)
+		return;
+	handle->restore_pending = 0;
+	if (handle->Accumulator.passedTime / 4 < BQ76905_RESTORE_MAX_PASSED_s) {
+		handle->charge_offset = (int64_t) handle->restore_mAs * 4;
+		printf("BMS: charge restored from EEPROM (%ld mAs)\r\n", (long) handle->restore_mAs);
+	} else {
+		// BMS kept counting across the MCU power-off: keep the old offset.
+		handle->charge_offset = (int64_t) handle->restore_offset_mAs * 4;
+	}
 }
 
 /**
@@ -178,7 +206,7 @@ static void BQ76905_updateChargePercentage(BQ76905_handle* handle) {
 	if (handle->battery_capacity_mAs == 0)
 		return;
 
-	int64_t pct = 100 + (handle->Accumulator.accumulatedCharge / 4 * 100)
+	int64_t pct = 100 + ((handle->Accumulator.accumulatedCharge + handle->charge_offset) / 4 * 100)
 			/ (int64_t) handle->battery_capacity_mAs;
 	if (pct < 0)
 		pct = 0;
@@ -390,6 +418,7 @@ void BQ76905_onI2CComplete(BQ76905_handle* handle) {
 	case READ_PASSQ:
 		handle->asyncState = IDLE;
 		handle->last_update_ms = HAL_GetTick();
+		BQ76905_applyRestore(handle);
 		BQ76905_updateChargePercentage(handle);
 		break;
 	default:

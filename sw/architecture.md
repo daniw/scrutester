@@ -630,6 +630,14 @@ row), each with its own CRC32. A block is adopted only if its CRC checks out,
 so a corrupt block falls back to defaults rather than leaving garbage in a live
 value. Loaded at boot before `adc_init()` and `ctrl_main_init()`.
 
+A 12-byte `soc` block (+ CRC) follows, appended without a PSVN bump (an old
+image fails its CRC -> not restored). It keeps the battery charge across a BMS
+reset (storage SHUTDOWN, pack removed), which restarts PASSQ from 0 (= full):
+written only at power-off (`gpio_power_off()`) and before the storage SHUTDOWN,
+never periodically (EEPROM wear). On the first PASSQ read after boot,
+`passedTime` < 60 s means the BMS was reset -> offset = saved charge; otherwise
+the BMS kept counting -> offset = saved offset. End of charge clears it.
+
 On a PSVN upgrade the calibration (and serial number) is kept and all gains
 are reset to the table defaults; PSVN 2 (gains mixed into the calibration
 block) is converted field by field. A newer PSVN (downgrade) uses defaults and

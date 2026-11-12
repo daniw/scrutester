@@ -23,11 +23,13 @@ config_store_t config_store;
 #define CONFIG_STORE_HARDWARE_ADDR    8U
 #define CONFIG_STORE_CALIBRATION_ADDR (CONFIG_STORE_HARDWARE_ADDR + CONFIG_STORE_HARDWARE_DATA_SIZE + sizeof(uint32_t))
 #define CONFIG_STORE_GAINS_ADDR       (CONFIG_STORE_CALIBRATION_ADDR + CONFIG_STORE_CALIBRATION_SIZE + sizeof(uint32_t))
-#define CONFIG_STORE_USED_SIZE        (CONFIG_STORE_GAINS_ADDR + CONFIG_STORE_GAINS_SIZE + sizeof(uint32_t))
+#define CONFIG_STORE_SOC_ADDR         (CONFIG_STORE_GAINS_ADDR + CONFIG_STORE_GAINS_SIZE + sizeof(uint32_t))
+#define CONFIG_STORE_USED_SIZE        (CONFIG_STORE_SOC_ADDR + CONFIG_STORE_SOC_SIZE + sizeof(uint32_t))
 
 _Static_assert(offsetof(config_store_t, hardware_data) == CONFIG_STORE_HARDWARE_ADDR, "hardware block address");
 _Static_assert(offsetof(config_store_t, calibration) == CONFIG_STORE_CALIBRATION_ADDR, "calibration block address");
 _Static_assert(offsetof(config_store_t, gains) == CONFIG_STORE_GAINS_ADDR, "gains block address");
+_Static_assert(offsetof(config_store_t, soc) == CONFIG_STORE_SOC_ADDR, "soc block address");
 _Static_assert(CONFIG_STORE_USED_SIZE <= EEPROM_SIZE, "config_store does not fit the EEPROM");
 
 // PSVN 2 calibration block (calibration and gains mixed), read for migration only.
@@ -154,6 +156,7 @@ static void config_store_setDefaults(void)
  * Adopts the stored image img into cfg, which already holds defaults.
  * hardware_data and calibration are kept if their CRC is valid, gains
  * are only adopted for the current PSVN (otherwise they stay default).
+ * The soc block is adopted if its CRC is valid, no error otherwise.
  * A PSVN 2 image is converted from the old mixed calibration layout.
  * @param result set to a negative code on a CRC mismatch (-3 hardware,
  *        -4 calibration, -5 gains), left alone otherwise.
@@ -242,6 +245,9 @@ static config_load_t config_store_parse(const config_store_t *img, config_store_
 		printf("EEPROM: gains CRC mismatch, using defaults\r\n");
 		*result = -5;
 	}
+
+	if (config_store_crc32b((const uint8_t *) &img->soc, CONFIG_STORE_SOC_SIZE) == img->soc_crc)
+		cfg->soc = img->soc;
 
 	return CONFIG_LOAD_OK;
 }
@@ -367,6 +373,19 @@ int8_t config_store_store(void)
 		result = r;
 #endif
 	return result;
+}
+
+/**
+ * Persists only the soc block (and its CRC), see config_store.h.
+ */
+int8_t config_store_store_soc(int32_t charge_mAs, int32_t offset_mAs)
+{
+	config_store.soc.charge_mAs = charge_mAs;
+	config_store.soc.offset_mAs = offset_mAs;
+	config_store.soc.valid = 1;
+	return config_store_store_block(CONFIG_STORE_SOC_ADDR,
+			(uint8_t *) &config_store.soc, CONFIG_STORE_SOC_SIZE,
+			&config_store.soc_crc);
 }
 
 /**

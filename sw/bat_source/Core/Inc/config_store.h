@@ -21,6 +21,7 @@
 #define CONFIG_STORE_HARDWARE_DATA_SIZE 16
 #define CONFIG_STORE_CALIBRATION_SIZE   96  // append-only
 #define CONFIG_STORE_GAINS_SIZE         96
+#define CONFIG_STORE_SOC_SIZE           12
 #define ENABLE_CALIBRATION
 
 /**
@@ -123,6 +124,19 @@ typedef struct
 	float vlimit_10a_i;
 } gains_t;
 
+/**
+ * Battery charge saved at power-off and before the storage SHUTDOWN.
+ * At boot: BMS reset (PASSQ from 0) -> offset = charge_mAs; BMS kept
+ * running -> offset = offset_mAs (PASSQ continued).
+ */
+typedef struct
+{
+	int32_t charge_mAs;
+	int32_t offset_mAs;
+	uint8_t valid;
+	uint8_t reserved[3];
+} soc_t;
+
 typedef struct
 {
 	uint8_t psvn;
@@ -139,11 +153,16 @@ typedef struct
 	gains_t gains;
 	uint8_t gains_reserved[CONFIG_STORE_GAINS_SIZE - sizeof(gains_t)];
 	uint32_t gains_crc;
+
+	// Appended after PSVN 3 without a bump: old images fail the CRC -> invalid.
+	soc_t soc;
+	uint32_t soc_crc;
 } config_store_t;
 
 _Static_assert(sizeof(hardware_data_t) <= CONFIG_STORE_HARDWARE_DATA_SIZE, "hardware_data_t too big for its reserved block");
 _Static_assert(sizeof(calibration_t) <= CONFIG_STORE_CALIBRATION_SIZE, "calibration_t too big for its reserved block");
 _Static_assert(sizeof(gains_t) <= CONFIG_STORE_GAINS_SIZE, "gains_t too big for its reserved block");
+_Static_assert(sizeof(soc_t) <= CONFIG_STORE_SOC_SIZE, "soc_t too big for its reserved block");
 _Static_assert(sizeof(config_store_t) <= 256, "config_store_t exceeds the EEPROM");
 
 extern config_store_t config_store;
@@ -169,6 +188,16 @@ int8_t config_store_read(void);
  * @return 0 on success, negative error code otherwise.
  */
 int8_t config_store_store(void);
+
+/**
+ * Persists the battery charge (soc block and CRC only). Call it at
+ * power-off and before the storage SHUTDOWN only, never periodically
+ * (EEPROM wear).
+ * @param charge_mAs charge incl. offset, see BQ76905_charge_mAs().
+ * @param offset_mAs offset part of it, see BQ76905_offset_mAs().
+ * @return 0 on success, negative error code otherwise.
+ */
+int8_t config_store_store_soc(int32_t charge_mAs, int32_t offset_mAs);
 
 /**
  * Persists the header and hardware_data block (and its CRC) to the

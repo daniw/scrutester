@@ -25,6 +25,10 @@
 #include "watchdog.h"
 #include <stdio.h>
 #include "irq_priority.h"
+#include "config_store.h"
+#include "bq76905.h"
+
+extern BQ76905_handle bms;
 /* USER CODE END 0 */
 
 /*----------------------------------------------------------------------------*/
@@ -212,6 +216,7 @@ void gpio_turnOff(void){
 // would leave the firmware in a half-off state if power doesn't actually cut.
 void gpio_power_off(void) {
 	printf("Turning off ...\r\n");
+	config_store_store_soc(BQ76905_charge_mAs(&bms), BQ76905_offset_mAs(&bms));
 	HAL_Delay(10);
 	gpio_turnOff();
 	for (uint16_t i = 0; i < 100; i++){

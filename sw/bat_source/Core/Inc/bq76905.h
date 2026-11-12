@@ -12,6 +12,9 @@
 #include <stdbool.h>
 #include "stdio.h"
 
+// BMS was reset recently (PASSQ restarted from 0) if passedTime is below this.
+#define BQ76905_RESTORE_MAX_PASSED_s 60
+
 // Register addresses
 /* Cells actually wired on this 4S pack (the chip has five inputs). */
 #define BQ76905_PACK_CELL_COUNT        4
@@ -163,6 +166,14 @@ typedef struct{
 	// different pack size doesn't need a recompile.
 	uint32_t battery_capacity_mAs;
 
+	// Charge kept across a BMS reset (PASSQ restarted from 0): offset in raw
+	// PASSQ units added to accumulatedCharge for the SoC. restore_* are the
+	// EEPROM values, applied once on the first PASSQ read if restore_pending.
+	int64_t charge_offset;
+	int32_t restore_mAs;
+	int32_t restore_offset_mAs;
+	uint8_t restore_pending;
+
 	BQ76905_asyncState asyncState;
 	uint32_t last_update_ms; // HAL_GetTick() of the last complete read cycle
 	uint8_t command_tx;
@@ -193,6 +204,20 @@ typedef struct{
     void BQ76905_resetAlarmStatus(BQ76905_handle* handle);
 
     void BQ76905_resetChargeAccumulator(BQ76905_handle* handle);
+
+    /**
+     * @brief Charge relative to full, including the restored offset.
+     * @param handle BMS handle.
+     * @return Charge in mAs (negative = discharged).
+     */
+    int32_t BQ76905_charge_mAs(const BQ76905_handle* handle);
+
+    /**
+     * @brief Restored offset part of BQ76905_charge_mAs().
+     * @param handle BMS handle.
+     * @return Offset in mAs.
+     */
+    int32_t BQ76905_offset_mAs(const BQ76905_handle* handle);
 
     void BQ76905_resetDevice(BQ76905_handle* handle);
 

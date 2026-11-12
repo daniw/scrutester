@@ -223,6 +223,7 @@ static void statemachine_storage_mode(void) {
 
 	printf("Storage mode - switching off\r\n");
 	display_storage_message("Storage mode - switching off");
+	config_store_store_soc(BQ76905_charge_mAs(&bms), BQ76905_offset_mAs(&bms));
 	BQ76905_Shutdown(&bms);
 	for (uint8_t i = 0; i < 200; i++) { // ~2 s for the power to drop
 		HAL_Delay(10);

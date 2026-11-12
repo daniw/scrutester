@@ -133,12 +133,38 @@ static void test_downgrade_and_blank(void)
 	CHECK(config_store_read() == 0);
 }
 
+static void test_soc(void)
+{
+	config_store_setDefaults();
+	config_store.calibration.v_term_offset_mv = 42;
+	config_store.gains.current_p = 8.0F;
+	config_store_storeHW();
+	config_store_store();
+	CHECK(config_store_read() == 0);
+	CHECK(config_store.soc.valid == 0);
+
+	CHECK(config_store_store_soc(-123456, -1000) == 0);
+	CHECK(config_store_read() == 0);
+	CHECK(config_store.soc.valid == 1);
+	CHECK(config_store.soc.charge_mAs == -123456);
+	CHECK(config_store.soc.offset_mAs == -1000);
+	CHECK(config_store.calibration.v_term_offset_mv == 42);
+
+	/* Corrupt soc only: invalid, calibration and gains still load. */
+	rom[CONFIG_STORE_SOC_ADDR] ^= 0xFF;
+	CHECK(config_store_read() == 0);
+	CHECK(config_store.soc.valid == 0);
+	CHECK(config_store.calibration.v_term_offset_mv == 42);
+	CHECK(config_store.gains.current_p == 8.0F);
+}
+
 int main(void)
 {
 	test_v2_migration();
 	test_same_psvn();
 	test_future_upgrade();
 	test_downgrade_and_blank();
+	test_soc();
 	if (fails) { printf("%d FAILED\n", fails); return 1; }
 	printf("test_config_store: OK\n");
 	return 0;
