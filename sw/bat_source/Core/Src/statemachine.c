@@ -29,6 +29,7 @@
 #include "mode_table.h"
 #include "watchdog.h"
 #include "stopwatch.h"
+#include "tetris.h"
 #ifdef EMI_DEBUG
 #include "emc_monitor.h"
 #endif
@@ -583,6 +584,19 @@ static uint8_t statemachine_settings_step(void) {
 		statemachine_step_service_pin();
 		return 1;
 	} else {
+		// Easter egg (tetris.c): hold OK 1.5 s on About. The game owns LCD
+		// and inputs; return so its quitting ESC skips the ESC handling below.
+		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_ABOUT) {
+			if (tetris_is_active()) {
+				if (!tetris_step())
+					display_enter_settings_detail(STATEMACHINE_SETTINGS_MODE_ABOUT);
+				return 1;
+			}
+			if (ok_button_pressed == TETRIS_UNLOCK_TICKS) {
+				tetris_start();
+				return 1;
+			}
+		}
 		display_update_settings_detail(statemachine_handle.settings_mode);
 		if (statemachine_handle.settings_mode == STATEMACHINE_SETTINGS_MODE_BMS
 				&& ok_button_pressed == STATEMACHINE_BUTTON_CLICK) {
