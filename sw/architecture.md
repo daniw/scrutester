@@ -364,7 +364,8 @@ by the PI limits (the former 0.5 SEK duty ceiling was removed).
 CC loop feedback: P part on the fast internal `i_out`, I part on the battery
 current from the BMS (`CC2Current`, ~100 ms update, positive = charging), so
 the device's own consumption does not reduce the current into the pack. Also
-used in the recovery run.
+used in the recovery run. The BMS delay limits the I gain: 0.1/s oscillated,
+0.02/s is stable (bench); CC settles in several seconds.
 
 **Bench debug build** (`CHARGE_DEBUG` in `debug.h`, off by
 default): gates everything below and the
@@ -832,7 +833,7 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 | 4 | Current meas. | ~100 mA noise floor on instrumentation amp output |
 | 5 | Isolation meas. | 129 µA offset on isolation current channel (op-amp input leakage). Calibratable per unit (`zeroCal`); since `213986a` the internal `I_ISO` channel defaults to a gain/offset instead of 0 (0.1 mV/uA, bench-verified), ISOMETER uses the external ADC channel. |
 | 6 | Voltage ref | Reference rail requires output load capacitor for stability |
-| 7 | PID tuning | Bench-tuned: Buck, Boost, FourSwitch (V_in ~13 V, light load) and Current (P > 0.01 oscillates, I > 3.5 unstable). Still initial values: BoostIoutLimit (limiter bench-checked in 60V and 10A), ChargeCurrent (used in the validated charge runs, not tuned on its own), ChargeVoltage, HVVoltage, HVCurrent, 10AVoltLimit (= buck gains), and the EMI parameters. The I gains are limited by the ~246 Hz external ADC that feeds the I-terms (#19). Treat the first run of an untuned loop as a bench bring-up. |
+| 7 | PID tuning | Bench-tuned: Buck, Boost, FourSwitch (V_in ~13 V, light load) and Current (P > 0.01 oscillates, I > 3.5 unstable). Still initial values: BoostIoutLimit (limiter bench-checked in 60V and 10A), ChargeCurrent (I 0.02/s, bench: 0.1/s oscillated on the slow BMS current), ChargeVoltage, HVVoltage, HVCurrent, 10AVoltLimit (= buck gains), and the EMI parameters. The I gains are limited by the ~246 Hz external ADC that feeds the I-terms (#19). Treat the first run of an untuned loop as a bench bring-up. |
 | 8 | ISOMETER ADC | Fixed (`e5bde9a`): ISOMETER now names its trigger explicitly (`ADC_TRIGGER_HRTIM_HV`, see `mode_table.c`), so the loop rate no longer depends on mode history. The rate was ~11.7 kHz (post-scaler ÷15); TRG5 post-scaler ÷7 now gives exactly `CTRL_FREQ`, gains unchanged (integral action and ramp ~2.1× faster than before on the bench). |
 | 9 | Charge thresholds | The CC→CV latch and cycle termination both key off the BMS `StackVoltage` against `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` (consistent — this corrects an earlier version of this table, which claimed the latch tested `v_in`). The CV tail's own PI loop, however, now regulates towards `4 × highest cell voltage` rather than `StackVoltage` (see §3, Charging). Under significant cell imbalance, the quantity being latched/terminated on (real `StackVoltage`) and the quantity the CV loop is driving towards (extrapolated `4 × max-cell`) can diverge — untested. Termination also now requires the cell-voltage spread to be ≤ 50 mV, which should catch most of this in practice, but the two-sensor tension itself is unresolved. |
 | 10 | Data logging | QSPI flash driver exists and holds the icon store, but logging is not wired into the application |
