@@ -60,6 +60,8 @@ static char text[48];
 #define FONT_HUGE     FONT_40X78
 #define FONT_BIG      FONT_32X53
 #define FONT_MED      FONT_16X26
+// ISOMETER: below this leakage the MOhm value is noise -> OVER.
+#define ISO_R_MIN_CURRENT_uA 2
 #define FONT_SMALL    FONT_12X16
 #define FONT_TINY     FONT_8X12
 
@@ -600,7 +602,9 @@ static void update_isometer(uint8_t output_active) {
 			ctrl_main_handle.voltage_iso_reference_V);
 	LCD_PutStr(16, SECOND_Y, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 
-	if (adc_data.converted.i_iso_ext_uA_filt > 0) {
+	static uint8_t iso_over_shown;
+	if (adc_data.converted.i_iso_ext_uA_filt >= ISO_R_MIN_CURRENT_uA) {
+		iso_over_shown = 0;
 		/* R[Mohm] = V / I[uA] (since Mohm = V/uA algebraically); keep one
 		 * decimal digit of precision via a x10 fixed-point intermediate. */
 //		int32_t r_megaohm_x10 =
@@ -612,6 +616,10 @@ static void update_isometer(uint8_t output_active) {
 		snprintf(text, sizeof(text), "%3d.%03d", (int) (r_megaohm_x10 / 1000),
 				(int) (r_megaohm_x10 % 1000));
 	} else {
+		// FONT_BIG is proportional: clear the old number once.
+		if (!iso_over_shown)
+			LCD_Fill(16, BIG_Y, 16 + 8 * 32, BIG_Y + 53, C_BLACK);
+		iso_over_shown = 1;
 		snprintf(text, sizeof(text), " OVER  ");
 	}
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
