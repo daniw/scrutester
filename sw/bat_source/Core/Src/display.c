@@ -272,7 +272,8 @@ static void update_active_output(statemachine_modes_t mode,
 /* EMI: EMC monitor list, see emc_monitor.h                                */
 /* ---------------------------------------------------------------------- */
 
-#define EMI_LIST_Y    (STATUS_H + 16)
+// 14 rows + info line end at FOOTER_Y + 4, above the footer text.
+#define EMI_LIST_Y    (STATUS_H + 13)
 #define EMI_ROW_H     12
 #define EMI_X         4
 #define EMI_STATE_X   (EMI_X + (EMC_ROW_LEN + 1) * 8)
@@ -287,7 +288,7 @@ static void enter_emi(statemachine_modes_t mode) {
 
 	draw_status_bar(menu_name_for_mode(mode), entry->accent);
 	draw_footer("ESC: Back", "OUT: Start/Stop  OK: Reset");
-	LCD_PutStr(EMI_X, STATUS_H + 2, "Channel      Value     Min     Max State",
+	LCD_PutStr(EMI_X, STATUS_H + 1, "Channel      Value     Min     Max State",
 			FONT_TINY, TEXT_SECONDARY, C_BLACK);
 	emi_title[0] = 0;
 	emi_item = 0;
@@ -326,7 +327,7 @@ static void update_emi(void) {
 				(unsigned long) (set / 10), (unsigned long) (set % 10),
 				st.running ? "RUN" : "STOP", (unsigned long) (s / 60),
 				(unsigned long) (s % 60));
-		LCD_PutStr(EMI_X, EMI_LIST_Y + n * EMI_ROW_H + 2, text, FONT_TINY,
+		LCD_PutStr(EMI_X, EMI_LIST_Y + n * EMI_ROW_H, text, FONT_TINY,
 				TEXT_PRIMARY, C_BLACK);
 	}
 	if (++emi_item > n)
