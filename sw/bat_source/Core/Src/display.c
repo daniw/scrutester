@@ -851,8 +851,8 @@ void display_enter_settings_detail(uint8_t submenu_index) {
 			submenu_index == STATEMACHINE_SETTINGS_MODE_STORAGE ? "OK: Switch off" : 0);
 
 	if (submenu_index == STATEMACHINE_SETTINGS_MODE_STORAGE) {
-		LCD_PutStr(16, STATUS_H + 12, "Device switches off completely.", FONT_SMALL, TEXT_PRIMARY, C_BLACK);
-		LCD_PutStr(16, STATUS_H + 34, "Wake up: connect the charger.", FONT_SMALL, TEXT_PRIMARY, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 12, "Device turns off fully.", FONT_SMALL, TEXT_PRIMARY, C_BLACK);
+		LCD_PutStr(16, STATUS_H + 34, "Wake: connect charger.", FONT_SMALL, TEXT_PRIMARY, C_BLACK);
 	}
 
 	if (submenu_index == STATEMACHINE_SETTINGS_MODE_ABOUT) {
@@ -1081,7 +1081,7 @@ void display_service_pin_wrong(void) {
 }
 
 static void update_settings_storage(void) {
-	snprintf(text, sizeof(text), "Battery: %u%% (ideal ~50%%)", bms.charge_percentage);
+	snprintf(text, sizeof(text), "Battery: %u%% (ideal 50%%)", bms.charge_percentage);
 	LCD_PutStr(16, STATUS_H + 70, text, FONT_SMALL, TEXT_SECONDARY, C_BLACK);
 }
 
