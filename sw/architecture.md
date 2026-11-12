@@ -634,8 +634,9 @@ leaves the EEPROM untouched. Host test: `tools/test_config_store.sh`.
 ### Calibration (`calibration.c`)
 Seven calibratable channels (`V_TERM`, `V_SENS`, `V_OUT`, `V_HV`, `I_OUT`,
 `I_ISO`, `V_IN`), each with a zero step and an optional gain step. The
-internal `I_ISO` channel defaults to a schematic-derived gain/offset
-(`ADC_IISO_GAIN_UA`, offset 2048 = VREF/2); ISOMETER itself uses the external
+internal `I_ISO` channel defaults to 0.1 mV/uA (100 V/A, `ADC_IISO_GAIN_UA`,
+offset 2048 = VREF/2), matching the ext ADC and a DMM; the schematic value
+(200 V/A) does not match the board (bench). ISOMETER itself uses the external
 ADC's `I_ISO`. Reachable from both
 the Settings > Calibration screen and the CLI (`zeroCal`, `gainCal`,
 `setOffset`, `setGain`). Persists immediately on each step.
@@ -829,7 +830,7 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 | 2 | GaN drivers | Bootstrap capacitor discharge limits maximum converter on-time at low duty cycles |
 | 3 | I2C | Level shifter outputs 2.4 V instead of 3.3 V — marginal for some slaves |
 | 4 | Current meas. | ~100 mA noise floor on instrumentation amp output |
-| 5 | Isolation meas. | 129 µA offset on isolation current channel (op-amp input leakage). Calibratable per unit (`zeroCal`); since `213986a` the internal `I_ISO` channel defaults to a schematic-derived gain/offset instead of 0, ISOMETER uses the external ADC channel. |
+| 5 | Isolation meas. | 129 µA offset on isolation current channel (op-amp input leakage). Calibratable per unit (`zeroCal`); since `213986a` the internal `I_ISO` channel defaults to a gain/offset instead of 0 (0.1 mV/uA, bench-verified), ISOMETER uses the external ADC channel. |
 | 6 | Voltage ref | Reference rail requires output load capacitor for stability |
 | 7 | PID tuning | Bench-tuned: Buck, Boost, FourSwitch (V_in ~13 V, light load) and Current (P > 0.01 oscillates, I > 3.5 unstable). Still initial values: BoostIoutLimit (limiter bench-checked in 60V and 10A), ChargeCurrent (used in the validated charge runs, not tuned on its own), ChargeVoltage, HVVoltage, HVCurrent, 10AVoltLimit (= buck gains), and the EMI parameters. The I gains are limited by the ~246 Hz external ADC that feeds the I-terms (#19). Treat the first run of an untuned loop as a bench bring-up. |
 | 8 | ISOMETER ADC | Fixed (`e5bde9a`): ISOMETER now names its trigger explicitly (`ADC_TRIGGER_HRTIM_HV`, see `mode_table.c`), so the loop rate no longer depends on mode history. The rate was ~11.7 kHz (post-scaler ÷15); TRG5 post-scaler ÷7 now gives exactly `CTRL_FREQ`, gains unchanged (integral action and ramp ~2.1× faster than before on the bench). |
