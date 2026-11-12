@@ -35,7 +35,7 @@
 
 #define CTRL_PARAM_BOOST_IOUT_LIMIT_mA 1000
 #define CTRL_PARAM_BOOST_IOUT_LIMIT_P (0.01F)
-#define CTRL_PARAM_BOOST_IOUT_LIMIT_I (1.0F/CTRL_FREQ)
+#define CTRL_PARAM_BOOST_IOUT_LIMIT_I (20.0F/CTRL_FREQ)
 
 // Setpoint limits. 60V: below the crowbar (BZT52C68 + gate, >= ~65.5 V worst case).
 #define CTRL_PARAM_60V_VOLTAGE_MAX_mV 65000
@@ -84,6 +84,10 @@
 // 10A compliance: limiter on v_out caps the current PI's duty. Gains from
 // the buck voltage loop (same plant), untuned.
 #define CTRL_PARAM_10A_COMPLIANCE_mV 5000
+// Idle limiter's I part is clamped to the applied duty plus this fraction of
+// its sat_high (0.017 in 60V boost). Without headroom current noise capped the
+// duty; too much makes the take-over slow (h / (Ki * overcurrent)).
+#define CTRL_PARAM_LIMITER_HEADROOM 0.02F
 #define CTRL_PARAM_10A_VLIMIT_P CTRL_PARAM_VOLTAGE_BUCK_P
 #define CTRL_PARAM_10A_VLIMIT_I CTRL_PARAM_VOLTAGE_BUCK_I
 

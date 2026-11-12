@@ -122,16 +122,21 @@ static inline void ctrl_limiter_arm(PID_controller_t *lim) {
 	lim->prev_I_action = lim->sat_limit_high;
 }
 
-/* Cap `duty` at the limiter output. Anti-windup both ways: the loop not in
- * control tracks the applied duty (the limiter stays just above it and takes
- * over at once when the limit is reached). */
+/* Cap `duty` at the limiter output. Anti-windup both ways: the voltage PI
+ * tracks the capped duty; the idle limiter's I part is clamped from above to
+ * CTRL_PARAM_LIMITER_HEADROOM over the duty, so it winds down freely on
+ * overload (resetting it each tick made its I gain useless). */
 static inline float ctrl_limited_duty(PID_controller_t *pi,
 		PID_controller_t *lim, float duty) {
 	if (lim->action < duty) {
 		duty = lim->action;
 		pi->prev_I_action = duty - pi->P_action;
 	} else {
-		lim->prev_I_action = duty - lim->P_action;
+		// Headroom: current noise must not cap the duty (bench, 60V).
+		double max_I = duty - lim->P_action
+				+ CTRL_PARAM_LIMITER_HEADROOM * lim->sat_limit_high;
+		if (lim->prev_I_action > max_I)
+			lim->prev_I_action = max_I;
 	}
 	return duty;
 }

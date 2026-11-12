@@ -267,10 +267,15 @@ waiting to be parked runs at 1 MHz with its duty limited to
 an idle block (before: one per change, and buck <-> boost could leave the
 new parked leg in burst idle). The 1 A limiter (fast internal `i_out`) caps the duty in every region; it
 starts at its ceiling (from 0 it caused a 5 V -> 9 V start-up overshoot).
-Anti-windup both ways (`ctrl_limited_duty()`, also 10A and ISOMETER): the
-voltage PI's integrator tracks the applied duty while the limiter caps it, and
-the limiter's integrator tracks it while it does not, so the limiter takes over
-at once when the limit is reached instead of first integrating down. Gains bench-tuned at V_in ~13 V, light load; limiter untested.
+Anti-windup (`ctrl_limited_duty()`, also 10A and ISOMETER): the voltage PI's
+integrator tracks the applied duty while the limiter caps it. While the limiter
+does not cap, its I part is clamped from above to the applied duty plus
+`CTRL_PARAM_LIMITER_HEADROOM` (2 % of its ceiling): `i_out` noise does not cap
+the duty, but on overload the I part winds down freely (take-over time ~
+h / (Ki * overcurrent)). Resetting it every tick made the limiter I gain useless:
+it only capped when Kp * overcurrent exceeded the headroom (> 8 A). Without any
+headroom, noise capped the duty on random ticks and dragged the voltage I part
+(bench). Limiter I default 20/s. Gains bench-tuned at V_in ~13 V, light load; limiter bench-checked in 60V and 10A.
 
 **Parked-leg sync and pulse skipping** (60V, 10A and RESISTANCE_1A/1mA modes,
 `VOUT_SYNC_BURST_DISABLE` in `debug.h` removes it). The parked leg's 1.5 % low pulse used
@@ -826,7 +831,7 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 | 4 | Current meas. | ~100 mA noise floor on instrumentation amp output |
 | 5 | Isolation meas. | 129 µA offset on isolation current channel (op-amp input leakage). Calibratable per unit (`zeroCal`); since `213986a` the internal `I_ISO` channel defaults to a schematic-derived gain/offset instead of 0, ISOMETER uses the external ADC channel. |
 | 6 | Voltage ref | Reference rail requires output load capacitor for stability |
-| 7 | PID tuning | Bench-tuned: Buck, Boost, FourSwitch (V_in ~13 V, light load) and Current (P > 0.01 oscillates, I > 3.5 unstable). Still initial values: BoostIoutLimit (limiter untested), ChargeCurrent (used in the validated charge runs, not tuned on its own), ChargeVoltage, HVVoltage, HVCurrent, 10AVoltLimit (= buck gains), and the EMI parameters. The I gains are limited by the ~246 Hz external ADC that feeds the I-terms (#19). Treat the first run of an untuned loop as a bench bring-up. |
+| 7 | PID tuning | Bench-tuned: Buck, Boost, FourSwitch (V_in ~13 V, light load) and Current (P > 0.01 oscillates, I > 3.5 unstable). Still initial values: BoostIoutLimit (limiter bench-checked in 60V and 10A), ChargeCurrent (used in the validated charge runs, not tuned on its own), ChargeVoltage, HVVoltage, HVCurrent, 10AVoltLimit (= buck gains), and the EMI parameters. The I gains are limited by the ~246 Hz external ADC that feeds the I-terms (#19). Treat the first run of an untuned loop as a bench bring-up. |
 | 8 | ISOMETER ADC | Fixed (`e5bde9a`): ISOMETER now names its trigger explicitly (`ADC_TRIGGER_HRTIM_HV`, see `mode_table.c`), so the loop rate no longer depends on mode history. The rate was ~11.7 kHz (post-scaler ÷15); TRG5 post-scaler ÷7 now gives exactly `CTRL_FREQ`, gains unchanged (integral action and ramp ~2.1× faster than before on the bench). |
 | 9 | Charge thresholds | The CC→CV latch and cycle termination both key off the BMS `StackVoltage` against `CTRL_PARAM_CHARGE_END_VOLTAGE_mV` (consistent — this corrects an earlier version of this table, which claimed the latch tested `v_in`). The CV tail's own PI loop, however, now regulates towards `4 × highest cell voltage` rather than `StackVoltage` (see §3, Charging). Under significant cell imbalance, the quantity being latched/terminated on (real `StackVoltage`) and the quantity the CV loop is driving towards (extrapolated `4 × max-cell`) can diverge — untested. Termination also now requires the cell-voltage spread to be ≤ 50 mV, which should catch most of this in practice, but the two-sensor tension itself is unresolved. |
 | 10 | Data logging | QSPI flash driver exists and holds the icon store, but logging is not wired into the application |
