@@ -124,17 +124,19 @@ static inline void ctrl_limiter_arm(PID_controller_t *lim) {
 
 /* Cap `duty` at the limiter output. Anti-windup both ways: the voltage PI
  * tracks the capped duty; the idle limiter's I part is clamped from above to
- * CTRL_PARAM_LIMITER_HEADROOM over the duty, so it winds down freely on
- * overload (resetting it each tick made its I gain useless). */
+ * `headroom` (fraction of its sat_high) over the duty, so it winds down freely
+ * on overload (resetting it each tick made its I gain useless). The headroom
+ * must exceed the tick-to-tick duty jitter, else upward jitter is capped and
+ * drags the voltage PI down (ISOMETER: 400 V instead of 500 V). */
 static inline float ctrl_limited_duty(PID_controller_t *pi,
-		PID_controller_t *lim, float duty) {
+		PID_controller_t *lim, float duty, float headroom) {
 	if (lim->action < duty) {
 		duty = lim->action;
 		pi->prev_I_action = duty - pi->P_action;
 	} else {
 		// Headroom: current noise must not cap the duty (bench, 60V).
 		double max_I = duty - lim->P_action
-				+ CTRL_PARAM_LIMITER_HEADROOM * lim->sat_limit_high;
+				+ headroom * lim->sat_limit_high;
 		if (lim->prev_I_action > max_I)
 			lim->prev_I_action = max_I;
 	}
@@ -750,7 +752,8 @@ static void ctrl_voltage_wide(const ADC_CONVERTED_DATA *meas) {
 	ctrl_PID_controller_execute(&ctrl_pi_boost_iout_limit,
 			meas->i_out / 1000.0F, meas->i_out / 1000.0F);
 
-	float duty = ctrl_limited_duty(pi, &ctrl_pi_boost_iout_limit, pi->action);
+	float duty = ctrl_limited_duty(pi, &ctrl_pi_boost_iout_limit, pi->action,
+			CTRL_PARAM_LIMITER_HEADROOM);
 
 	// `duty` is the average over a 20 us frame; the burst plan splits it into
 	// run duty and idle cycles (sync block; buck also skips below the HRTIM
@@ -839,7 +842,7 @@ static void ctrl_current(int16_t current_meas_mA,
 			voltage_meas_mV / 1000.0F);
 
 	float duty = ctrl_limited_duty(&ctrl_pi_current, &ctrl_pi_10a_vlimit,
-			ctrl_pi_current.action);
+			ctrl_pi_current.action, CTRL_PARAM_LIMITER_HEADROOM);
 	ctrl_apply_buck_burst(duty);
 }
 
@@ -895,7 +898,8 @@ static void ctrl_voltage_hv(int32_t voltage_meas_mV,
 			current_meas_iso_uA / 1000.0F, current_meas_iso_uA / 1000.0F);
 
 	float duty_limited = ctrl_limited_duty(&ctrl_pi_voltage_hv,
-			&ctrl_pi_hv_iout_limit, ctrl_pi_voltage_hv.action);
+			&ctrl_pi_hv_iout_limit, ctrl_pi_voltage_hv.action,
+			CTRL_PARAM_HV_LIMITER_HEADROOM);
 
 	// Apply Duty
 	hrtim_set_duty(HRTIM_CHANNEL_HV, duty_limited);

@@ -275,7 +275,7 @@ the duty, but on overload the I part winds down freely (take-over time ~
 h / (Ki * overcurrent)). Resetting it every tick made the limiter I gain useless:
 it only capped when Kp * overcurrent exceeded the headroom (> 8 A). Without any
 headroom, noise capped the duty on random ticks and dragged the voltage I part
-(bench). Limiter I default 20/s. Gains bench-tuned at V_in ~13 V, light load; limiter bench-checked in 60V and 10A.
+(bench). The headroom is per limiter: ISOMETER uses `CTRL_PARAM_HV_LIMITER_HEADROOM` (0.25 of its 0.2 ceiling = 0.05 duty), because the HV voltage P on the internal `v_hv` jitters the duty per tick and 0.02 capped the jitter and held 500 V at 400 V (bench); the headroom must exceed the tick-to-tick duty jitter. Limiter I default 20/s. Gains bench-tuned at V_in ~13 V, light load; limiter bench-checked in 60V and 10A.
 
 **Parked-leg sync and pulse skipping** (60V, 10A and RESISTANCE_1A/1mA modes,
 `VOUT_SYNC_BURST_DISABLE` in `debug.h` removes it). The parked leg's 1.5 % low pulse used

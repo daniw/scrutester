@@ -112,6 +112,10 @@
 #define CTRL_PARAM_HV_IOUT_LIMIT_uA 1200
 #define CTRL_PARAM_HV_CURRENT_P 0.05F
 #define CTRL_PARAM_HV_CURRENT_I (5.0F/CTRL_FREQ)
+// Limiter headroom (see CTRL_PARAM_LIMITER_HEADROOM): 0.05 duty. The HV
+// voltage P on the noisy internal v_hv jitters the duty by > 0.004 per tick;
+// 0.02 capped that jitter and held 500 V at 400 V (bench).
+#define CTRL_PARAM_HV_LIMITER_HEADROOM 0.25F
 
 // ---- EMI test mode (see EMI_DEBUG in statemachine.h) ---------------
 // HV flyback runs open-loop at a fixed duty while the LV converter regulates
