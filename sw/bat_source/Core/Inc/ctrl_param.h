@@ -231,5 +231,11 @@
 #define CTRL_PARAM_CHARGE_STUCK_OPEN_MEAS_mA 20
 #define CTRL_PARAM_CHARGE_STUCK_OPEN_ms 2000
 
+// Charger removed: the converter feeds the pack back into the terminals
+// (ext I_OUT > 0, charging is < 0) for seconds until V_TERM drops (bench).
+// Exit after this reverse current for this long (CC_RAMP/CV only).
+#define CTRL_PARAM_CHARGE_REVERSE_mA 200
+#define CTRL_PARAM_CHARGE_REVERSE_ms 100
+
 
 #endif /* INC_CTRL_PARAM_H_ */

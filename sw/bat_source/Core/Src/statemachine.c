@@ -61,6 +61,7 @@ static uint8_t charge_lockout;
 static uint8_t charge_done;
 static uint32_t charge_ticks;
 static uint32_t charge_balance_ticks;
+static uint32_t charge_reverse_ticks;
 
 #ifdef CHARGE_DEBUG
 /* One-shot "precharge is done, waiting for chargeNext" notice, since the
@@ -937,6 +938,16 @@ static void statemachine_charge_exit_step(uint16_t cell_min, uint16_t cell_max) 
 	}
 	uint8_t bms_fault = fault_mask_a || bms.SafetyRegisters.safetyStatusB;
 	uint8_t supply_low = adc_data.converted.v_term_ext_mv < CTRL_PARAM_CHARGE_STOP_VIN_mV;
+	// Charger gone: current reverses long before V_TERM drops.
+	if ((ctrl_main_handle.charge_phase == CHG_PHASE_CC_RAMP
+			|| ctrl_main_handle.charge_phase == CHG_PHASE_CV)
+			&& adc_data.converted.i_out_ext_mA > CTRL_PARAM_CHARGE_REVERSE_mA)
+		charge_reverse_ticks++;
+	else
+		charge_reverse_ticks = 0;
+	uint8_t reverse = charge_reverse_ticks
+			>= CTRL_PARAM_CHARGE_REVERSE_ms / STATEMACHINE_STEP_PERIOD_mS;
+	supply_low |= reverse;
 
 	if (charge_completed || charge_timeout || bms_fault || supply_low) {
 		if (charge_completed) {
@@ -955,7 +966,10 @@ static void statemachine_charge_exit_step(uint16_t cell_min, uint16_t cell_max) 
 		if (bms.SafetyRegisters.safetyStatusB) {
 			printf("CHARGE exit: BMS safetyStatusB=0x%02X\r\n", bms.SafetyRegisters.safetyStatusB);
 		}
-		if (supply_low) {
+		if (reverse) {
+			printf("CHARGE exit: reverse current (i_out_ext=%ldmA), charger removed\r\n",
+					adc_data.converted.i_out_ext_mA);
+		} else if (supply_low) {
 			printf("CHARGE exit: supply voltage dropped (v_term_ext_mv=%ldmV < stop=%dmV)\r\n",
 					adc_data.converted.v_term_ext_mv, CTRL_PARAM_CHARGE_STOP_VIN_mV);
 		}
@@ -1066,6 +1080,7 @@ static void statemachine_step_charge(void) {
 static void statemachine_charge_reset_timers(void) {
 	charge_done = 0;
 	charge_ticks = 0;
+	charge_reverse_ticks = 0;
 	charge_balance_ticks = 0;
 }
 

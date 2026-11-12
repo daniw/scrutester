@@ -388,6 +388,9 @@ therefore open-loop and only as accurate as `V_IN` and the duty model, which is
 why the target is `CTRL_PARAM_CHARGE_PRECHARGE_RATIO` (99 %) and not 100 %. A stuck-open relay is detected in
 `CC_RAMP` (reference above `CTRL_PARAM_CHARGE_STUCK_OPEN_REF_mA` for
 `…_ms` with less than `…_MEAS_mA` flowing) and aborts the charge.
+The charge also exits when ext `I_OUT` reverses (> `CTRL_PARAM_CHARGE_REVERSE_mA` for
+`CTRL_PARAM_CHARGE_REVERSE_ms`, `CC_RAMP`/`CV` only), because after the charger is
+removed the converter keeps `V_TERM` up from the pack.
 
 The end-of-charge exit is only evaluated in `CC_RAMP`/`CV`; supply drop, BMS
 fault, ESC and protection exits apply in every phase. ESC, protection, BMS-fault
