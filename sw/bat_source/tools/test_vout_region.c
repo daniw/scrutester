@@ -69,11 +69,10 @@ static void test_burst_plan(void) {
 	const unsigned F = CTRL_PARAM_VOUT_FRAME_CYCLES, N = CTRL_PARAM_VOUT_SYNC_CYCLES;
 	const float lo = CTRL_PARAM_VOUT_MIN_RUN_DUTY, hi = CTRL_PARAM_VOUT_MAX_RUN_DUTY;
 
-	// Sync window is long enough for the bootstrap recharge: Q / I plus two
-	// dead times (7.8 ns each) must fit in the idle block of 1/f_fast cycles.
-	float t_us = (float) CTRL_PARAM_BOOT_CHARGE_PER_PERIOD_nC / CTRL_PARAM_BOOT_RECHARGE_mA;
+	// Idle block covers the parked low pulse with 2x margin.
+	float pulse_us = (1.0F - CTRL_PARAM_CONST_DUTY_HIGH) * 1e6F / CTRL_PARAM_SW_FREQ_LOW;
 	float cycle_us = 1e6F / CTRL_PARAM_SW_FREQ_HIGH;
-	CHECK(N * cycle_us >= t_us + 0.016F + cycle_us); // one cycle of alignment margin
+	CHECK(N * cycle_us >= 2.0F * pulse_us);
 	CHECK(F == 20);
 
 	// Normal operation: average duty preserved, sync window only.

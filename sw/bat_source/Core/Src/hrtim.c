@@ -417,19 +417,30 @@ void HAL_HRTIM_MspDeInit(HRTIM_HandleTypeDef* hrtimHandle)
  * fast leg follows the burst -- in up/down mode a timer enters/leaves burst
  * idle only at its own roll-over, every 10 us for the 50 kHz leg.
  *
- * Master compares 2/3 in the .ioc assume CTRL_PARAM_VOUT_SYNC_CYCLES = 3.
+ * Master compare 2 (block start) is set here so the block is centred on
+ * compare 3, where the parked pulse sits.
  */
 static void hrtim_sync_init(void) {
 #ifdef VOUT_SYNC_BURST_ENABLED
 	const uint8_t timers[2] = { HRTIM_CHANNEL_PRIM, HRTIM_CHANNEL_SEK };
 	for (unsigned i = 0; i < 2; i++) {
-		HRTIM1->sTimerxRegs[timers[i]].OUTxR |= HRTIM_OUTR_DIDL1 | HRTIM_OUTR_DIDL2;
+		// IDLES1 (low side on in idle) only takes a write before the counters
+		// run (RM0440: "must be set prior to HRTIM controlling the outputs";
+		// bench: later writes read back 0). Disabled outputs idle at this
+		// level too, so every stop path drops CONV_CTRL_EN first.
+		HRTIM1->sTimerxRegs[timers[i]].OUTxR |= HRTIM_OUTR_IDLES1
+				| HRTIM_OUTR_DIDL1 | HRTIM_OUTR_DIDL2;
 		HRTIM1->sTimerxRegs[timers[i]].OUTxR &= ~(HRTIM_OUTR_IDLES2
 				| HRTIM_OUTR_IDLM1 | HRTIM_OUTR_IDLM2);
 	}
 
-	// Not in the .ioc: trigger, and preload so a new idle length applies at
-	// the next frame.
+	// Not in the .ioc: single-shot on master compare 2 (one idle block per
+	// frame; continuous ran on its own ~10 us period), and preload so a new
+	// idle length applies at the next frame.
+	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BMOM;
+	uint32_t cycle = HRTIM1->sMasterRegs.MPER / CTRL_PARAM_VOUT_FRAME_CYCLES;
+	HRTIM1->sMasterRegs.MCMP2R = HRTIM1->sMasterRegs.MCMP3R
+			- cycle * CTRL_PARAM_VOUT_SYNC_CYCLES / 2;
 	HRTIM1->sCommonRegs.BMTRGR = HRTIM_BMTRGR_MSTCMP2;
 	HRTIM1->sCommonRegs.BMCMPR = CTRL_PARAM_VOUT_SYNC_CYCLES;
 	HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BMPREN;
@@ -593,17 +604,17 @@ void hrtim_disable(uint8_t channel) {
 	}
 }
 
-/** Burst controller off, idle levels (IDLM/IDLES1) of PRIM and SEK cleared. */
+/** Burst controller off, idle mode (IDLM) of PRIM and SEK cleared. */
 static void hrtim_clear_burst_idle(void) {
 	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
 	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_PRIM].OUTxR &= ~(HRTIM_OUTR_IDLM1
-			| HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+			| HRTIM_OUTR_IDLM2);
 	HRTIM1->sTimerxRegs[HRTIM_CHANNEL_SEK].OUTxR &= ~(HRTIM_OUTR_IDLM1
-			| HRTIM_OUTR_IDLM2 | HRTIM_OUTR_IDLES1);
+			| HRTIM_OUTR_IDLM2);
 }
 
 /**
- * @brief Gate-driver enables off, burst/IDLES1 cleared, all HRTIM outputs
+ * @brief Gate-driver enables off, burst idle cleared, all HRTIM outputs
  *        disabled. Register writes only, safe from fault handlers.
  */
 void hrtim_emergency_off(void) {
@@ -664,7 +675,7 @@ void hrtim_sek_restore(void) {
 /**
  * Puts only the fast leg (HRTIM_CHANNEL_PRIM or _SEK) under burst idle control
  * and enables the burst. IDLM is changed with BME = 0, as changing it during a
- * burst is not confirmed safe. IDLES1 (low side on in idle) only on the fast leg.
+ * burst is not confirmed safe. IDLES1 is set on both legs at init.
  */
 void hrtim_burst_select_leg(uint8_t fast_channel) {
 #ifdef VOUT_SYNC_BURST_ENABLED
@@ -673,8 +684,8 @@ void hrtim_burst_select_leg(uint8_t fast_channel) {
 			: HRTIM_CHANNEL_PRIM;
 
 	HRTIM1->sCommonRegs.BMCR &= ~HRTIM_BMCR_BME;
-	HRTIM1->sTimerxRegs[parked].OUTxR &= ~(idlm | HRTIM_OUTR_IDLES1);
-	HRTIM1->sTimerxRegs[fast_channel].OUTxR |= (idlm | HRTIM_OUTR_IDLES1);
+	HRTIM1->sTimerxRegs[parked].OUTxR &= ~idlm;
+	HRTIM1->sTimerxRegs[fast_channel].OUTxR |= idlm;
 	HRTIM1->sCommonRegs.BMCR |= HRTIM_BMCR_BME;
 #else
 	(void) fast_channel;

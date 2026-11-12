@@ -29,7 +29,8 @@
 #define CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_HIGH 0.8F
 #define CTRL_PARAM_VOLTAGE_BUCK_DUTY_SAT_LOW 0.0F
 
-#define CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH 0.8F
+// 0.85: 63 V at V_in 12.8 V needs > 0.8 under load (bench, 0.5 A).
+#define CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH 0.85F
 #define CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_LOW 0.015F
 
 #define CTRL_PARAM_BOOST_IOUT_LIMIT_mA 1000
@@ -57,12 +58,10 @@
 #ifndef VOUT_SYNC_BURST_DISABLE
 #define VOUT_SYNC_BURST_ENABLED
 #endif
-// Idle block length: bootstrap charge per slow period (~100 nC, hardware.tex)
-// at ~100 mA recharge = 1 us, plus dead times and one cycle of margin.
-// Master compares 2/3 in the .ioc assume 3 cycles.
-#define CTRL_PARAM_BOOT_CHARGE_PER_PERIOD_nC 100
-#define CTRL_PARAM_BOOT_RECHARGE_mA 100
-#define CTRL_PARAM_VOUT_SYNC_CYCLES 3
+// Idle block length: must cover the parked low pulse (~440 ns, bench);
+// 2-3 cycles held the low side on too long in boost (bench).
+// hrtim_sync_init() centres the block on master cmp 3.
+#define CTRL_PARAM_VOUT_SYNC_CYCLES 1
 // Burst frame in fast-leg cycles.
 #define CTRL_PARAM_VOUT_FRAME_CYCLES (CTRL_PARAM_SW_FREQ_HIGH / CTRL_PARAM_SW_FREQ_LOW)
 // HRTIM compare floor (3.75 % at 1 MHz) plus margin; below it, pulses are

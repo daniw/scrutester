@@ -340,7 +340,7 @@ void ctrl_main_start_ctrl_charge_low_current(void) {
 void ctrl_main_stop_control(void) {
 	ctrl_main_handle.mode = CTRL_MODE_OFF;
 	ctrl_main_handle.charge_phase = CHG_PHASE_OFF;
-	// sync_stop first: clears IDLES1, else a disabled leg idles low side ON.
+	// Disabled PRIM/SEK idle low side ON (IDLES1): CONV_CTRL_EN must be off.
 	hrtim_sync_stop();
 	hrtim_disable(HRTIM_CHANNEL_ALL);
 }

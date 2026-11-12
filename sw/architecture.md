@@ -281,9 +281,15 @@ the parked pulse sits at the same frame time in buck and boost. The burst
 controller (clock Timer D, trigger master compare 2, `hrtim.c`) idles a block
 of fast cycles there, **on the fast leg only** (low side on, high side off);
 a 50 kHz leg in up/down mode only enters/leaves burst idle at its roll-over
-(every 10 µs), which on the bench left SEC_L on for ~10 µs per frame. Block =
-`CTRL_PARAM_VOUT_SYNC_CYCLES` (3: ~100 nC bootstrap charge at 100 mA = 1 µs,
-plus margin; master compares 2/3 in the `.ioc` assume 3). Below the HRTIM
+(every 10 µs), which on the bench left SEC_L on for ~10 µs per frame. The
+burst is single-shot (one block per frame; continuous mode ran on its own
+~10 µs period, 100 kHz ripple). Block = `CTRL_PARAM_VOUT_SYNC_CYCLES` (1 cycle,
+~0.94 µs: covers the ~440 ns parked pulse; 2-3 cycles held the low side on too
+long in boost). `hrtim_sync_init()` sets master compare 2 so the block is
+centred on compare 3. The idle level (`IDLES1`, low side on) is set at init
+for PRIM and SEK: RM0440 takes it only before the HRTIM controls the outputs
+(later writes read back 0, so SEK idled with both switches off and the
+inductor demagnetised every frame). Below the HRTIM
 compare floor (3.75 % at 1 MHz) the block grows and the run duty is held at
 `CTRL_PARAM_VOUT_MIN_RUN_DUTY` (`vout_burst_plan()`, host-tested; buck, 10A
 and RESISTANCE only). These modes trigger the ADC from Timer D, so the sample
@@ -294,7 +300,8 @@ share at ~0.81 and need a charger ≥ ~17 V. In boost the idle block holds SEC_L
 on, so it counts as SEK duty 1: `vout_burst_plan_low_side()` plans the
 high-side share instead (before, the real SEK average was ~0.15 above the
 command). The boost duty range is therefore ~0.19 (floor from
-`CTRL_PARAM_VOUT_MAX_RUN_DUTY`) to `CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH`. The 4-switch region runs without the burst. Bench-checked in 10A,
+`CTRL_PARAM_VOUT_MAX_RUN_DUTY`) to `CTRL_PARAM_VOLTAGE_BOOST_DUTY_SAT_HIGH`
+(0.85: 63 V at V_in 12.8 V, 0.5 A). The 4-switch region runs without the burst. Bench-checked in 10A,
 buck and boost.
 
 **Key parameters** (`ctrl_param.h`):
@@ -762,7 +769,7 @@ loop. They are **not persisted** and not shown on screen.
 
 **Fault handlers**: HardFault/MemManage/BusFault/UsageFault/NMI and
 `Error_Handler()` call `fault_halt()` (`fault.c`): IRQs off,
-`hrtim_emergency_off()` (register-only: gate-driver enables off, burst/IDLES1
+`hrtim_emergency_off()` (register-only: gate-driver enables off, burst idle
 cleared, all HRTIM outputs disabled), fault name and CFSR/HFSR/fault address on
 USART2, then spin until the IWDG resets the MCU. Before `watchdog_init()` (boot)
 it spins until power-off, with the power stage off. Name, address, CFSR and HFSR are also stored in a `.noinit` RAM
@@ -828,7 +835,7 @@ unconditional per loop iteration — a dead control ISR alone would not trip it
 | 13 | Deep-discharge charging | The CUV recovery path (§3) has been run on the bench and works — K1 stays closed, the BMS's CUV fault is masked correctly for the run, and recovery current reaches the pack through Q6/Q5's body diode as expected. The `CTRL_PARAM_CHARGE_DEEP_DISCHARGE_CURRENT_mA` (100 mA) target and the reuse of `CTRL_PARAM_CHARGE_RAMP_s` for both the initial 0→10 % ramp and the later 10→100 % handoff once CUV clears are first-pass values, not independently bench-tuned yet — revisit if either ramp turns out too fast/slow in practice. |
 | 14 | LCD driver speed | Fixed (`515be99`): `SPI_PRESCALER_LCD_WRITE` (`lcd.h`) had been left at 16 (10 MHz) since the very first "getting the LCD running" bring-up commit (`317ef30`), a quarter of the 4/40 MHz that `spi.c`'s static `MX_SPI4_Init()` and `bat_source.ioc` (`SPI4.CalculateBaudRate=40.0 MBits/s`) both already specify — the define's own trailing `//4 // 40MHz` was that commit's leftover note of the value actually wanted. `LCD_ReadCmd()` (only called from `LCD_init()`'s panel-ID reads) is what leaves SPI4 at this rate for the rest of runtime, so every draw after boot — splash, menus, this driver's own bulk `LCD_Fill`/`LCD_WriteData` transfers — ran 4× slower than the hardware is configured for. Restored to 4/40 MHz. **Not yet verified on the bench**: nothing in the repo documents 16 as a deliberate signal-integrity fallback, but that possibility can't be ruled out without hardware; if 40 MHz proves unreliable, try 8 (20 MHz) before reverting. |
 | 15 | Watchdog | Bench-verified: `wdtTest` resets the board and it reboots (the `ON_REQ` power latch rides through the reset). **Not yet checked**: that no legitimate long path (`saveEEPROM`, `flashIcons`, `eraseFlash Full`, long LCD redraws) trips the untuned 2000 ms timeout. Also open: the kick is unconditional per main-loop pass, so a dead control ISR alone would not trip it — a gated kick (also require `adc_interrupt_cnt` to have advanced) would close that. |
-| 16 | Shoot-through at stop | Fixed (`934e5c5`, `de9a358`, `b37b0bf`): `IDLES1` (low side on in burst idle) was set at boot and never cleared, so every `hrtim_disable()` switched the low sides on without dead time. Now set only on the fast leg while the burst runs and cleared before any PWM disable (`hrtim_sync_stop()` before `hrtim_disable()`, also on the parked leg at a region change and in `hrtim_emergency_off()`); `CONV_CTRL_EN` drops before the PWM stops. Not yet scope-checked. |
+| 16 | Shoot-through at stop | Fixed (`934e5c5`, `de9a358`, `b37b0bf`): `IDLES1` (low side on in burst idle) was set at boot and never cleared, so every `hrtim_disable()` switched the low sides on without dead time. The run-time set/clear of `IDLES1` never worked (the HRTIM ignores it once it controls the outputs, bench readback), so `IDLES1` is set at init again and a disabled PRIM/SEK output idles low side on. Protection: every stop path drops `CONV_CTRL_EN` before the PWM stops (`hrtim_emergency_off()` too). Scope: no low-side pulse at the stop edge (bench). |
 | 17 | ISOMETER limiter | The `if` that guarded the duty write instead of the limit is fixed (`934e5c5`: duty always written). The limiter was disabled (`598b9da`, ISOMETER only reached ~102 V) because it started at 0 and its error was in A (tiny gains). It is active again: starts at its ceiling, anti-windup both ways (`ctrl_limited_duty()`), error in mA (`CTRL_PARAM_HV_IOUT_LIMIT_uA` 1200, P 0.05 duty/mA, I 5/s). Pending bench verification (todo A4); `PROTECTION_ISO_MAX_uA` trip and `OCP_N` latch remain as backup. |
 | 18 | Fault handlers | Fixed (`207265f`): see §8, power stage off before the fault handlers spin. |
 | 19 | Ext ADC rate | The ADS131M04 runs at ~246 Hz (OSR 16256). The 60V 1 A limiter now uses the fast internal `i_out` (`78c6851`). The PI I-terms (60V regions, 10A, CHARGE CC, HV) still integrate the external value, which limits the usable I gains. Open. |
