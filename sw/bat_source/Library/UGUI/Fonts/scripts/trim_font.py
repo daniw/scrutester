@@ -39,17 +39,12 @@ top-level `#include`/`#ifdef UGUI_USE_.../UG_FONT ...[] = { ... };/#endif`
 wrapper exactly, so nothing referencing FONT_40X78/FONT_32X53 needs to
 change.
 
-Usage (regenerates both fonts in place from their *current* content, i.e.
-run this only once against the full, untrimmed originals -- see the
-reproducibility note below):
+Usage (regenerates both fonts from scripts/full/*.c.full, can be re-run):
 
     python3 trim_font.py
 
-To grow a character set later: a font file that has already been trimmed
-no longer contains the dropped glyphs, so re-run this against a pre-trim
-copy instead (e.g. `git show <rev-before-trim>:.../font_40x78.c > /tmp/full.c`
-then point CHARSETS/trim_font() at /tmp/full.c as the source, keeping the
-firmware path as the destination).
+To grow a character set: add the chars to CHARSETS and re-run. Glyphs the
+codepage lacks (e.g. the Ohm sign) go into EXTRA_GLYPHS.
 """
 import os
 import re
@@ -58,11 +53,61 @@ import re
 # See Core/Src/display.c for the audit: every LCD_PutStr() call using
 # FONT_HUGE (=FONT_40X78) or FONT_BIG (=FONT_32X53), and every sprintf()
 # format / literal string that can reach it.
+# Full (untrimmed) originals live in scripts/full/*.c.full: the .full
+# extension keeps them out of the CubeIDE build (Library is a source path).
 CHARSETS = [
     # (filename in this dir's parent, characters to keep)
     ('font_40x78.c', ' -.0123456789'),
-    ('font_32x53.c', ' -.0123456789AEORV'),
+    ('font_32x53.c', ' -.0123456789AEMORVm\x7f'),
 ]
+
+# Glyphs not in the source codepage (CP850), drawn here: code -> rows
+# ('#' = pixel), width = font width, missing rows blank. 0x7F = Ohm sign
+# (display.c STR_OHM), top from the 'O' glyph, cap height like 'M'.
+_OHM_32X53 = ['.' * 32] * 8 + [
+    '............########............',
+    '..........############..........',
+    '........################........',
+    '.......##################.......',
+    '......#######......#######......',
+    '.....######..........######.....',
+    '.....#####............#####.....',
+    '....#####..............#####....',
+    '....#####..............#####....',
+    '...#####................#####...',
+    '...#####................#####...',
+    '...#####................#####...',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '..#####..................#####..',
+    '...#####................#####...',
+    '...#####................#####...',
+    '...#####................#####...',
+    '....#####..............#####....',
+    '....#####..............#####....',
+    '.....#####............#####.....',
+    '.....######..........######.....',
+    '......######........######......',
+    '......######........######......',
+    '..##########........##########..',
+    '..##########........##########..',
+    '..##########........##########..',
+]
+EXTRA_GLYPHS = {
+    'font_32x53.c': {0x7F: _OHM_32X53},
+}
+
+# Pixels cleared in kept glyphs: char -> (x0, y0, x1, y1), inclusive.
+CLEAR_RECTS = {
+    'font_40x78.c': {'0': (15, 33, 24, 41)},  # centre dot removed (#12)
+}
 
 
 def read_font_c(path):
@@ -185,10 +230,41 @@ def emit_byte_array(values, per_line=16):
     return '\n'.join(lines)
 
 
-def trim_font(src_path, chars, dst_path=None):
+def glyph_from_rows(rows, width, height):
+    """ASCII-art rows -> 1bpp glyph bytes (LSB = leftmost pixel)."""
+    bpr = (width + 7) // 8
+    out = []
+    for r in range(height):
+        row = rows[r] if r < len(rows) else ''
+        assert len(row) <= width, 'glyph row wider than the font'
+        v = sum(1 << i for i, ch in enumerate(row) if ch == '#')
+        out += [(v >> (8 * k)) & 0xFF for k in range(bpr)]
+    return out
+
+
+def clear_rect(bitmap, width, rect):
+    """Clear the inclusive pixel rect (x0, y0, x1, y1) in a 1bpp glyph."""
+    bpr = (width + 7) // 8
+    x0, y0, x1, y1 = rect
+    out = list(bitmap)
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            out[y * bpr + x // 8] &= ~(1 << (x % 8)) & 0xFF
+    return out
+
+
+def trim_font(src_path, chars, dst_path=None, extra=None, clear=None):
+    """Keep `chars` from src_path, add/override `extra` {code: rows},
+    clear `clear` {char: rect} pixels."""
     dst_path = dst_path or src_path
     prefix, values, suffix = read_font_c(src_path)
     font = parse_font(values)
+    for code, rows in (extra or {}).items():
+        font['bitmaps'][code] = glyph_from_rows(
+            rows, font['char_width'], font['char_height'])
+    for ch, rect in (clear or {}).items():
+        font['bitmaps'][ord(ch)] = clear_rect(
+            font['bitmaps'][ord(ch)], font['char_width'], rect)
 
     codes = sorted({ord(c) for c in chars})
     offset_bytes, data_bytes = build_offset_table_and_data(font, codes)
@@ -216,8 +292,11 @@ def trim_font(src_path, chars, dst_path=None):
 
 def main():
     fonts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    full_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'full')
     for filename, chars in CHARSETS:
-        trim_font(os.path.join(fonts_dir, filename), chars)
+        trim_font(os.path.join(full_dir, filename + '.full'), chars,
+                  os.path.join(fonts_dir, filename), EXTRA_GLYPHS.get(filename),
+                  CLEAR_RECTS.get(filename))
 
 
 if __name__ == '__main__':

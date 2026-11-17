@@ -62,8 +62,14 @@ static char text[48];
 #define FONT_MED      FONT_16X26
 // ISOMETER: below this leakage the MOhm value is noise -> OVER.
 #define ISO_R_MIN_CURRENT_uA 2
+// ISOMETER: display range limit (999.999 MOhm) in kOhm.
+#define ISO_R_MAX_kOHM       999999
 #define FONT_SMALL    FONT_12X16
 #define FONT_TINY     FONT_8X12
+// Ohm sign: glyph 0x7F in FONT_8X12/12X16/16X26/32X53 (CP850 has no Omega).
+#define STR_OHM       "\x7F"
+// Unit in FONT_BIG after an n-char FONT_BIG value, 8 px gap.
+#define BIG_UNIT_X(n) (16 + (n) * 32 + 8)
 
 /* ---------------------------------------------------------------------- */
 /* Shared chrome helpers                                                   */
@@ -509,7 +515,7 @@ static void enter_resistance(statemachine_modes_t mode) {
 			(mode == STATEMACHINE_MODE_RESISTANCE_1A) ?
 					"I_set  = 1.000 A" : "I_set  = 1.000 mA";
 	const char *unit =
-			(mode == STATEMACHINE_MODE_RESISTANCE_1A) ? "mOhm" : "Ohm";
+			(mode == STATEMACHINE_MODE_RESISTANCE_1A) ? "m" STR_OHM : STR_OHM;
 
 	res_last_ms = HAL_GetTick() - RES_UPDATE_MS; // draw on the first update
 	draw_status_bar(menu_name_for_mode(mode), entry->accent);
@@ -517,8 +523,8 @@ static void enter_resistance(statemachine_modes_t mode) {
 	draw_footer("ESC: Back", 0);
 	LCD_PutStr(16, SECOND_Y, (char*) excitation, FONT_TINY, TEXT_SECONDARY,
 	C_BLACK);
-	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, (char*) unit, FONT_SMALL,
-	TEXT_PRIMARY, C_BLACK);
+	LCD_PutStr(BIG_UNIT_X(6), BIG_Y, (char*) unit, FONT_BIG, TEXT_PRIMARY,
+	C_BLACK);
 }
 
 static void update_resistance(statemachine_modes_t mode) {
@@ -540,7 +546,7 @@ static void update_resistance(statemachine_modes_t mode) {
 	 *    the milliohm threshold/value, which belongs to the other mode. */
 	uint8_t over_range = (mode == STATEMACHINE_MODE_RESISTANCE_1A) ?
 			(adc_data.r_mOhmx10 > ADC_R_MOHMX10_MAX_VALUE || adc_data.r_mOhmx10 == UINT32_MAX) :
-			(adc_data.r_Ohmx10 == UINT32_MAX);
+			(adc_data.r_Ohmx10 > 99999); // field limit 9999.9 (incl. UINT32_MAX)
 	if (over_range) {
 		snprintf(text, sizeof(text), " OVER ");
 	} else if (mode == STATEMACHINE_MODE_RESISTANCE_1A) {
@@ -591,7 +597,7 @@ static void enter_isometer(void) {
 	draw_status_bar("Isolation Test", entry->accent);
 	draw_output_border(entry->accent, 0);
 	draw_footer("ESC: Back", "Turn: test V  Hold OUT: test");
-	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "Mohm", FONT_SMALL, TEXT_PRIMARY,
+	LCD_PutStr(BIG_UNIT_X(7), BIG_Y, "M" STR_OHM, FONT_BIG, TEXT_PRIMARY,
 	C_BLACK);
 }
 
@@ -603,25 +609,21 @@ static void update_isometer(uint8_t output_active) {
 			ctrl_main_handle.voltage_iso_reference_V);
 	LCD_PutStr(16, SECOND_Y, text, FONT_TINY, TEXT_SECONDARY, C_BLACK);
 
-	static uint8_t iso_over_shown;
-	if (adc_data.converted.i_iso_ext_uA_filt >= ISO_R_MIN_CURRENT_uA) {
-		iso_over_shown = 0;
-		/* R[Mohm] = V / I[uA] (since Mohm = V/uA algebraically); keep one
-		 * decimal digit of precision via a x10 fixed-point intermediate. */
-//		int32_t r_megaohm_x10 =
-//				(int32_t) adc_data.converted.v_term_ext_mv / 100
-//						/ adc_data.converted.i_iso_ext_uA;
-		int32_t r_megaohm_x10 =
-				(int32_t) adc_data.converted.v_term_ext_mv_filt / 1
-						/ adc_data.converted.i_iso_ext_uA_filt;
-		snprintf(text, sizeof(text), "%3d.%03d", (int) (r_megaohm_x10 / 1000),
-				(int) (r_megaohm_x10 % 1000));
-	} else {
-		// FONT_BIG is proportional: clear the old number once.
-		if (!iso_over_shown)
-			LCD_Fill(16, BIG_Y, 16 + 8 * 32, BIG_Y + 53, C_BLACK);
-		iso_over_shown = 1;
+	/* Every string is exactly 7 chars (FONT_BIG is monospace), so it fully
+	 * overwrites the last one and never reaches the unit. */
+	int32_t v_mv = adc_data.converted.v_term_ext_mv_filt;
+	int32_t i_ua = adc_data.converted.i_iso_ext_uA_filt;
+	if (i_ua < ISO_R_MIN_CURRENT_uA) {
 		snprintf(text, sizeof(text), " OVER  ");
+	} else if (v_mv <= 0) {
+		snprintf(text, sizeof(text), "  -.---"); // no test voltage: invalid
+	} else {
+		int32_t r_kohm = v_mv / i_ua; // mV / uA = kOhm
+		if (r_kohm > ISO_R_MAX_kOHM)
+			snprintf(text, sizeof(text), " OVER  ");
+		else
+			snprintf(text, sizeof(text), "%3d.%03d", (int) (r_kohm / 1000),
+					(int) (r_kohm % 1000));
 	}
 	LCD_PutStr(16, BIG_Y, text, FONT_BIG, TEXT_PRIMARY, C_BLACK);
 
