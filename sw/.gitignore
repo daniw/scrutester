@@ -12,12 +12,6 @@ bat_source/Release
 # Kept locally, never committed (see project conventions)
 README.md
 
-DisplayTest/Debug
-DisplayTest/Release
-DisplayTest/Drivers
-DisplayTest/CMSIS
-DisplayTest/.settings
-
 Ext_Loader/Debug
 Ext_Loader/Release
 Ext_Loader/External Loader Windows
