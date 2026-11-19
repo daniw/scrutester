@@ -58,7 +58,7 @@ import re
 CHARSETS = [
     # (filename in this dir's parent, characters to keep)
     ('font_40x78.c', ' -.0123456789'),
-    ('font_32x53.c', ' -.0123456789AEMORVm\x7f'),
+    ('font_32x53.c', ' -.0123456789:AEMORVms\x7f'),
 ]
 
 # Glyphs not in the source codepage (CP850), drawn here: code -> rows

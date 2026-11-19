@@ -231,8 +231,8 @@ static void enter_active_output(statemachine_modes_t mode, const char *big_unit,
 	draw_output_border(entry->accent, 0);
 	draw_footer("ESC: Back", "Turn: set  Hold OUT: on");
 
-	LCD_PutStr(LCD_WIDTH / 2 + 70, BIG_Y + 10, (char*) big_unit, FONT_SMALL,
-	TEXT_PRIMARY, C_BLACK);
+	LCD_PutStr(BIG_UNIT_X(6), BIG_Y, (char*) big_unit, FONT_BIG, TEXT_PRIMARY,
+	C_BLACK);
 	LCD_PutStr(16, SECOND_Y, (char*) secondary_label, FONT_TINY, TEXT_SECONDARY,
 	C_BLACK);
 	LCD_PutStr(16 + UNIT_DX, SECOND_Y + 18, (char*) secondary_unit, FONT_SMALL,
@@ -387,7 +387,7 @@ static void update_passive_readout(int32_t value_x100) {
 /* ---------------------------------------------------------------------- */
 
 #define SW_TIME_CHARS 8 /* "mm:ss.cc" */
-#define SW_TIME_X     ((LCD_WIDTH - SW_TIME_CHARS * 32) / 2)
+#define SW_TIME_X     ((LCD_WIDTH - SW_TIME_CHARS * 32 - 8 - 32) / 2) /* + gap + "s" */
 #define SW_TIME_Y     (STATUS_H + 70)
 
 static uint8_t sw_footer_key;
@@ -398,6 +398,8 @@ static void enter_stopwatch(statemachine_modes_t mode) {
 		return;
 
 	draw_status_bar(menu_name_for_mode(mode), entry->accent);
+	LCD_PutStr(SW_TIME_X + SW_TIME_CHARS * 32 + 8, SW_TIME_Y, "s", FONT_BIG,
+			TEXT_PRIMARY, C_BLACK);
 	sw_footer_key = 0xFF;
 }
 
@@ -456,8 +458,7 @@ void display_vtimer_enter(display_vt_view_t view, stopwatch_vt_kind_t kind) {
 		LCD_PutStr(16, STATUS_H + 40, "Stop when below:", FONT_SMALL, TEXT_SECONDARY, C_BLACK);
 		break;
 	case VT_VIEW_RUN:
-		// FONT_BIG has no lowercase: unit in FONT_MED on the digits' baseline
-		LCD_PutStr(16 + 7 * 32 + 8, VT_TIME_Y + 53 - 26 - 8, "s", FONT_MED, TEXT_PRIMARY, C_BLACK);
+		LCD_PutStr(BIG_UNIT_X(7), VT_TIME_Y, "s", FONT_BIG, TEXT_PRIMARY, C_BLACK);
 		break;
 	default:
 		break;
@@ -651,8 +652,7 @@ static void enter_charge(void) {
 	draw_status_bar("Charge", entry->accent);
 	draw_output_border(entry->accent, 0);
 	draw_footer("ESC: Stop", 0);
-	LCD_PutStr(LCD_WIDTH / 2 + 100, BIG_Y + 10, "V", FONT_SMALL, TEXT_PRIMARY,
-	C_BLACK);
+	LCD_PutStr(BIG_UNIT_X(6), BIG_Y, "V", FONT_BIG, TEXT_PRIMARY, C_BLACK);
 	LCD_PutStr(16, SECOND_Y + 36, "Cells", FONT_TINY, TEXT_SECONDARY, C_BLACK);
 }
 
